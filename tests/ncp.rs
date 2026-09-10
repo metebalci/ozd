@@ -8,7 +8,9 @@
 //! The transport tests of muir's `tests/chaos.rs`, ported from its `Server`
 //! to this `Ncp`; then what they did not cover --- a duplicate RFC, one
 //! packet in flight, a connection opened from this end, a bad check word,
-//! what is not this host's, and a packet for no connection.
+//! what is not this host's, and a packet for no connection. Last, the log:
+//! the line [`Ncp::log`] is given for each connection opened, refused and
+//! closed (`DESIGN.md` §10).
 
 mod support;
 
@@ -616,4 +618,261 @@ fn a_broadcast_nobody_serves_draws_nothing() {
     h.receive(200, &arriving(&rfc((0o3050, 12), 0o3060, 5, "NOSUCH")));
     let cls = next_from(&mut h, 200).map(|p| p.opcode);
     assert_eq!(cls, Some(op::CLS), "an RFC is still refused");
+}
+
+/// What an NCP's log hook has been given, line by line.
+#[derive(Clone, Default)]
+struct Lines(Arc<Mutex<Vec<String>>>);
+
+impl Lines {
+    /// A hook on `h` that keeps each line it is given, and where they are
+    /// kept.
+    fn hook(h: &mut Ncp) -> Lines {
+        let lines = Lines::default();
+        let kept = lines.clone();
+        h.log = Some(Box::new(move |line: &str| kept.0.lock().unwrap().push(line.to_string())));
+        lines
+    }
+    /// The lines given since the last take.
+    fn take(&self) -> Vec<String> {
+        std::mem::take(&mut *self.0.lock().unwrap())
+    }
+}
+
+/// No line at all.
+const NOTHING: [&str; 0] = [];
+
+/// **The log follows an accepted stream from its OPN to its close**
+/// (`DESIGN.md` §10): a line when the RFC is accepted, naming the contact
+/// and the other host in octal, and one when the other end's CLS closes
+/// it, with its reason. What goes between --- a duplicate of the RFC, the
+/// STS, data both ways, EOF --- is the trace's, not the log's.
+#[test]
+fn the_log_follows_an_accepted_stream_to_its_close() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let log = Lines::hook(&mut h);
+    let me = (0o3050, 0o21);
+    h.receive(0, &arriving(&rfc(me, 0o3060, 100, "ECHO")));
+    let opn = next_from(&mut h, 0).expect("an OPN");
+    assert_eq!(log.take(), ["ECHO from 3050 opened"]);
+    h.receive(5, &arriving(&rfc(me, 0o3060, 100, "ECHO")));
+    let server = (0o3060, opn.source_index);
+    h.receive(10, &arriving(&sts(me, server, 101, opn.number, 5)));
+    let dat = Packet {
+        opcode: op::DAT,
+        forward: 0,
+        dest: server.0,
+        dest_index: server.1,
+        source: me.0,
+        source_index: me.1,
+        number: 101,
+        ack: opn.number,
+        data: b"hello".to_vec(),
+    };
+    h.receive(20, &arriving(&dat));
+    let echo = next_from(&mut h, 20).expect("the echo");
+    assert_eq!((echo.opcode, echo.data.as_slice()), (op::DAT, &b"hello"[..]));
+    let eof =
+        Packet { opcode: op::EOF, number: 102, ack: echo.number, data: Vec::new(), ..dat.clone() };
+    h.receive(30, &arriving(&eof));
+    let back = next_from(&mut h, 30).expect("an EOF back");
+    assert_eq!(back.opcode, op::EOF);
+    assert_eq!(log.take(), NOTHING, "nothing between");
+    let cls =
+        Packet { opcode: op::CLS, number: 103, ack: back.number, data: b"done".to_vec(), ..dat };
+    h.receive(40, &arriving(&cls));
+    assert_eq!(h.connections(), 0);
+    assert_eq!(log.take(), ["ECHO from 3050 closed by its CLS: done"]);
+}
+
+/// **A LOS from the other end closes a connection as its CLS does**
+/// (`Session::closed`), and the log says which of the two it was, with the
+/// reason it carried.
+#[test]
+fn a_los_from_the_other_end_is_logged() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let log = Lines::hook(&mut h);
+    let me = (0o3050, 0o22);
+    h.receive(0, &arriving(&rfc(me, 0o3060, 1, "ECHO")));
+    let opn = next_from(&mut h, 0).expect("an OPN");
+    let los = Packet {
+        opcode: op::LOS,
+        forward: 0,
+        dest: 0o3060,
+        dest_index: opn.source_index,
+        source: me.0,
+        source_index: me.1,
+        number: 0,
+        ack: 0,
+        data: b"No such connection".to_vec(),
+    };
+    h.receive(10, &arriving(&los));
+    assert_eq!(h.connections(), 0);
+    assert_eq!(
+        log.take(),
+        ["ECHO from 3050 opened", "ECHO from 3050 closed by its LOS: No such connection"]
+    );
+}
+
+/// **A refusal is logged with its reason**: the CLS this end sends for an
+/// RFC no service takes, and for one a service refuses, each naming the
+/// host that asked. The contact name is the RFC's first word, without its
+/// arguments, as a service is found by it.
+#[test]
+fn a_refusal_is_logged_with_its_reason() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let log = Lines::hook(&mut h);
+    h.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, "NOSUCH")));
+    h.receive(10, &arriving(&rfc((0o3051, 0o22), 0o3060, 2, "ECHO NO")));
+    assert_eq!(next_from(&mut h, 10).map(|p| p.opcode), Some(op::CLS));
+    assert_eq!(next_from(&mut h, 10).map(|p| p.opcode), Some(op::CLS));
+    assert_eq!(h.connections(), 0);
+    assert_eq!(
+        log.take(),
+        [
+            "NOSUCH from 3050 refused: No server for contact name NOSUCH",
+            "ECHO from 3051 refused: Not today",
+        ]
+    );
+}
+
+/// **A connection opened from this end is logged when the OPN comes
+/// back**, not when its RFC goes: until then nothing is open. With a log on
+/// each of two NCPs, one's [`Ncp::connect`] and the other's service, each
+/// end names the other host --- `to` it at the end that asked, `from` it at
+/// the end that was asked --- and a CLS the asking end's session sends
+/// closes it at both, with the session's reason.
+#[test]
+fn a_connection_opened_from_this_end_is_logged_at_both_ends() {
+    let mut far = Ncp::new(0o3060);
+    far.serve(Box::new(Echo));
+    let far_log = Lines::hook(&mut far);
+    let mut near = Ncp::new(0o3050);
+    let near_log = Lines::hook(&mut near);
+    let events = Log::default();
+    near.connect(0, 0o3060, "ECHO", Box::new(Recorder(events.clone())));
+    let rfc = next_from(&mut near, 0).expect("an RFC");
+    assert_eq!(rfc.opcode, op::RFC);
+    assert_eq!(near_log.take(), NOTHING, "an RFC is not yet a connection");
+    far.receive(0, &arriving(&rfc));
+    shuttle(&mut near, &mut far, 0);
+    assert_eq!(events.take(), ["opened"]);
+    assert_eq!(near_log.take(), ["ECHO to 3060 opened"]);
+    assert_eq!(far_log.take(), ["ECHO from 3050 opened"]);
+    events.send(Out::Close("done".into()));
+    shuttle(&mut near, &mut far, 10);
+    assert_eq!((near.connections(), far.connections()), (0, 0));
+    assert_eq!(near_log.take(), ["ECHO to 3060 closed by our CLS: done"]);
+    assert_eq!(far_log.take(), ["ECHO from 3050 closed by its CLS: done"]);
+}
+
+/// **An RFC from this end that the other end refuses is logged as
+/// refused**, at both ends: it never opened, and the CLS that ends it is
+/// the refusal the other end's service gave ([`Response::Refuse`]).
+#[test]
+fn a_refusal_of_this_ends_rfc_is_logged_at_both_ends() {
+    let mut far = Ncp::new(0o3060);
+    far.serve(Box::new(Echo));
+    let far_log = Lines::hook(&mut far);
+    let mut near = Ncp::new(0o3050);
+    let near_log = Lines::hook(&mut near);
+    near.connect(0, 0o3060, "ECHO NO", Box::new(Recorder(Log::default())));
+    shuttle(&mut near, &mut far, 0);
+    assert_eq!(near.connections(), 0);
+    assert_eq!(near_log.take(), ["ECHO to 3060 refused: Not today"]);
+    assert_eq!(far_log.take(), ["ECHO from 3050 refused: Not today"]);
+}
+
+/// **A connection given up for silence is logged as closed, host down**
+/// ([`ncp::HOST_DOWN_NS`]): past the interval and not at it, whichever end
+/// asked for it --- an RFC from this end that nothing ever answered is
+/// given up the same way.
+#[test]
+fn a_host_down_expiry_is_logged() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let log = Lines::hook(&mut h);
+    h.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, "ECHO")));
+    h.connect(0, 0o3051, "FOO", Box::new(Recorder(Log::default())));
+    while next_from(&mut h, 0).is_some() {}
+    assert_eq!(log.take(), ["ECHO from 3050 opened"]);
+    let t = ncp::HOST_DOWN_NS;
+    while next_from(&mut h, t).is_some() {}
+    assert_eq!((h.connections(), log.take()), (2, vec![]), "not at the interval");
+    assert_eq!(next_from(&mut h, t + 1), None);
+    assert_eq!(h.connections(), 0);
+    assert_eq!(
+        log.take(),
+        [
+            "ECHO from 3050 closed, host down: nothing heard for 180 s",
+            "FOO to 3051 closed, host down: nothing heard for 180 s",
+        ]
+    );
+}
+
+/// **A simple transaction logs nothing**: an RFC answered with an ANS makes
+/// no connection, and STATUS is asked that way over and over. Nor does a
+/// broadcast, answered or let fall; nor a simple transaction this end
+/// asks, which the other end's ANS ends.
+#[test]
+fn a_simple_transaction_logs_nothing() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Time::fixed(1)));
+    let log = Lines::hook(&mut h);
+    h.receive(0, &arriving(&rfc((0o3050, 7), 0o3060, 1, "TIME")));
+    assert_eq!(next_from(&mut h, 0).map(|p| p.opcode), Some(op::ANS));
+    for contact in ["TIME", "NOSUCH"] {
+        let mut brd = rfc((0o3050, 8), 0, 2, contact);
+        brd.opcode = op::BRD;
+        h.receive(10, &arriving(&brd));
+    }
+    assert_eq!(next_from(&mut h, 10).map(|p| p.opcode), Some(op::ANS), "the broadcast answered");
+    assert_eq!(next_from(&mut h, 10), None, "and the other let fall");
+    let mut near = Ncp::new(0o3050);
+    let near_log = Lines::hook(&mut near);
+    near.connect(20, 0o3060, "TIME", Box::new(Recorder(Log::default())));
+    shuttle(&mut near, &mut h, 20);
+    assert_eq!((near.connections(), h.connections()), (0, 0));
+    assert_eq!(log.take(), NOTHING);
+    assert_eq!(near_log.take(), NOTHING);
+}
+
+/// **A line is one line, whatever the other end sends.** A contact name
+/// and a reason come off the network, and a newline in either would start
+/// a line of the other end's writing in the log, which is one line an
+/// event (`src/log.rs`); a control character is written as its escape.
+#[test]
+fn a_log_line_is_one_line_whatever_arrives() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let log = Lines::hook(&mut h);
+    h.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, "NO\nSUCH")));
+    h.receive(0, &arriving(&rfc((0o3050, 0o22), 0o3060, 2, "ECHO")));
+    assert_eq!(next_from(&mut h, 0).map(|p| p.opcode), Some(op::CLS));
+    let opn = next_from(&mut h, 0).expect("an OPN");
+    let cls = Packet {
+        opcode: op::CLS,
+        forward: 0,
+        dest: 0o3060,
+        dest_index: opn.source_index,
+        source: 0o3050,
+        source_index: 0o22,
+        number: 3,
+        ack: opn.number,
+        data: b"bye\r\nECHO from 3051 opened\x07".to_vec(),
+    };
+    h.receive(10, &arriving(&cls));
+    let lines = log.take();
+    assert!(lines.iter().all(|l| !l.chars().any(char::is_control)), "{lines:?}");
+    assert_eq!(
+        lines,
+        [
+            r"NO\nSUCH from 3050 refused: No server for contact name NO\nSUCH",
+            "ECHO from 3050 opened",
+            r"ECHO from 3050 closed by its CLS: bye\r\nECHO from 3051 opened\u{7}",
+        ]
+    );
 }

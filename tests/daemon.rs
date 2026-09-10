@@ -349,3 +349,52 @@ fn a_run_removes_stale_temporaries_and_check_does_not() {
     assert!(!stale.exists(), "the stale temporary is gone");
     assert!(kept.exists(), "and nothing else");
 }
+
+/// **A connection is logged**, by the daemon run from its command line:
+/// a test host opens NAME, and the log says `NAME from 3050 opened`, the
+/// NCP's line (`DESIGN.md` §10) with the log's UTC time before it. The
+/// daemon turns on its own clock and the test host on the test's, until
+/// the line comes or five seconds pass.
+#[test]
+fn a_connection_is_logged() {
+    let path = config_file("logged.conf", &site(""));
+    let mut child = muir_ah()
+        .arg(&path)
+        .stdin(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("it starts");
+    let stderr = child.stderr.take().expect("its stderr");
+    let _running = Running(child);
+    let (lines, heard) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if lines.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let first = heard.recv_timeout(Duration::from_secs(5)).expect("a first line");
+    if support::running_as_root() {
+        assert!(first.contains("root"), "as root: {first}");
+        return;
+    }
+    let at: SocketAddr = first
+        .split("listening at ")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|a| a.parse().ok())
+        .expect("where it listens");
+    let mut lm1 = TestHost::new(LM1, at);
+    lm1.ncp.connect(0, OZ, "NAME", Box::new(Recorder::default()));
+    let start = Instant::now();
+    let mut seen = Vec::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        lm1.turn(start.elapsed().as_nanos() as u64);
+        seen.extend(heard.try_iter());
+        if seen.iter().any(|l| l.contains("NAME from 3050 opened")) {
+            return;
+        }
+    }
+    panic!("no line for the connection: {seen:?}");
+}

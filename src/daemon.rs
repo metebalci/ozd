@@ -11,6 +11,7 @@
 
 use crate::chudp::Link;
 use crate::config::Config;
+use crate::log;
 use crate::ncp::{Ncp, Service};
 use crate::service::hostab::Hostab;
 use crate::service::name::Name;
@@ -41,6 +42,9 @@ impl Daemon {
         let mut link = Link::bind(config, meters.clone())?;
         link.trace = trace;
         let mut ncp = Ncp::new(config.address);
+        // Each connection opened, refused and closed, as a line of the log
+        // (`DESIGN.md` §10); `trace` stays the packets.
+        ncp.log = Some(Box::new(|line: &str| log::event(line)));
         ncp.trace = trace;
         for service in services(config, &meters) {
             ncp.serve(service);

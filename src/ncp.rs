@@ -17,9 +17,14 @@
 //! modelled cable and takes its turn on it. Here there is no cable: the
 //! NCP and the socket are wired to each other directly, through
 //! [`Ncp::receive`] and [`Ncp::transmit`] (`DESIGN.md` §3, §4).
+//!
+//! What becomes of each connection --- opened, refused, closed --- it tells
+//! the log, [`Ncp::log`], when it has one (`DESIGN.md` §10). Every packet is
+//! the trace's, `trace`, and not the log's.
 
 use crate::packet::{Framed, MAX_DATA, Packet};
 use std::collections::VecDeque;
+use std::fmt;
 
 /// Packet opcodes, AIM-628 chapter 4, as `sys/network/chaos/chsncp.lisp`
 /// numbers them.
@@ -122,6 +127,13 @@ enum State {
 struct Conn {
     state: State,
     remote: (u16, u16),
+    /// The contact name, for the log: the RFC's first word, without its
+    /// arguments, as a service is found by it. A `Box<str>`, since it never
+    /// grows.
+    contact: Box<str>,
+    /// Whether this end asked for the connection, with [`Ncp::connect`],
+    /// rather than the other end, with an RFC a service here accepted.
+    from_this_end: bool,
     session: Option<Box<dyn Session>>,
     /// The number the next controlled packet we send will carry.
     next_number: u16,
@@ -171,6 +183,32 @@ pub struct Ncp {
     pub trace: bool,
     /// Our receive window for connections we accept.
     pub window: u16,
+    /// The log, if there is one (`DESIGN.md` §10): a line for each
+    /// connection opened, refused and closed, without the time, which the
+    /// log adds. Each names the contact and the other host, in octal ---
+    /// `from` it when it asked for the connection, `to` it when this end
+    /// did:
+    ///
+    /// ```text
+    /// ECHO from 3050 opened               an RFC accepted: the OPN sent
+    /// ECHO to 3060 opened                 an RFC from this end: the OPN back
+    /// ECHO from 3050 refused: <reason>    the CLS sent for an RFC
+    /// ECHO to 3060 refused: <reason>      the CLS back for one from this end
+    /// ECHO from 3050 closed by its CLS: <reason>
+    /// ECHO from 3050 closed by its LOS: <reason>
+    /// ECHO from 3050 closed by our CLS: <reason>    a session's
+    /// ECHO from 3050 closed, host down: nothing heard for 180 s
+    /// ```
+    ///
+    /// The last is [`HOST_DOWN_NS`]. Nothing is logged for a simple
+    /// transaction, which makes no connection and is how STATUS is asked,
+    /// over and over; nor for a BRD let fall. A contact name and a reason
+    /// come off the network, so a control character in either is written as
+    /// its escape, and a line stays one line. Unset, nothing is formatted.
+    // Spelled out, since it is the whole of the hook's contract; clippy
+    // would have a `type` for it.
+    #[allow(clippy::type_complexity)]
+    pub log: Option<Box<dyn Fn(&str) + Send>>,
 }
 
 impl Ncp {
@@ -182,6 +220,7 @@ impl Ncp {
             out: VecDeque::new(),
             trace: false,
             window: 8,
+            log: None,
         }
     }
 
@@ -265,6 +304,8 @@ impl Ncp {
                 .as_ref()
                 .is_some_and(|c| now.saturating_sub(c.last_heard) > HOST_DOWN_NS);
             if dead {
+                let secs = HOST_DOWN_NS / 1_000_000_000;
+                self.note(index, format_args!("closed, host down: nothing heard for {secs} s"));
                 self.close(now, index, "Host down");
             }
         }
@@ -274,8 +315,12 @@ impl Ncp {
     /// controlled-nothing packet like any other, and a reason quoting a
     /// long contact name back could run past [`MAX_DATA`] --- the count
     /// word is twelve bits, so an over-long frame would go out past the
-    /// interface's buffer (AIM-628 §3.5).
-    fn refuse(&mut self, to: (u16, u16), number: u16, reason: String) {
+    /// interface's buffer (AIM-628 §3.5). The log has the reason whole,
+    /// with the `contact` the RFC asked for.
+    fn refuse(&mut self, to: (u16, u16), number: u16, contact: &str, reason: String) {
+        if let Some(log) = &self.log {
+            log(&line(contact, false, to.0, format_args!("refused: {}", OneLine(&reason))));
+        }
         let mut bytes = reason.into_bytes();
         bytes.truncate(MAX_DATA);
         let cls = self.packet(op::CLS, to, 0, number, number, bytes);
@@ -309,7 +354,7 @@ impl Ncp {
         };
         let Some(k) = self.services.iter().position(|s| s.contact() == name) else {
             if cls_on_error {
-                self.refuse(from, p.number, format!("No server for contact name {name}"));
+                self.refuse(from, p.number, &name, format!("No server for contact name {name}"));
             }
             return;
         };
@@ -319,7 +364,7 @@ impl Ncp {
                 self.send(ans);
             }
             Response::Refuse(reason) => {
-                self.refuse(from, p.number, reason);
+                self.refuse(from, p.number, &name, reason);
             }
             Response::Accept(session) => {
                 let index = self.free_index();
@@ -331,6 +376,8 @@ impl Ncp {
                 let conn = Conn {
                     state: State::OpnSent,
                     remote: from,
+                    contact: name.into_boxed_str(),
+                    from_this_end: false,
                     session: Some(session),
                     next_number: initial.wrapping_add(1),
                     unacked: VecDeque::new(),
@@ -348,6 +395,7 @@ impl Ncp {
                 self.conns[index as usize] = Some(conn);
                 self.remember(index, &opn, now);
                 self.send(opn);
+                self.note(index, format_args!("opened"));
             }
         }
     }
@@ -366,6 +414,8 @@ impl Ncp {
         let conn = Conn {
             state: State::RfcSent,
             remote: (host, 0),
+            contact: contact.split_once(' ').map_or(contact, |(name, _)| name).into(),
+            from_this_end: true,
             session: Some(session),
             next_number: initial.wrapping_add(1),
             unacked: VecDeque::new(),
@@ -415,6 +465,15 @@ impl Ncp {
         {
             s.closed(now, reason);
         }
+    }
+
+    /// Tells the log, if there is one, `what` came of the connection at
+    /// `index`, in a line naming its contact and the other host as
+    /// [`Ncp::log`] shows. Without a log nothing is looked up or formatted.
+    fn note(&self, index: u16, what: fmt::Arguments) {
+        let Some(log) = &self.log else { return };
+        let Some(c) = self.conns.get(index as usize).and_then(Option::as_ref) else { return };
+        log(&line(&c.contact, c.from_this_end, c.remote.0, what));
     }
 
     /// A packet for one of our connections.
@@ -468,6 +527,7 @@ impl Ncp {
                         c.their_window = u16::from_le_bytes([p.data[2], p.data[3]]);
                     }
                     self.sts(index);
+                    self.note(index, format_args!("opened"));
                     if let Some(c) = self.conns[index as usize].as_mut()
                         && let Some(s) = c.session.as_mut()
                     {
@@ -498,13 +558,27 @@ impl Ncp {
             op::SNS => self.sts(index),
             op::CLS | op::LOS => {
                 let reason = String::from_utf8_lossy(&p.data).into_owned();
+                // A CLS for an RFC from this end is the other end's refusal,
+                // as a refusal from this one is a CLS ([`Response::Refuse`]):
+                // the connection never opened.
+                let refused = p.opcode == op::CLS
+                    && self.conns[index as usize]
+                        .as_ref()
+                        .is_some_and(|c| c.state == State::RfcSent);
+                if refused {
+                    self.note(index, format_args!("refused: {}", OneLine(&reason)));
+                } else {
+                    let by = if p.opcode == op::CLS { "CLS" } else { "LOS" };
+                    self.note(index, format_args!("closed by its {by}: {}", OneLine(&reason)));
+                }
                 self.close(now, index, &reason);
             }
             op::ANS => {
                 // The answer to a simple transaction we started. No
                 // service here starts one, so the connection is simply
                 // closed; a client of the transport would take the data
-                // first.
+                // first. Nor is it logged: a simple transaction is not a
+                // connection.
                 self.close(now, index, "answered");
             }
             op::EOF | op::UNC => self.controlled(now, index, p),
@@ -600,6 +674,7 @@ impl Ncp {
                 Out::DataOp(op, bytes) => self.packet(op, remote, index, number, ack, bytes),
                 Out::Eof => self.packet(op::EOF, remote, index, number, ack, Vec::new()),
                 Out::Close(reason) => {
+                    self.note(index, format_args!("closed by our CLS: {}", OneLine(&reason)));
                     let p = self.packet(op::CLS, remote, index, number, ack, reason.into_bytes());
                     self.send(p);
                     self.conns[index as usize] = None;
@@ -715,6 +790,32 @@ impl Ncp {
             self.service_all(now);
         }
         self.out.pop_front()
+    }
+}
+
+/// A line for the log: the `contact`, `from` the other host `host` if it
+/// asked for the connection and `to` it if this end did, and `what` came of
+/// it --- `ECHO from 3050 opened` ([`Ncp::log`]).
+fn line(contact: &str, from_this_end: bool, host: u16, what: fmt::Arguments) -> String {
+    let way = if from_this_end { "to" } else { "from" };
+    format!("{} {way} {host:o} {what}", OneLine(contact))
+}
+
+/// Text off the network, fit for one line of the log: a control character
+/// --- a newline among them, which would start a line of the other end's
+/// writing --- written as its escape, `\n`.
+struct OneLine<'a>(&'a str);
+
+impl fmt::Display for OneLine<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for c in self.0.chars() {
+            if c.is_control() {
+                write!(f, "{}", c.escape_debug())?;
+            } else {
+                fmt::Write::write_char(f, c)?;
+            }
+        }
+        Ok(())
     }
 }
 
