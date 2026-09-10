@@ -1424,7 +1424,7 @@ fn a_read_and_a_write_in_the_base() {
 }
 
 /// **A read-only mount is read, and every write there is refused with `ATF`
-/// before anything is touched** (`DESIGN.md` §6, `readonly`; `CLAUDE.md`
+/// before anything is touched** (`DESIGN.md` §6, "A read-only root"; `CLAUDE.md`
 /// §3): OPEN for output, of a new file and over one, and through a link;
 /// DELETE, of a file, a link, a directory, and the mount itself; RENAME
 /// within the mount, and across its line either way; CREATE-DIRECTORY;

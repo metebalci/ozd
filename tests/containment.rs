@@ -15,7 +15,7 @@
 //! that is a symlink swapped between the check and the open". No check can
 //! stop that. What makes it impossible is that nothing runs between the
 //! two: one thread, this process the only writer of a writable root, and a
-//! `readonly` root written by nobody (`DESIGN.md` §1, §6). That invariant
+//! read-only root written by nobody (`DESIGN.md` §1, §6). That invariant
 //! is written down where it is relied on, in `src/roots.rs` at
 //! `Tree::resolve`; a test that swapped a link from a second thread would
 //! test the invariant broken, not the code. What is tested is the nearest
@@ -619,7 +619,7 @@ fn a_root_that_is_missing_not_a_directory_slash_or_relative_does_not_start() {
 
 /// **A writable root that this process cannot write does not start, and a
 /// read-only one does**: whether a root can be written is found by making
-/// a probe file in it and removing it, and a `readonly` root is never
+/// a probe file in it and removing it, and a read-only root is never
 /// written, so never probed.
 #[cfg(unix)]
 #[test]

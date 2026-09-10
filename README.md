@@ -28,12 +28,12 @@ dependencies: nothing else is downloaded.
 
 Everything is a flag, as muir's are (`DESIGN.md` §8): `--address`,
 `--name`, `--listen`, `--root`, `--host` and `--peer`. Their defaults
-come from a file of flags --- the one `-c` names, else the one `MUIR_AH_RC`
-names, else `.muir-ahrc` in the directory it is run from or in the home
-directory --- and the command line has the last word. `--check` reads them and checks the
-roots, changing nothing, then exits; `--trace` prints every packet;
-`--help` says what each flag is. It will not run as root, and it logs to
-stderr, one line an event.
+come from a file of flags --- the one `-c` names, else the one
+`MUIR_AH_RC` names, else `.muir-ahrc` in the directory it is run from or
+in the home directory --- and the command line has the last word.
+`--check` reads them and checks the roots, changing nothing, then exits;
+`--trace` prints every packet; `--help` says what each flag is. It will
+not run as root, and it logs to stderr, one line an event.
 
 The two examples, `examples/system-100.muir-ahrc` and
 `examples/system-304.muir-ahrc`, are for System 100 and System 304, with

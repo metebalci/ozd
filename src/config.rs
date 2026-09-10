@@ -115,8 +115,8 @@ const LISTEN: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST,
 const WHERE: &str = "on the command line or in a file of flags";
 
 /// What an argument that is no flag's value is told: muir-ah takes flags
-/// and nothing else, and a site file given the way a config file once was
-/// meets this.
+/// and nothing else, and a file given as its one argument, as the config
+/// once was, meets this.
 const FLAGS_ONLY: &str = "not a flag, and muir-ah takes nothing else: the config is flags, \
      on the command line or in .muir-ahrc, or in the file -c <file> names";
 
