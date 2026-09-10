@@ -1,0 +1,604 @@
+// SPDX-FileCopyrightText: 2026 Mete Balci
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//! The NCP, held to AIM-628 chapters 3 and 4 without a socket: each packet
+//! handed to [`Ncp::receive`] as the link would hand it, what the NCP sends
+//! taken off [`Ncp::transmit`], and the clock set by the test.
+//!
+//! The transport tests of muir's `tests/chaos.rs`, ported from its `Server`
+//! to this `Ncp`; then what they did not cover --- a duplicate RFC, one
+//! packet in flight, a connection opened from this end, a bad check word,
+//! what is not this host's, and a packet for no connection.
+
+use muir_ah::ncp::{self, Ncp, Out, Response, Service, Session, op};
+use muir_ah::packet::{self, Framed, Packet};
+use muir_ah::service::time::Time;
+use std::sync::{Arc, Mutex};
+
+/// A packet as the link would hand it to the NCP: the buffer its sender
+/// wrote, cable destination last, and the trailer's source and check word
+/// --- the check word the CADR's hardware would have made, so `check_ok`.
+fn arriving(p: &Packet) -> Framed {
+    let buffer = p.to_buffer(p.dest);
+    let mut over = buffer.clone();
+    over.push(p.source);
+    let check = packet::check_word(&over);
+    Framed { buffer, source: p.source, check, check_ok: true }
+}
+
+fn rfc(from: (u16, u16), to: u16, number: u16, text: &str) -> Packet {
+    Packet {
+        opcode: op::RFC,
+        forward: 0,
+        dest: to,
+        dest_index: 0,
+        source: from.0,
+        source_index: from.1,
+        number,
+        ack: 0,
+        data: text.as_bytes().to_vec(),
+    }
+}
+
+/// What the host sends next, as a packet.
+fn next_from(h: &mut Ncp, now: u64) -> Option<Packet> {
+    h.transmit(now).map(|b| Packet::from_buffer(&b).unwrap().0)
+}
+
+fn text(bytes: &[u8]) -> String {
+    bytes.iter().map(|&b| b as char).collect()
+}
+
+/// **TIME is a simple transaction.** AIM-628 §5.8: an RFC to `TIME`
+/// evokes an ANS with the universal time in four bytes, least
+/// significant first, and no connection. The ANS goes back to the
+/// asker's index, acknowledging the RFC.
+#[test]
+fn time_answers_a_simple_transaction() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Time::fixed(0x1234_5678)));
+    h.receive(100, &arriving(&rfc((0o3050, 7), 0o3060, 0o1234, "TIME")));
+    let ans = next_from(&mut h, 100).expect("an answer");
+    assert_eq!(ans.opcode, op::ANS);
+    assert_eq!((ans.dest, ans.dest_index), (0o3050, 7), "back to the asker's index");
+    assert_eq!(ans.source, 0o3060);
+    assert_eq!(ans.ack, 0o1234, "acknowledging the RFC");
+    assert_eq!(ans.data, [0x78, 0x56, 0x34, 0x12], "least significant byte first");
+    assert_eq!(next_from(&mut h, 100), None, "and nothing more");
+    assert_eq!(h.connections(), 0, "no connection was made");
+    // A packet for another host is not ours.
+    h.receive(200, &arriving(&rfc((0o3050, 8), 0o3070, 1, "TIME")));
+    assert_eq!(next_from(&mut h, 200), None);
+    // An unknown contact is refused with a CLS.
+    h.receive(300, &arriving(&rfc((0o3050, 9), 0o3060, 2, "NOSUCH")));
+    let cls = next_from(&mut h, 300).expect("a refusal");
+    assert_eq!(cls.opcode, op::CLS);
+    assert_eq!((cls.dest, cls.dest_index), (0o3050, 9));
+    assert!(String::from_utf8_lossy(&cls.data).contains("NOSUCH"), "with the reason");
+    // A broadcast TIME is answered too, §4.5: "The TIME and STATUS protocols
+    // ... will work through BRD packets"; the subnet bit map is skipped.
+    let mut brd = rfc((0o3050, 10), 0, 3, "TIME");
+    brd.opcode = op::BRD;
+    brd.ack = 4;
+    brd.data = [vec![0xff, 0xff, 0xff, 0xff], b"TIME".to_vec()].concat();
+    h.receive(400, &arriving(&brd));
+    let ans = next_from(&mut h, 400).expect("an answer to a broadcast");
+    assert_eq!((ans.opcode, ans.dest_index), (op::ANS, 10));
+}
+
+/// A service that echoes what it is sent, for the stream protocol.
+struct Echo;
+struct EchoSession {
+    pending: Vec<Out>,
+    got_eof: bool,
+}
+impl Service for Echo {
+    fn contact(&self) -> &str {
+        "ECHO"
+    }
+    fn request(&mut self, _now: u64, args: &str, _from: (u16, u16)) -> Response {
+        if args == "NO" {
+            return Response::Refuse("Not today".into());
+        }
+        if args == "LONG" {
+            return Response::Refuse("not today, and at length ".repeat(40));
+        }
+        Response::Accept(Box::new(EchoSession { pending: Vec::new(), got_eof: false }))
+    }
+}
+impl Session for EchoSession {
+    fn data(&mut self, _now: u64, _op: u8, bytes: &[u8]) {
+        self.pending.push(Out::Data(bytes.to_vec()));
+    }
+    fn eof(&mut self, _now: u64) {
+        self.got_eof = true;
+        self.pending.push(Out::Eof);
+    }
+    fn closed(&mut self, _now: u64, _reason: &str) {}
+    fn poll(&mut self, _now: u64) -> Vec<Out> {
+        std::mem::take(&mut self.pending)
+    }
+}
+
+/// **A stream connection opens, moves data both ways and closes**, as
+/// AIM-628 §4.1 to §4.4 lay it out: RFC, then the server's OPN carrying
+/// its index, initial packet number and window and acknowledging the
+/// RFC; the user's STS; numbered data acknowledged in the header of what
+/// goes back or in an STS; EOF answered by EOF; CLS.
+#[test]
+fn a_stream_opens_moves_data_and_closes() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let me = (0o3050, 0o21);
+    h.receive(0, &arriving(&rfc(me, 0o3060, 100, "ECHO")));
+    let opn = next_from(&mut h, 0).expect("an OPN");
+    assert_eq!(opn.opcode, op::OPN);
+    assert_eq!((opn.dest, opn.dest_index), me);
+    assert_ne!(opn.source_index, 0, "the server's index");
+    assert_eq!(opn.ack, 100, "acknowledging the RFC");
+    let receipt = u16::from_le_bytes([opn.data[0], opn.data[1]]);
+    let window = u16::from_le_bytes([opn.data[2], opn.data[3]]);
+    assert_eq!(receipt, 100, "the OPN's data is a receipt");
+    assert!(window >= 1, "and a window");
+    assert_eq!(h.connections(), 1);
+    let server = (0o3060, opn.source_index);
+    let mut number = 100u16;
+    let mut sts = Packet {
+        opcode: op::STS,
+        forward: 0,
+        dest: server.0,
+        dest_index: server.1,
+        source: me.0,
+        source_index: me.1,
+        number: number + 1,
+        ack: opn.number,
+        data: Vec::new(),
+    };
+    sts.data.extend_from_slice(&opn.number.to_le_bytes());
+    sts.data.extend_from_slice(&5u16.to_le_bytes());
+    h.receive(10, &arriving(&sts));
+    assert_eq!(next_from(&mut h, 10), None, "an STS wants nothing back");
+    // Data in: echoed back, numbered from the OPN's number on, and
+    // acknowledging ours.
+    number += 1;
+    let dat = Packet {
+        opcode: op::DAT,
+        forward: 0,
+        dest: server.0,
+        dest_index: server.1,
+        source: me.0,
+        source_index: me.1,
+        number,
+        ack: opn.number,
+        data: b"hello".to_vec(),
+    };
+    h.receive(20, &arriving(&dat));
+    let echo = next_from(&mut h, 20).expect("the echo");
+    assert_eq!(echo.opcode, op::DAT);
+    assert_eq!(echo.data, b"hello");
+    assert_eq!(echo.number, opn.number.wrapping_add(1), "numbered after the OPN");
+    assert_eq!(echo.ack, number, "acknowledging our data");
+    assert_eq!(next_from(&mut h, 20), None, "the acknowledgement rode on the echo, so no STS");
+    // A duplicate of our data draws an STS with a receipt, not another echo.
+    h.receive(30, &arriving(&dat));
+    let s = next_from(&mut h, 30).expect("an STS for the duplicate");
+    assert_eq!(s.opcode, op::STS);
+    assert_eq!(u16::from_le_bytes([s.data[0], s.data[1]]), number, "receipting through our packet");
+    // EOF in, EOF back.
+    number += 1;
+    let eof = Packet {
+        opcode: op::EOF,
+        forward: 0,
+        dest: server.0,
+        dest_index: server.1,
+        source: me.0,
+        source_index: me.1,
+        number,
+        ack: echo.number,
+        data: Vec::new(),
+    };
+    h.receive(40, &arriving(&eof));
+    let back = next_from(&mut h, 40).expect("an EOF back");
+    assert_eq!(back.opcode, op::EOF);
+    assert_eq!(back.ack, number);
+    // CLS ends it.
+    let cls = Packet {
+        opcode: op::CLS,
+        forward: 0,
+        dest: server.0,
+        dest_index: server.1,
+        source: me.0,
+        source_index: me.1,
+        number: number + 1,
+        ack: back.number,
+        data: b"done".to_vec(),
+    };
+    h.receive(50, &arriving(&cls));
+    assert_eq!(h.connections(), 0, "closed");
+    // A refusal.
+    h.receive(60, &arriving(&rfc((0o3050, 0o22), 0o3060, 200, "ECHO NO")));
+    let cls = next_from(&mut h, 60).unwrap();
+    assert_eq!((cls.opcode, cls.dest_index), (op::CLS, 0o22));
+    assert_eq!(cls.data, b"Not today");
+    // Unreceipted packets go again after half a second.
+    h.receive(70, &arriving(&rfc((0o3050, 0o23), 0o3060, 300, "ECHO")));
+    let opn2 = next_from(&mut h, 70).unwrap();
+    assert_eq!(next_from(&mut h, 70 + ncp::RETRANSMIT_NS - 1), None);
+    let again = next_from(&mut h, 70 + ncp::RETRANSMIT_NS).expect("retransmitted");
+    assert_eq!((again.opcode, again.number), (op::OPN, opn2.number));
+}
+
+/// **A peer that falls silent is given up after the band's own interval.**
+/// Nothing in the transport freed a connection whose other end had gone:
+/// its unreceipted packets went again every half second for ever, and an
+/// RFC from the same host and index was a duplicate for ever --- which is
+/// what a reboot of the same band sends, its indices seeded from a clock
+/// the simulator repeats. `chsncp.lisp`'s `PROBE-CONN` puts a connection
+/// in `HOST-DOWN-STATE` once nothing has been received on it for
+/// `HOST-DOWN-INTERVAL`, three minutes; the NCP does the same, and a fresh
+/// RFC after that is a fresh connection.
+#[test]
+fn a_silent_peer_is_freed_after_the_host_down_interval() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let me = (0o3050, 0o21);
+    h.receive(0, &arriving(&rfc(me, 0o3060, 100, "ECHO")));
+    let opn = next_from(&mut h, 0).expect("an OPN");
+    assert_eq!((opn.opcode, opn.ack), (op::OPN, 100));
+    assert_eq!(h.connections(), 1);
+    // Nothing comes back. The OPN goes again to the end of the interval.
+    let t = ncp::HOST_DOWN_NS;
+    assert_eq!(next_from(&mut h, t).map(|p| p.opcode), Some(op::OPN), "still trying");
+    assert_eq!(h.connections(), 1, "and still there");
+    // Past it: freed, and quiet.
+    assert_eq!(next_from(&mut h, t + 1), None);
+    assert_eq!(h.connections(), 0, "given up");
+    // The same host and index again is a new connection, not a duplicate.
+    h.receive(t + 10, &arriving(&rfc(me, 0o3060, 700, "ECHO")));
+    let opn = next_from(&mut h, t + 10).expect("an OPN for the new connection");
+    assert_eq!((opn.opcode, opn.ack), (op::OPN, 700));
+    assert_eq!(h.connections(), 1);
+    // A packet from the peer starts the interval again: an STS two minutes
+    // in keeps the connection past the three.
+    let heard = t + 10 + 120_000_000_000;
+    let mut sts = Packet {
+        opcode: op::STS,
+        forward: 0,
+        dest: 0o3060,
+        dest_index: opn.source_index,
+        source: me.0,
+        source_index: me.1,
+        number: 701,
+        ack: opn.number,
+        data: Vec::new(),
+    };
+    sts.data.extend_from_slice(&opn.number.to_le_bytes());
+    sts.data.extend_from_slice(&5u16.to_le_bytes());
+    h.receive(heard, &arriving(&sts));
+    assert_eq!(next_from(&mut h, t + 10 + ncp::HOST_DOWN_NS + 1), None);
+    assert_eq!(h.connections(), 1, "heard from within the interval");
+    assert_eq!(next_from(&mut h, heard + ncp::HOST_DOWN_NS + 1), None);
+    assert_eq!(h.connections(), 0, "and not since");
+}
+
+/// **A refusal fits in a packet.** A CLS quotes its reason, and one that
+/// quotes the RFC's contact name back can run past the 488 bytes a packet
+/// carries (AIM-628 §3.5); the count word is twelve bits, so the frame went
+/// out longer than the interface's buffer. The reason is cut to fit, from
+/// the transport and from a service alike.
+#[test]
+fn a_refusal_fits_in_a_packet() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let name = "Z".repeat(packet::MAX_DATA);
+    h.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, &name)));
+    let cls = next_from(&mut h, 0).expect("a refusal");
+    assert_eq!((cls.opcode, cls.dest_index), (op::CLS, 0o21));
+    assert!(cls.data.len() <= packet::MAX_DATA, "{} bytes of reason", cls.data.len());
+    assert!(cls.to_buffer(0o3050).len() <= 8 + packet::MAX_DATA / 2 + 1, "within the buffer");
+    assert!(text(&cls.data).starts_with("No server for contact name Z"), "and still the reason");
+    h.receive(10, &arriving(&rfc((0o3050, 0o22), 0o3060, 2, "ECHO LONG")));
+    let cls = next_from(&mut h, 10).expect("the service's refusal");
+    assert_eq!((cls.opcode, cls.dest_index), (op::CLS, 0o22));
+    assert!(cls.data.len() <= packet::MAX_DATA, "{} bytes of reason", cls.data.len());
+    assert!(text(&cls.data).starts_with("not today, and at length "));
+}
+
+/// An STS from `me` to the connection at `server`: in its data a receipt
+/// through `receipt` and a window, low byte first, and the same receipt in
+/// its acknowledgement field.
+fn sts(me: (u16, u16), server: (u16, u16), number: u16, receipt: u16, window: u16) -> Packet {
+    let mut data = receipt.to_le_bytes().to_vec();
+    data.extend_from_slice(&window.to_le_bytes());
+    Packet {
+        opcode: op::STS,
+        forward: 0,
+        dest: server.0,
+        dest_index: server.1,
+        source: me.0,
+        source_index: me.1,
+        number,
+        ack: receipt,
+        data,
+    }
+}
+
+/// **A duplicate RFC is discarded**, AIM-628 §4.1: "an NCP receives an RFC
+/// packet, it checks all pending RFC's and all connections which are in
+/// the Open or RFC-received state, to see if the source address and index
+/// match; if so, the RFC is a duplicate and is discarded." What goes again
+/// is this end's OPN, on its own retransmission; there is no second
+/// connection. Another index of the same host is another connection.
+#[test]
+fn a_duplicate_rfc_is_discarded() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let me = (0o3050, 0o21);
+    h.receive(0, &arriving(&rfc(me, 0o3060, 100, "ECHO")));
+    let opn = next_from(&mut h, 0).expect("an OPN");
+    assert_eq!(opn.opcode, op::OPN);
+    h.receive(10, &arriving(&rfc(me, 0o3060, 100, "ECHO")));
+    assert_eq!(next_from(&mut h, 10), None, "nothing for the duplicate");
+    assert_eq!(h.connections(), 1, "and no second connection");
+    h.receive(20, &arriving(&rfc((0o3050, 0o22), 0o3060, 200, "ECHO")));
+    let other = next_from(&mut h, 20).expect("an OPN for the other index");
+    assert_eq!((other.opcode, other.dest_index), (op::OPN, 0o22));
+    assert_ne!(other.source_index, opn.source_index, "at an index of its own");
+    assert_eq!(h.connections(), 2);
+}
+
+/// A service whose session has everything to say at once: three data
+/// packets and an EOF, all offered on its first poll.
+struct Burst;
+struct BurstSession(Vec<Out>);
+impl Service for Burst {
+    fn contact(&self) -> &str {
+        "BURST"
+    }
+    fn request(&mut self, _now: u64, _args: &str, _from: (u16, u16)) -> Response {
+        Response::Accept(Box::new(BurstSession(vec![
+            Out::Data(b"one".to_vec()),
+            Out::Data(b"two".to_vec()),
+            Out::Data(b"three".to_vec()),
+            Out::Eof,
+        ])))
+    }
+}
+impl Session for BurstSession {
+    fn data(&mut self, _now: u64, _op: u8, _bytes: &[u8]) {}
+    fn eof(&mut self, _now: u64) {}
+    fn closed(&mut self, _now: u64, _reason: &str) {}
+    fn poll(&mut self, _now: u64) -> Vec<Out> {
+        std::mem::take(&mut self.0)
+    }
+}
+
+/// **One packet is in flight at a time, whatever window the other end
+/// offers** (muir's `src/chaos/server.rs`, `pump`): the far end is a CADR
+/// whose interface holds one packet, and a burst up to the window was lost
+/// into it. A session with three packets and an EOF to send at once, on a
+/// connection whose far end offers a window of five, gets the first out;
+/// each next one waits for the receipt of the one before, numbered one
+/// past it.
+#[test]
+fn one_packet_is_in_flight_whatever_the_window() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Burst));
+    let me = (0o3050, 0o21);
+    h.receive(0, &arriving(&rfc(me, 0o3060, 100, "BURST")));
+    let opn = next_from(&mut h, 0).expect("an OPN");
+    assert_eq!(opn.opcode, op::OPN);
+    assert_eq!(next_from(&mut h, 0), None, "nothing past the OPN until it is receipted");
+    let server = (0o3060, opn.source_index);
+    h.receive(10, &arriving(&sts(me, server, 101, opn.number, 5)));
+    let mut last = opn.number;
+    let want = [
+        (op::DAT, &b"one"[..]),
+        (op::DAT, &b"two"[..]),
+        (op::DAT, &b"three"[..]),
+        (op::EOF, &b""[..]),
+    ];
+    for (i, want) in want.into_iter().enumerate() {
+        let now = 20 + 10 * i as u64;
+        let p = next_from(&mut h, now).expect("the next packet");
+        assert_eq!((p.opcode, p.data.as_slice()), want);
+        assert_eq!(p.number, last.wrapping_add(1), "numbered one past the last");
+        assert_eq!(next_from(&mut h, now), None, "and nothing else in flight");
+        h.receive(now, &arriving(&sts(me, server, 102 + i as u16, p.number, 5)));
+        last = p.number;
+    }
+    assert_eq!(next_from(&mut h, 100), None, "all sent, all receipted");
+}
+
+/// What has happened to a [`Recorder`], and what it is to send next:
+/// shared between the test and the session the NCP holds.
+#[derive(Clone, Default)]
+struct Log {
+    events: Arc<Mutex<Vec<String>>>,
+    to_send: Arc<Mutex<Vec<Out>>>,
+}
+
+impl Log {
+    fn take(&self) -> Vec<String> {
+        std::mem::take(&mut *self.events.lock().unwrap())
+    }
+    fn send(&self, out: Out) {
+        self.to_send.lock().unwrap().push(out);
+    }
+    fn note(&self, event: String) {
+        self.events.lock().unwrap().push(event);
+    }
+}
+
+/// A session that writes down what happens to it, and sends what the test
+/// gives it to send.
+struct Recorder(Log);
+
+impl Session for Recorder {
+    fn opened(&mut self, _now: u64) {
+        self.0.note("opened".into());
+    }
+    fn data(&mut self, _now: u64, _op: u8, bytes: &[u8]) {
+        self.0.note(format!("data {}", text(bytes)));
+    }
+    fn eof(&mut self, _now: u64) {
+        self.0.note("eof".into());
+    }
+    fn closed(&mut self, _now: u64, reason: &str) {
+        self.0.note(format!("closed {reason}"));
+    }
+    fn poll(&mut self, _now: u64) -> Vec<Out> {
+        std::mem::take(&mut *self.0.to_send.lock().unwrap())
+    }
+}
+
+/// Carries every packet between two NCPs at `now`, as a link between them
+/// would, until neither has anything more to send.
+fn shuttle(a: &mut Ncp, b: &mut Ncp, now: u64) {
+    for _ in 0..100 {
+        let mut quiet = true;
+        while let Some(p) = next_from(a, now) {
+            b.receive(now, &arriving(&p));
+            quiet = false;
+        }
+        while let Some(p) = next_from(b, now) {
+            a.receive(now, &arriving(&p));
+            quiet = false;
+        }
+        if quiet {
+            return;
+        }
+    }
+    panic!("the two NCPs never fell quiet");
+}
+
+/// **A connection is opened from this end**, and the NCP is symmetric:
+/// one NCP's [`Ncp::connect`] and another's service are the two ends of one
+/// stream --- which is how FILE calls a user end's data connection, and how
+/// a test host opens its connections (`DESIGN.md` §11). The RFC carries the
+/// contact name from an index of this end's and goes again until answered;
+/// the OPN, from the far end's own index, opens it, and the session is told;
+/// then data, EOF and CLS go as they do from the other side.
+#[test]
+fn a_connection_is_opened_from_this_end() {
+    let mut far = Ncp::new(0o3060);
+    far.serve(Box::new(Echo));
+    let mut near = Ncp::new(0o3050);
+    let log = Log::default();
+    log.send(Out::Data(b"hello".to_vec()));
+    log.send(Out::Eof);
+    let index = near.connect(0, 0o3060, "ECHO", Box::new(Recorder(log.clone())));
+    assert_ne!(index, 0, "index 0 is never a connection");
+    let rfc = next_from(&mut near, 0).expect("an RFC");
+    assert_eq!(rfc.opcode, op::RFC);
+    assert_eq!((rfc.dest, rfc.dest_index), (0o3060, 0), "to the host, at no index yet");
+    assert_eq!((rfc.source, rfc.source_index), (0o3050, index));
+    assert_eq!(rfc.data, b"ECHO");
+    assert_eq!(next_from(&mut near, 0), None, "and nothing before the OPN");
+    // Lost, it goes again after half a second.
+    assert_eq!(next_from(&mut near, ncp::RETRANSMIT_NS - 1), None);
+    let t = ncp::RETRANSMIT_NS;
+    let again = next_from(&mut near, t).expect("the RFC again");
+    assert_eq!((again.opcode, again.number), (op::RFC, rfc.number));
+    far.receive(t, &arriving(&again));
+    shuttle(&mut near, &mut far, t);
+    assert_eq!(log.take(), ["opened", "data hello", "eof"], "opened, echoed, and ended");
+    assert_eq!((near.connections(), far.connections()), (1, 1));
+    // The OPN answered the RFC, and everything since is receipted.
+    assert_eq!(next_from(&mut near, t + ncp::RETRANSMIT_NS), None, "nothing goes again");
+    assert_eq!(next_from(&mut far, t + ncp::RETRANSMIT_NS), None);
+    // This end closes it.
+    log.send(Out::Close("done".into()));
+    shuttle(&mut near, &mut far, t + ncp::RETRANSMIT_NS);
+    assert_eq!((near.connections(), far.connections()), (0, 0), "closed at both ends");
+}
+
+/// **A connection asked for from this end can be refused, or answered.**
+/// The far end's CLS ends it with the far end's reason; an ANS, the answer
+/// of a simple transaction, ends it too (muir's `src/chaos/server.rs`,
+/// `on_connection`). Either way the session hears why.
+#[test]
+fn a_connection_from_this_end_is_refused_or_answered() {
+    let mut far = Ncp::new(0o3060);
+    far.serve(Box::new(Echo));
+    far.serve(Box::new(Time::fixed(1)));
+    let mut near = Ncp::new(0o3050);
+    let log = Log::default();
+    near.connect(0, 0o3060, "ECHO NO", Box::new(Recorder(log.clone())));
+    shuttle(&mut near, &mut far, 0);
+    assert_eq!(log.take(), ["closed Not today"]);
+    near.connect(10, 0o3060, "TIME", Box::new(Recorder(log.clone())));
+    shuttle(&mut near, &mut far, 10);
+    assert_eq!(log.take(), ["closed answered"]);
+    assert_eq!((near.connections(), far.connections()), (0, 0));
+}
+
+/// **A bad check word does not lose the packet.** What a CHUDP peer puts in
+/// the trailer's third word is unverified (muir's `src/chaos/udp.rs`,
+/// `unwrap`), and UDP carries a checksum of its own, so a mismatch is traced
+/// and the packet handled (`DESIGN.md` §5). muir's server drops it, which is
+/// safe only on muir's modelled cable.
+#[test]
+fn a_bad_check_word_is_still_handled() {
+    let mut h = Ncp::new(0o3060);
+    h.trace = true;
+    h.serve(Box::new(Time::fixed(0x1234_5678)));
+    let mut framed = arriving(&rfc((0o3050, 7), 0o3060, 1, "TIME"));
+    framed.check ^= 1;
+    framed.check_ok = false;
+    h.receive(100, &framed);
+    let ans = next_from(&mut h, 100).expect("answered all the same");
+    assert_eq!((ans.opcode, ans.dest_index), (op::ANS, 7));
+    assert_eq!(ans.data, [0x78, 0x56, 0x34, 0x12]);
+}
+
+/// **Only a packet for this host, or a BRD to 0, is taken**, as muir's
+/// server takes them: another host's packet is not this one's, a packet to
+/// 0 is a broadcast only if it is a BRD, and a buffer that holds no packet
+/// is dropped without a word.
+#[test]
+fn only_this_hosts_packets_and_brds_are_taken() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Time::fixed(1)));
+    h.receive(0, &arriving(&rfc((0o3050, 1), 0o3070, 1, "TIME")));
+    assert_eq!(next_from(&mut h, 0), None, "another host's");
+    h.receive(0, &arriving(&rfc((0o3050, 2), 0, 1, "TIME")));
+    assert_eq!(next_from(&mut h, 0), None, "an RFC to 0 is not a broadcast");
+    h.receive(0, &Framed { buffer: vec![0; 4], source: 0o3050, check: 0, check_ok: false });
+    assert_eq!(next_from(&mut h, 0), None, "no packet at all");
+    let mut brd = rfc((0o3050, 3), 0, 1, "TIME");
+    brd.opcode = op::BRD;
+    h.receive(0, &arriving(&brd));
+    let ans = next_from(&mut h, 0).expect("a BRD to 0 is answered");
+    assert_eq!((ans.opcode, ans.dest, ans.dest_index), (op::ANS, 0o3050, 3));
+}
+
+/// **A packet for no connection draws a LOS**, AIM-628 §4.2: "LOS is sent
+/// in response to situations such as: arrival of a data packet or an STS
+/// for a connection that does not exist". A CLS or a LOS for no connection
+/// is not answered.
+#[test]
+fn a_packet_for_no_connection_draws_a_los() {
+    let mut h = Ncp::new(0o3060);
+    let dat = Packet {
+        opcode: op::DAT,
+        forward: 0,
+        dest: 0o3060,
+        dest_index: 5,
+        source: 0o3050,
+        source_index: 0o21,
+        number: 1,
+        ack: 0,
+        data: b"lost".to_vec(),
+    };
+    h.receive(0, &arriving(&dat));
+    let los = next_from(&mut h, 0).expect("a LOS");
+    assert_eq!(los.opcode, op::LOS);
+    assert_eq!((los.dest, los.dest_index), (0o3050, 0o21), "to the sender's index");
+    assert_eq!(los.source_index, 5, "from the index it named");
+    assert_eq!(los.data, b"No such connection");
+    for opcode in [op::CLS, op::LOS] {
+        h.receive(0, &arriving(&Packet { opcode, ..dat.clone() }));
+        assert_eq!(next_from(&mut h, 0), None, "{} is not answered", ncp::op_name(opcode));
+    }
+}

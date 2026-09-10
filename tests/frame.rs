@@ -16,13 +16,8 @@
 //! repositories (`DESIGN.md` §11), and a correction is made in both.
 
 use muir_ah::chudp;
+use muir_ah::ncp::op;
 use muir_ah::packet::{self, Framed, Packet};
-
-/// The one opcode these tests use: muir's `op::RFC`, in its
-/// `src/chaos/server.rs`, which comes here with the NCP (`DESIGN.md` §3).
-mod op {
-    pub const RFC: u8 = 0o1;
-}
 
 /// A machine, and a peer over UDP, as muir's `tests/chudp.rs` names them
 /// from the machine's side: 3050 is System 100's band, `MIT-LISPM-1` in
