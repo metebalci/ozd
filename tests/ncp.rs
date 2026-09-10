@@ -525,6 +525,39 @@ fn a_connection_from_this_end_is_refused_or_answered() {
     assert_eq!((near.connections(), far.connections()), (0, 0));
 }
 
+/// **A connection asked for from this end hears only the host it asked.**
+/// Until the OPN comes the other end's index is not known, so the OPN, a
+/// refusal's CLS, an ANS or a FWD is taken whatever index it carries ---
+/// but from the host the RFC went to, and from no other. A CLS or an OPN
+/// from a third host at this end's index is no answer and changes nothing,
+/// and the real OPN still opens the connection.
+#[test]
+fn a_connection_from_this_end_hears_only_the_host_it_asked() {
+    let mut far = Ncp::new(0o3060);
+    far.serve(Box::new(Echo));
+    let mut near = Ncp::new(0o3050);
+    let log = Log::default();
+    let index = near.connect(0, 0o3060, "ECHO", Box::new(Recorder(log.clone())));
+    for opcode in [op::CLS, op::OPN] {
+        let stranger = Packet {
+            opcode,
+            forward: 0,
+            dest: 0o3050,
+            dest_index: index,
+            source: 0o3051,
+            source_index: 9,
+            number: 1,
+            ack: 1,
+            data: vec![1, 0, 5, 0],
+        };
+        near.receive(0, &arriving(&stranger));
+    }
+    assert!(log.take().is_empty(), "a third host's packets are no answer");
+    shuttle(&mut near, &mut far, 0);
+    assert!(!log.take().iter().any(|e| e.starts_with("closed")), "and nothing closed it");
+    assert_eq!((near.connections(), far.connections()), (1, 1), "the real OPN opened it");
+}
+
 /// **A bad check word does not lose the packet.** What a CHUDP peer puts in
 /// the trailer's third word is unverified (`chudp::unwrap`), and UDP
 /// carries a checksum of its own, so a mismatch is traced and the packet

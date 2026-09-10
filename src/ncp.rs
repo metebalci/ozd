@@ -491,8 +491,14 @@ impl Ncp {
             }
             return;
         };
+        // A packet for a connection comes from the far end's host and
+        // index. An RFC from this end has no far index yet, so its answer
+        // --- an OPN, a refusal's CLS, an ANS, a FWD --- is taken whatever
+        // index it carries, but only from the host the RFC went to: from
+        // any other it is no answer.
         if c.remote != (p.source, p.source_index)
             && !(c.state == State::RfcSent
+                && p.source == c.remote.0
                 && matches!(p.opcode, op::OPN | op::CLS | op::ANS | op::FWD))
         {
             return;
