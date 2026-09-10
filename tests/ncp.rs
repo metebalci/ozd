@@ -630,7 +630,7 @@ impl Lines {
     fn hook(h: &mut Ncp) -> Lines {
         let lines = Lines::default();
         let kept = lines.clone();
-        h.log = Some(Box::new(move |line: &str| kept.0.lock().unwrap().push(line.to_string())));
+        h.log = Some(Arc::new(move |line: &str| kept.0.lock().unwrap().push(line.to_string())));
         lines
     }
     /// The lines given since the last take.

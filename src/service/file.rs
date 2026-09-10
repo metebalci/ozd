@@ -128,7 +128,7 @@ fn wrong_kind() -> Refusal {
 /// `create-directory`, `create-link` and `change-properties`. Shared by
 /// every control connection's session, so an `Arc`; `Send` and `Sync`, as a
 /// session is `Send`.
-pub type LogHook = Arc<dyn Fn(&str) + Send + Sync>;
+pub type LogHook = crate::log::Hook;
 
 /// The service: the [`Tree`], served as the server's `/`.
 pub struct File {

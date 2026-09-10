@@ -47,7 +47,7 @@ impl Daemon {
         let mut ncp = Ncp::new(config.address);
         // Each connection opened, refused and closed, as a line of the log
         // (`DESIGN.md` §10); `trace` stays the packets.
-        ncp.log = Some(Box::new(|line: &str| log::event(line)));
+        ncp.log = Some(Arc::new(|line: &str| log::event(line)));
         ncp.trace = trace;
         for service in services(config, &meters, &tree) {
             ncp.serve(service);

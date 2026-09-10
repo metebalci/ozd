@@ -205,10 +205,7 @@ pub struct Ncp {
     /// over and over; nor for a BRD let fall. A contact name and a reason
     /// come off the network, so a control character in either is written as
     /// its escape, and a line stays one line. Unset, nothing is formatted.
-    // Spelled out, since it is the whole of the hook's contract; clippy
-    // would have a `type` for it.
-    #[allow(clippy::type_complexity)]
-    pub log: Option<Box<dyn Fn(&str) + Send>>,
+    pub log: Option<crate::log::Hook>,
 }
 
 impl Ncp {
