@@ -21,6 +21,7 @@ use muir_ah::log;
 use muir_ah::roots::Tree;
 use std::path::PathBuf;
 use std::process::exit;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const USAGE: &str = "usage: muir-ah [--trace] [--check] <config>";
@@ -77,7 +78,8 @@ fn main() {
         }
     }
 
-    let mut daemon = Daemon::new(&config, trace)
+    let tree = Arc::new(tree);
+    let mut daemon = Daemon::new(&config, tree, trace)
         .unwrap_or_else(|e| fail(&format!("listen {}: {e}", config.listen)));
     log::event(format_args!(
         "muir-ah {}: {} at {:o}, listening at {}",

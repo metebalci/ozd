@@ -9,9 +9,10 @@ simulator, whose Chaosnet services it takes over, so that several
 machines can share one host --- as MIT's did, one associated machine for
 many Lisp Machines.
 
-**Under construction.** STATUS, TIME, UPTIME, HOSTAB and NAME are
-served, and the hub passes packets between the machines; FILE is being
-written. The design is `DESIGN.md`, and every protocol a Lisp Machine
+**Under construction.** STATUS, TIME, UPTIME, FILE, HOSTAB and NAME
+are served, and the hub passes packets between the machines; none of it
+has yet met a real band, which is what the acceptance test below is
+for. The design is `DESIGN.md`, and every protocol a Lisp Machine
 speaks is recorded in `PROTOCOLS.md`, with where each fact was read.
 
 ## Build
@@ -42,6 +43,30 @@ A second machine takes 3051 on 42044, and so on. Until muir has a
 default peer, each run also names every other machine's address at
 muir-ah's endpoint, so that their packets to each other come through it
 (`DESIGN.md` §9).
+
+## Trying it with muir
+
+The acceptance test is by hand (`DESIGN.md` §11). With the System 100
+release in muir's `vendor/`, and `examples/system-100.conf` edited so
+that its `tree` mount is that release's `sys` directory and its base an
+empty directory muir-ah may write:
+
+    target/release/muir-ah examples/system-100.conf
+
+and beside it two muir runs, each with a pack of its own:
+
+    muir --disk-pack /path/to/pack-1.img --chaos-address 3050 \
+         --chaos-udp 42043 --chaos-udp-peer 3060@127.0.0.1:42042 \
+         --chaos-udp-peer 3051@127.0.0.1:42042
+    muir --disk-pack /path/to/pack-2.img --chaos-address 3051 \
+         --chaos-udp 42044 --chaos-udp-peer 3060@127.0.0.1:42042 \
+         --chaos-udp-peer 3050@127.0.0.1:42042
+
+Each should boot knowing the date, read its sources from `/tree/` and
+write in the base, print its uptime right with `(uptime)`, and show
+muir-ah and the other machine with `(hostat)`. The second boots as a
+machine its band has no name for, since System 100's table names only
+3050 (`DESIGN.md` §9).
 
 ## As a service
 

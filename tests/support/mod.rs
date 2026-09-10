@@ -27,6 +27,7 @@ use muir_ah::daemon::Daemon;
 use muir_ah::lispm;
 use muir_ah::ncp::{Ncp, Out, Session, op};
 use muir_ah::packet::{self, Framed, Packet};
+use muir_ah::roots::Tree;
 use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
@@ -128,10 +129,15 @@ pub fn site(more: &str) -> String {
     )
 }
 
+/// The site's roots, checked as the startup checks them (`DESIGN.md` §6).
+pub fn tree(config: &Config) -> Arc<Tree> {
+    Arc::new(Tree::new(config.roots.clone()).expect("the site's roots"))
+}
+
 /// A daemon for the site `text` gives, bound and not yet turned.
 pub fn daemon(text: &str) -> Daemon {
     let config = Config::parse(text).expect("the site's config");
-    Daemon::new(&config, false).expect("a daemon")
+    Daemon::new(&config, tree(&config), false).expect("a daemon")
 }
 
 /// The daemon's meters that count anything, in STATUS's order: every

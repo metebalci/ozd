@@ -398,3 +398,17 @@ fn a_connection_is_logged() {
     }
     panic!("no line for the connection: {seen:?}");
 }
+
+/// **FILE is served, from the roots the startup checked** (`DESIGN.md`
+/// §6): opened through the daemon as a band opens it, it answers OPN and
+/// waits for a command. What it serves is `tests/file.rs`'s business.
+#[test]
+fn file_is_served_from_the_roots() {
+    let mut d = daemon(&site(""));
+    let mut lm1 = TestHost::new(LM1, d.at());
+    let file = Recorder::default();
+    lm1.ncp.connect(0, OZ, "FILE", Box::new(file.clone()));
+    settle(&mut d, &mut [&mut lm1], 0);
+    let events = file.events();
+    assert_eq!(events.first().map(String::as_str), Some("opened"), "FILE opens: {events:?}");
+}

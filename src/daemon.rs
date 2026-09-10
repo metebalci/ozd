@@ -13,6 +13,8 @@ use crate::chudp::Link;
 use crate::config::Config;
 use crate::log;
 use crate::ncp::{Ncp, Service};
+use crate::roots::Tree;
+use crate::service::file::File;
 use crate::service::hostab::Hostab;
 use crate::service::name::Name;
 use crate::service::status::{Meters, Status};
@@ -36,8 +38,9 @@ impl Daemon {
     /// `config.listen`, its NCP at `config.address`, and what it serves.
     /// `trace` is `--trace`, for the link and the NCP both (`DESIGN.md`
     /// §10). A socket that cannot be bound is the error, and then nothing
-    /// is served.
-    pub fn new(config: &Config, trace: bool) -> io::Result<Daemon> {
+    /// is served. `tree` is the roots as the startup checked them, which FILE
+    /// serves (`DESIGN.md` §6).
+    pub fn new(config: &Config, tree: Arc<Tree>, trace: bool) -> io::Result<Daemon> {
         let meters = Arc::new(Meters::default());
         let mut link = Link::bind(config, meters.clone())?;
         link.trace = trace;
@@ -46,7 +49,7 @@ impl Daemon {
         // (`DESIGN.md` §10); `trace` stays the packets.
         ncp.log = Some(Box::new(|line: &str| log::event(line)));
         ncp.trace = trace;
-        for service in services(config, &meters) {
+        for service in services(config, &meters, &tree) {
             ncp.serve(service);
         }
         Ok(Daemon { link, ncp, meters })
@@ -116,11 +119,10 @@ impl Daemon {
 ///   ([`Daemon::turn`]);
 /// - HOSTAB, from the `name` line --- its `system=` too, if it has one ---
 ///   and the `host` lines;
-/// - NAME, saying that nobody is logged in.
-///
-/// FILE comes here with `src/roots.rs`, given the roots the startup checks
-/// canonicalised (`DESIGN.md` §6, §12 step 6).
-fn services(config: &Config, meters: &Arc<Meters>) -> Vec<Box<dyn Service>> {
+/// - NAME, saying that nobody is logged in;
+/// - FILE, from the roots the startup checked (`DESIGN.md` §6), each of
+///   its changes to a root a line of the log (§10).
+fn services(config: &Config, meters: &Arc<Meters>, tree: &Arc<Tree>) -> Vec<Box<dyn Service>> {
     vec![
         Box::new(Status::new(&config.names[0], (config.address >> 8) as u8, meters.clone())),
         Box::new(Time::new()),
@@ -132,5 +134,6 @@ fn services(config: &Config, meters: &Arc<Meters>) -> Vec<Box<dyn Service>> {
             &config.hosts,
         )),
         Box::new(Name::new()),
+        Box::new(File::new(tree.clone(), Some(Arc::new(|line: &str| log::event(line))))),
     ]
 }
