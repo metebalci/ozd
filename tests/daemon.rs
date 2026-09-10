@@ -221,8 +221,17 @@ fn the_daemon_runs_from_its_command_line_and_answers_status() {
         .expect("it starts");
     let stderr = child.stderr.take().expect("its stderr");
     let _running = Running(child);
+    // The daemon may log its startup first --- a warning, a temporary
+    // removed --- and says where it listens once it has bound.
+    let mut reader = BufReader::new(stderr);
     let mut line = String::new();
-    BufReader::new(stderr).read_line(&mut line).expect("a line");
+    loop {
+        line.clear();
+        assert!(reader.read_line(&mut line).expect("a line") > 0, "it ended before listening");
+        if support::running_as_root() || line.contains("listening at ") {
+            break;
+        }
+    }
     if support::running_as_root() {
         assert!(line.contains("root"), "as root: {line}");
         return;
@@ -374,7 +383,13 @@ fn a_connection_is_logged() {
             }
         }
     });
-    let first = heard.recv_timeout(Duration::from_secs(5)).expect("a first line");
+    // Its startup may be logged first; the line that matters says where.
+    let first = loop {
+        let line = heard.recv_timeout(Duration::from_secs(5)).expect("a line of its startup");
+        if support::running_as_root() || line.contains("listening at ") {
+            break line;
+        }
+    };
     if support::running_as_root() {
         assert!(first.contains("root"), "as root: {first}");
         return;

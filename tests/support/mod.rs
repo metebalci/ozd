@@ -113,20 +113,26 @@ pub fn scratch() -> &'static Path {
     SCRATCH.get_or_init(|| {
         let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("muir-ah-test-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("root")).expect("a scratch directory");
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
         dir
     })
 }
 
 /// A site's config text: this host at [`OZ`] as `MIT-OZ`, listening on the
 /// loopback at a port the system picks, its base root an empty directory
-/// in [`scratch`] --- which nothing reads until FILE is written
-/// (`DESIGN.md` §6) --- and then the lines in `more`.
+/// of its own in [`scratch`], and then the lines in `more`.
+///
+/// **A root of its own, each time.** The design has one daemon to a root
+/// (`DESIGN.md` §6), and a daemon's startup treats a temporary in its root
+/// as its own to remove --- its writability probe is named as one. Daemons
+/// a test run starts side by side on one root raced: one's cleanup took
+/// another's probe, and logged it as a temporary it could not remove.
 pub fn site(more: &str) -> String {
-    format!(
-        "address {OZ:o}\nname MIT-OZ OZ\nlisten 127.0.0.1:0\nroot {}\n{more}",
-        scratch().join("root").display()
-    )
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let root = scratch().join(format!("root-{n}"));
+    std::fs::create_dir_all(&root).expect("a root of its own");
+    format!("address {OZ:o}\nname MIT-OZ OZ\nlisten 127.0.0.1:0\nroot {}\n{more}", root.display())
 }
 
 /// The site's roots, checked as the startup checks them (`DESIGN.md` §6).
