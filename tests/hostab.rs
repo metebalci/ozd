@@ -27,7 +27,7 @@ use ozd::service::hostab::Hostab;
 use std::sync::{Arc, Mutex};
 
 /// The site the tests ask about: System 100's own names for its file host
-/// and its machine (`examples/system-100.ozdrc`), a second machine, and a
+/// and its machine (`sys/site/hosts.text`), a second machine, and a
 /// host whose line gives no system type.
 const SITE: &str = "
 --address 3060

@@ -398,22 +398,15 @@ its file and line when it came from one (`src/config.rs`):
   the value as it comes, and a type it has no flavor for gives the host
   its default flavor (`sys/network/host.lisp:279`), so `lispm` would
   quietly name the wrong one. System 100's own table gives `MIT-OZ` as
-  `UNIX` (`sys/site/hosts.text:4`), and its example says so.
+  `UNIX` (`sys/site/hosts.text:4`).
 - **Roots**: at least one, at most one base, no mount's name twice, and a
   mount's name one lower-case directory name, since a band asks in lower
   case and names match exactly (§6); paths absolute.
 - **Endpoints**: IP literals, as `--listen` takes them; no names to
   resolve at startup.
 
-**Two examples ship**, `examples/system-100.ozdrc` and
-`examples/system-304.ozdrc`, files of flags with each band's own
-numbers. System 100's file host is `MIT-OZ` at 3060
-(`sys/site/hosts.text`), and its band asks for `/tree/...`
-(`sys/site/sys.translations`). System 304's is `OZ`, `AMS-BRIDGE-1`, at
-4403, as its band's listener gives it, and its band asks for `/sys/...`
-(the site files in its pack). Each mounts that release's sources
-read-only --- `system-100-0/sys` and `system-304-0/sys-304-0` --- over a
-base for homes.
+**No example files ship.** The flags are few, and the README configures
+a System 100 site with them on one command line.
 
 ## 9. A site of several machines
 
@@ -504,8 +497,8 @@ a test host's side. All are turned by the test with one clock it sets.
    machine's own user end.
 
 **The acceptance test** is by hand, and written in the README: two
-machines run against ozd, with `examples/system-100.ozdrc`, boot, know
-the date, read their sources from the read-only mount and write in the base,
+machines run against ozd, configured for System 100 as the README has
+it, boot, know the date, read their sources from the read-only mount and write in the base,
 print the right `(uptime)`; `(hostat)` on each shows ozd and the
 other.
 
@@ -527,6 +520,6 @@ other.
    containment, the scripted client and two clients pass; then a band
    reads and writes its files.
 7. **The daemon's edges**: startup checks and warnings, logging,
-   `--check`, the units, the two example configs → verify: a test for
-   each refusal; the README's acceptance steps, by hand.
+   `--check`, the units → verify: a test for each refusal; the README's
+   acceptance steps, by hand.
 8. **HOSTAB**, then **NAME**, each test first.

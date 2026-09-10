@@ -39,7 +39,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 /// This host in the tests: System 100's file and time host, `MIT-OZ` at
-/// 3060 (`examples/system-100.ozdrc`).
+/// 3060 (`sys/site/hosts.text`).
 pub const OZ: u16 = 0o3060;
 
 /// Machines on its subnet: System 100's band, `MIT-LISPM-1` at 3050, and

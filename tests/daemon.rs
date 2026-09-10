@@ -175,9 +175,9 @@ fn a_command_line_that_is_not_flags_is_refused_with_the_usage() {
         assert!(said(&out).contains(USAGE), "{args:?}: {}", said(&out));
         assert!(out.stdout.is_empty(), "{args:?}");
     }
-    let out = ozd().arg("examples/system-100.conf").output().expect("it runs");
+    let out = ozd().arg("site.conf").output().expect("it runs");
     let told = said(&out);
-    for words in ["examples/system-100.conf", "the config is flags", ".ozdrc", "-c <file>"] {
+    for words in ["site.conf", "the config is flags", ".ozdrc", "-c <file>"] {
         assert!(told.contains(words), "{words} in {told}");
     }
 }

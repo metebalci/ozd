@@ -5,8 +5,8 @@
 //! and each refusal with where it was given; the file of flags,
 //! `.ozdrc` --- its comments, a value that is the rest of its line,
 //! the command line having the last word, and a file that would name
-//! another; which file a run reads, run as the binary; and the two
-//! example files that ship (`DESIGN.md` §11, test 2).
+//! another; and which file a run reads, run as the binary (`DESIGN.md`
+//! §11, test 2).
 
 mod support;
 
@@ -891,57 +891,4 @@ fn the_command_line_has_the_last_word() {
     let out = ozd().arg("--check").arg("-c").arg(&file).arg("--root").arg(&root).output();
     let out = out.expect("it runs");
     assert!(out.status.success(), "{}", said(&out));
-}
-
-// --- the examples ------------------------------------------------------------
-
-/// An example file of flags from the crate's `examples/`, read as a run
-/// with nothing on its command line reads it.
-fn example(name: &str) -> Config {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples").join(name);
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    Config::parse(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
-}
-
-/// **System 100's example is a site**: this host `MIT-OZ` at 3060, of
-/// system type `UNIX` as the band's own table has it
-/// (`sys/site/hosts.text`), the band's `MIT-LISPM-1` at 3050 in the host
-/// table, the homes writable and the release's sources mounted read-only
-/// at `/tree`, where the band asks for them. On the loopback, at 42042.
-#[test]
-fn the_system_100_example_is_a_site() {
-    let config = example("system-100.ozdrc");
-    assert_eq!(config.address, 0o3060);
-    assert_eq!(config.names, ["MIT-OZ", "OZ"]);
-    assert_eq!(config.system.as_deref(), Some("UNIX"));
-    assert_eq!(config.listen, at("127.0.0.1:42042"));
-    assert_eq!(
-        config.roots,
-        [root(None, "/srv/lispm", false), root(Some("tree"), "/path/to/system-100-0/sys", true),]
-    );
-    let lm1 = host(0o3050, &["MIT-LISPM-1", "CADR-1", "CADR1", "LM1"], Some("LISPM"));
-    assert_eq!(config.hosts, [lm1]);
-    assert!(config.peers.is_empty(), "every endpoint is learned");
-}
-
-/// **System 304's example is a site**: this host `OZ` at 4403, also
-/// `AMS-BRIDGE-1`, of no system type, since the host table in the sources
-/// is MIT's and not this band's; the band's `AMS-LISPM-1` at 4401, and the
-/// sources mounted read-only at `/sys`.
-#[test]
-fn the_system_304_example_is_a_site() {
-    let config = example("system-304.ozdrc");
-    assert_eq!(config.address, 0o4403);
-    assert_eq!(config.names, ["OZ", "AMS-BRIDGE-1"]);
-    assert_eq!(config.system, None);
-    assert_eq!(config.listen, at("127.0.0.1:42042"));
-    assert_eq!(
-        config.roots,
-        [
-            root(None, "/srv/lispm", false),
-            root(Some("sys"), "/path/to/system-304-0/sys-304-0", true),
-        ]
-    );
-    assert_eq!(config.hosts, [host(0o4401, &["AMS-LISPM-1"], Some("LISPM"))]);
-    assert!(config.peers.is_empty(), "every endpoint is learned");
 }

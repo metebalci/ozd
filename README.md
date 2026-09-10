@@ -25,22 +25,37 @@ dependencies: nothing else is downloaded.
 
 ## Run
 
-    target/release/ozd -c examples/system-100.ozdrc
+For a System 100 band, whose host table has its machine as MIT-LISPM-1
+at 3050 and its file and time host as MIT-OZ at 3060
+(`sys/site/hosts.text`):
 
-Everything is a flag (`DESIGN.md` §8): `--address`,
-`--name`, `--listen`, `--root`, `--host` and `--peer`. Their defaults
-come from a file of flags --- the one `-c` names, else the one
-`OZD_RC` names, else `.ozdrc` in the directory it is run from or
-in the home directory --- and the command line has the last word.
-`--check` reads them and checks the roots, changing nothing, then exits;
-`--trace` prints every packet; `--help` says what each flag is. It will
-not run as root, and it logs to stderr, one line an event.
+    target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
+        --root /srv/lispm --root tree=/path/to/system-100-0/sys,ro \
+        --host 3050,MIT-LISPM-1,CADR-1,CADR1,LM1,system=LISPM
 
-The two examples, `examples/system-100.ozdrc` and
-`examples/system-304.ozdrc`, are for System 100 and System 304, with
-each band's own numbers; edit their paths before using one. Without
-`--listen` it answers on `127.0.0.1:42042`, which is enough for machines
-on the same host. Each names ozd as its CHUDP peer; with
+- `--address` and `--name` are this host as the band's table has it: its
+  address, its names with the official first, and its system type.
+- `--root /srv/lispm` is the base, the homes, which ozd writes; `tree=`
+  mounts the release's sources at `/tree`, read-only, where the band asks
+  for them (`sys/site/sys.translations`). Each must be a directory when
+  ozd starts.
+- `--host` is a machine HOSTAB names for a band whose own table lacks
+  it: its address, its names, its system type. Another machine takes an
+  address, and a `--host`, of its own.
+- `--listen` is where it answers: without it `127.0.0.1:42042`, this
+  host alone; an address on the segment, or `0.0.0.0`, for others.
+- `--peer <addr>@<ip>` fixes an endpoint that must not move, cbridge's
+  for one; every other is learned from the packets a host sends.
+
+The same flags, one a line, make a file of flags --- the one `-c` names,
+else the one `OZD_RC` names, else `.ozdrc` in the directory it is run
+from or in the home directory --- and the command line has the last
+word (`DESIGN.md` §8). `--check` reads them and checks the roots,
+changing nothing, then exits; `--trace` prints every packet; `--help`
+says what each flag is. It will not run as root, and it logs to stderr,
+one line an event.
+
+A machine names ozd as its CHUDP peer; with
 [muir](https://github.com/metebalci/muir), a CADR simulator, for
 example:
 
@@ -55,15 +70,10 @@ other come through it (`DESIGN.md` §9).
 
 ## Trying it
 
-The acceptance test is by hand (`DESIGN.md` §11). With the System 100
-release unpacked somewhere, and `examples/system-100.ozdrc` edited so
-that its `tree` mount is that release's `sys` directory and its base an
-empty directory ozd may write:
-
-    target/release/ozd -c examples/system-100.ozdrc
-
-and beside it two machines, each with a pack of its own --- two muir
-runs, say:
+The acceptance test is by hand (`DESIGN.md` §11): ozd run as above, its
+`tree` mount the System 100 release's `sys` directory and its base an
+empty directory it may write, and beside it two machines, each with a
+pack of its own --- two muir runs, say:
 
     muir --disk-pack /path/to/pack-1.img --chaos-address 3050 \
          --chaos-udp 42043 --chaos-udp-peer 3060@127.0.0.1:42042 \

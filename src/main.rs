@@ -126,7 +126,6 @@ A file of flags is a flag a line and, after a blank, its value: the rest of
 the line, blanks and # and all. A blank line, or one that begins with #, is
 a comment. A flag the command line gives leaves that flag's lines out of the
 file. --trace may be in a file; --check, --help and --config may not.
-examples/ has System 100's and System 304's.
 
 It will not run as root. It logs to stderr, a line an event, stamped in
 UTC. What is not flags, on the command line or in the file, exits 2, a
