@@ -190,7 +190,7 @@ which the user end ignores (`io/stream.lisp:552`, `:554`;
 `chuse.lisp:963`). So every line of an answer ends in `215`, the last
 included. Each needs its space (`chuse.lisp:973`); the attribute's name
 is interned as sent, so it is upper case (`:974`), and so is a
-`SYSTEM-TYPE`'s value, to name a flavour (`:983`); `NAME` comes first,
+`SYSTEM-TYPE`'s value, to name a flavor (`:983`); `NAME` comes first,
 the official name first of all, since the first becomes the host's name
 (`:978`); and `CHAOS` is octal (`chsaux.lisp:1617`).
 

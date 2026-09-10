@@ -50,8 +50,12 @@
 //! `LOGOUT` in it is a login --- and Converse asks it of the hosts in
 //! `*CONVERSE-EXTRA-HOSTS-TO-CHECK*` (`sys/io1/conver.lisp:1235`), which is
 //! empty unless a site fills it (`:49`). This line is not shaped to any of
-//! those readings, and by most of them would be taken for a login.
-//! **Unverified** what system type a band's table gives this host.
+//! those readings, and by several --- TOPS-20's among them --- would be
+//! taken for a login. System 100's table gives this host as `UNIX`
+//! (`sys/site/hosts.text:4`), and the Unix reading takes a login only from
+//! text with "On since" in it (`PARSE-UNIX-FINGER`, `chsaux.lisp:538`),
+//! which this line has not. System 304's sources hold no table for this
+//! host.
 
 use crate::lispm::{self, NEWLINE};
 use crate::ncp::{Out, Response, Service, Session};
