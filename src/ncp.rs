@@ -284,7 +284,11 @@ impl Ncp {
 
     /// A request for connection, from `from`, with the contact name and
     /// arguments in `data`.
-    fn rfc(&mut self, now: u64, p: &Packet) {
+    ///
+    /// `cls_on_error` is the machine's own `CLS-ON-ERROR-P`: an RFC for a
+    /// contact no service takes is refused with a CLS, and a BRD is not
+    /// (`sys/network/chaos/chsncp.lisp:1588`).
+    fn rfc(&mut self, now: u64, p: &Packet, cls_on_error: bool) {
         let from = (p.source, p.source_index);
         // A connection whose peer has fallen silent is given up first, so
         // that its (source, index) does not shadow this RFC: a reboot of
@@ -304,7 +308,9 @@ impl Ncp {
             None => (text.clone(), String::new()),
         };
         let Some(k) = self.services.iter().position(|s| s.contact() == name) else {
-            self.refuse(from, p.number, format!("No server for contact name {name}"));
+            if cls_on_error {
+                self.refuse(from, p.number, format!("No server for contact name {name}"));
+            }
             return;
         };
         match self.services[k].request(now, &args, from) {
@@ -647,7 +653,7 @@ impl Ncp {
             );
         }
         match p.opcode {
-            op::RFC => self.rfc(now, p),
+            op::RFC => self.rfc(now, p, true),
             op::BRD => {
                 // §4.5: "a subnet bit map followed by a contact name and
                 // possible arguments"; the acknowledgement field is the
@@ -656,7 +662,10 @@ impl Ncp {
                 let mut q = p.clone();
                 q.opcode = op::RFC;
                 q.data = p.data[skip..].to_vec();
-                self.rfc(now, &q);
+                // And a BRD no service takes is let fall, not refused: the
+                // machine's own `RECEIVE-BRD` hands it on with `CLS-ON-ERROR-P`
+                // nil (`sys/network/chaos/chsncp.lisp:1613`, `:1588`).
+                self.rfc(now, &q, false);
             }
             op::RUT | op::MNT => {}
             _ => self.on_connection(now, p.dest_index, p),

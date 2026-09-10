@@ -81,7 +81,7 @@ optimisation.
 | `address.rs` | `chaos/mod.rs`, `parse_address` | nothing |
 | `packet.rs` | `chaos/packet.rs`, 246 lines | keeps `Packet`, `MAX_DATA`, `check_word`, `Framed`; leaves `frame`, `unframe`, `unframe_any` and `Received`, which are cable bits --- about 150 lines come |
 | `chudp.rs` | `chaos/udp.rs`, 495 lines | `wrap`, `unwrap`, `Order`, `PACKET_ORDER`, `TRAILER_ORDER` and the constants verbatim, with their unverified marks; `Link` and `Chudp` replaced (§5), the learning kept, the hub new |
-| `ncp.rs` | `chaos/server.rs`, 730 lines | `Server` is `Ncp`; `impl Node` becomes inherent `receive(now, &Framed)` and `transmit(now)`, and `aborted` goes; `receive` stops dropping on the trailer's check word (§5). `op`, `Response`, `Service`, `Out`, `Session`, `connect`, one packet in flight, `RETRANSMIT_NS`, `HOST_DOWN_NS`, the trace: verbatim |
+| `ncp.rs` | `chaos/server.rs`, 730 lines | `Server` is `Ncp`; `impl Node` becomes inherent `receive(now, &Framed)` and `transmit(now)`, and `aborted` goes; `receive` stops dropping on the trailer's check word (§5). `op`, `Response`, `Service`, `Out`, `Session`, `connect`, one packet in flight, `RETRANSMIT_NS`, `HOST_DOWN_NS`, the trace: verbatim, except that a BRD for a contact no service takes is let fall, as the machine's own NCP does (`chsncp.lisp:1613`) |
 | `lispm.rs` | `chaos/file.rs`: `NEWLINE`, `to_lispm`, `from_lispm`, `lispm_text` | in a module of its own, since HOSTAB and NAME speak the character set too |
 | `roots.rs` | `chaos/file.rs`: `resolve`, `resolve_for_writing` | rewritten (§6), apart from FILE, so that the containment tests come first and alone |
 | `service/status.rs` | `chaos/status.rs`, 118 lines | real meters (§7) |
@@ -517,6 +517,10 @@ Nothing here changes muir; these are notes for it, done there if at all.
    plain string, so on a failure the braces print as they are. The check
    itself holds. The copy in `tests/frame.rs` keeps it, so the two stay
    the same until muir changes.
-4. **CHUDP against anything but muir.** muir and muir-ah share one
+4. **muir's NCP refuses a broadcast it does not serve**, with a CLS,
+   where the machine's own lets it fall silent (`RECEIVE-BRD`,
+   `chsncp.lisp:1613`, with `CLS-ON-ERROR-P` nil, `:1588`). Here it is
+   silent (`tests/ncp.rs`); a hub meets every broadcast on the subnet.
+5. **CHUDP against anything but muir.** muir and muir-ah share one
    reading of the frame's byte order, marked unverified in both; the
    first run against `cbridge` or `klh10` settles it for both.

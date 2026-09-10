@@ -594,3 +594,26 @@ fn a_packet_for_no_connection_draws_a_los() {
         assert_eq!(next_from(&mut h, 0), None, "{} is not answered", ncp::op_name(opcode));
     }
 }
+
+/// **A broadcast for a contact nobody here serves draws nothing.** The
+/// machine's own NCP makes a BRD an RFC and hands it on with no CLS on
+/// error: `RECEIVE-BRD` calls `(HANDLE-RFC-PKT PKT NIL)`, and
+/// `HANDLE-RFC-PKT` sends "No server for this contact name" only "if
+/// CLS-ON-ERROR-P is T" (`sys/network/chaos/chsncp.lisp:1588`, `:1613`).
+/// A hub hears every machine's broadcasts; a refusal to each would go back
+/// to every one of them. An RFC for the same contact is still refused.
+#[test]
+fn a_broadcast_nobody_serves_draws_nothing() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Time::fixed(0)));
+    let mut brd = rfc((0o3050, 11), 0, 4, "NOSUCH");
+    brd.opcode = op::BRD;
+    brd.ack = 4;
+    brd.data = [vec![0xff, 0xff, 0xff, 0xff], b"NOSUCH".to_vec()].concat();
+    h.receive(100, &arriving(&brd));
+    assert_eq!(next_from(&mut h, 100), None, "no refusal to a broadcast");
+    assert_eq!(h.connections(), 0);
+    h.receive(200, &arriving(&rfc((0o3050, 12), 0o3060, 5, "NOSUCH")));
+    let cls = next_from(&mut h, 200).map(|p| p.opcode);
+    assert_eq!(cls, Some(op::CLS), "an RFC is still refused");
+}
