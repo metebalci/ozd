@@ -19,15 +19,15 @@
 //! `:LINE-IN`, which ends a line at `#/NEWLINE` (`sys/io/stream.lisp:535`);
 //! both are 0o215 (`sys/io/rddefs.lisp:172`), which is [`NEWLINE`].
 
-use muir_ah::config::Config;
-use muir_ah::lispm::{self, NEWLINE};
-use muir_ah::ncp::{Ncp, Out, Session};
-use muir_ah::packet::{self, Framed, MAX_DATA, Packet};
-use muir_ah::service::hostab::Hostab;
+use ozd::config::Config;
+use ozd::lispm::{self, NEWLINE};
+use ozd::ncp::{Ncp, Out, Session};
+use ozd::packet::{self, Framed, MAX_DATA, Packet};
+use ozd::service::hostab::Hostab;
 use std::sync::{Arc, Mutex};
 
 /// The site the tests ask about: System 100's own names for its file host
-/// and its machine (`examples/system-100.muir-ahrc`), a second machine, and a
+/// and its machine (`examples/system-100.ozdrc`), a second machine, and a
 /// host whose line gives no system type.
 const SITE: &str = "
 --address 3060

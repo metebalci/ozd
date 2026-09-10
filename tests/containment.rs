@@ -4,7 +4,7 @@
 //! Containment: the tree FILE serves, and nothing outside it (`CLAUDE.md`
 //! §3 and §10, item 4; `DESIGN.md` §6 and §11, item 6).
 //!
-//! Written before FILE comes across, against [`muir_ah::roots`] alone:
+//! Written before FILE comes across, against [`ozd::roots`] alone:
 //! every pathname a client can send is resolved here as FILE will resolve
 //! it, and every refusal is asserted twice --- its code, and that nothing
 //! on disk changed while it was tried. Each test's world is one directory
@@ -23,7 +23,7 @@
 //! *between two commands*, which the next resolution sees
 //! (`a_symlink_made_later_pointing_outside_is_refused`).
 
-use muir_ah::roots::{Place, Resolved, Root, Tree, is_temporary, temporary_name};
+use ozd::roots::{Place, Resolved, Root, Tree, is_temporary, temporary_name};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -39,7 +39,7 @@ const LOOKALIKES: [&str; 16] = [
     "#muir--1#",
     "#muir-1576-#",
     "#muir-#",
-    "#muir-ah-1-2#",
+    "#ozd-1-2#",
     "#MUIR-1576-1#",
     "x#muir-1-2#",
     "#muir-1-2#.text",
@@ -61,7 +61,7 @@ struct Scratch {
 impl Scratch {
     fn new(name: &str) -> Scratch {
         let dir =
-            std::env::temp_dir().join(format!("muir-ah-containment-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("ozd-containment-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         Scratch { dir: std::fs::canonicalize(&dir).unwrap() }
@@ -982,7 +982,7 @@ fn a_temporary_is_named_as_muirs_are() {
 
 /// An entry's resolution for writing, or the test fails.
 #[track_caller]
-fn entry(t: &Tree, pathname: &str) -> muir_ah::roots::Entry {
+fn entry(t: &Tree, pathname: &str) -> ozd::roots::Entry {
     t.resolve_entry_for_writing(pathname).unwrap_or_else(|e| panic!("{pathname:?}: {e:?}"))
 }
 

@@ -2,7 +2,7 @@
 
 Every contact name a Lisp Machine serves or calls, as the vendored
 System 100 and System 304 sources have them: what each one is, what goes
-over the wire, and where that was read. What muir-ah does about each is
+over the wire, and where that was read. What ozd does about each is
 `CLAUDE.md` §4; this file records only what they are, and grows as each
 is read more closely.
 
@@ -33,7 +33,7 @@ left out.
 ✓ read in the source · **no** absent from both releases' `SERVER-ALIST`
 · blank: not read
 
-| contact | kind | the machine serves | the machine calls | muir-ah (`CLAUDE.md` §4) |
+| contact | kind | the machine serves | the machine calls | ozd (`CLAUDE.md` §4) |
 |---|---|---|---|---|
 | `STATUS` | RFC/ANS | ✓ | ✓ | stage 1 |
 | `TIME` | RFC/ANS | ✓ | ✓ | stage 1 |
@@ -120,7 +120,7 @@ documentation says "an integral number of 60ths of a second".
 
 muir's `time.rs` followed the manual and answers seconds, so a band
 asking muir's server prints a sixtieth of the real uptime; no muir test
-pins the unit. muir-ah answers sixtieths. At that unit, four bytes wrap
+pins the unit. ozd answers sixtieths. At that unit, four bytes wrap
 after about 828 days.
 
 ### FILE
@@ -180,7 +180,7 @@ match and would be parsed as a Chaosnet address. Unverified against a
 running band; until it is, an answer from here leaves `MACHINE-TYPE`
 out.
 
-**Lines, as that user end sends and reads them** (read for muir-ah's
+**Lines, as that user end sends and reads them** (read for ozd's
 HOSTAB). The stream carries the Lisp Machine character set untranslated,
 `OPEN-STREAM`'s default (`chuse.lisp:782`, `:787`). The user end sends
 each name with `:LINE-OUT`, which ends it with `#\CR`, `215` octal
@@ -237,7 +237,7 @@ whether a Lisp Machine "has telnet" is a question about the other end:
 - **Into the machine**: a Chaosnet TELNET user end on Unix, or a gateway
   from TCP telnet to Chaosnet TELNET. It can be a CHUDP peer of the
   machine directly --- muir takes more than one `--chaos-udp-peer` ---
-  or reach it through muir-ah, the subnet's hub.
+  or reach it through ozd, the subnet's hub.
 - **Out of the machine, to Unix**: a Chaosnet TELNET server on Unix,
   which is a login shell for a client that does not authenticate.
   `CLAUDE.md` §3.
@@ -286,9 +286,9 @@ server is a login shell, as TELNET's would be, `CLAUDE.md` §3.
 
 ## Between machines
 
-One Lisp Machine to another. muir-ah neither sends nor receives them
+One Lisp Machine to another. ozd neither sends nor receives them
 (`CLAUDE.md` §8h); what a site needs for them to arrive is a path
-between the two machines: peered directly, or through muir-ah as
+between the two machines: peered directly, or through ozd as
 its subnet's hub, which passes them on without reading them
 (`CLAUDE.md` §8b).
 

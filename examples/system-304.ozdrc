@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Mete Balci
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# muir-ah as the associated machine of a System 304 band (DESIGN.md §8).
-# A file of flags, as system-100.muir-ahrc is, which says more of what
+# ozd as the associated machine of a System 304 band (DESIGN.md §8).
+# A file of flags, as system-100.ozdrc is, which says more of what
 # each line is for.
 #
 # The numbers are the band's own, asked at its listener, since its host

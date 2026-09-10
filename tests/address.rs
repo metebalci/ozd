@@ -12,7 +12,7 @@
 /// octal too.
 #[test]
 fn an_address_is_read_either_way_it_is_written() {
-    use muir_ah::address::parse_address;
+    use ozd::address::parse_address;
     assert_eq!(parse_address("3050"), Some(0o3050));
     assert_eq!(parse_address("6:50"), Some(0o3050), "subnet 6, host 50");
     assert_eq!(parse_address("6:60"), Some(0o3060), "and the server beside it");

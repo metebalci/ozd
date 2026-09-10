@@ -14,10 +14,10 @@
 //! line at `#/NEWLINE`, 0o215 (`:LINE-IN`, `sys/io/stream.lisp:535`;
 //! `sys/io/rddefs.lisp:172`), which is [`NEWLINE`].
 
-use muir_ah::lispm::{self, NEWLINE};
-use muir_ah::ncp::{Ncp, Out, Session};
-use muir_ah::packet::{self, Framed, Packet};
-use muir_ah::service::name::Name;
+use ozd::lispm::{self, NEWLINE};
+use ozd::ncp::{Ncp, Out, Session};
+use ozd::packet::{self, Framed, Packet};
+use ozd::service::name::Name;
 use std::sync::{Arc, Mutex};
 
 /// A packet as the link would hand it to the NCP, with the check word the

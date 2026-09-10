@@ -15,9 +15,9 @@
 //! the bytes unchanged: they are the contract between the two
 //! repositories (`DESIGN.md` §11), and a correction is made in both.
 
-use muir_ah::chudp;
-use muir_ah::ncp::op;
-use muir_ah::packet::{self, Framed, Packet};
+use ozd::chudp;
+use ozd::ncp::op;
+use ozd::packet::{self, Framed, Packet};
 
 /// A machine, and a peer over UDP, as muir's `tests/chudp.rs` names them
 /// from the machine's side: 3050 is System 100's band, `MIT-LISPM-1` in

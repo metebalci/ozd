@@ -12,12 +12,12 @@
 
 mod support;
 
-use muir_ah::chudp;
-use muir_ah::config::Config;
-use muir_ah::daemon::Daemon;
-use muir_ah::ncp::op;
-use muir_ah::packet::Packet;
-use muir_ah::service::time::Time;
+use ozd::chudp;
+use ozd::config::Config;
+use ozd::daemon::Daemon;
+use ozd::ncp::op;
+use ozd::packet::Packet;
+use ozd::service::time::Time;
 use std::time::Duration;
 use support::{
     LM1, LM2, LM3, OZ, Recorder, TestHost, ask, daemon, datagram, hear, meters, packet, rfc,

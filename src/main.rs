@@ -1,21 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The `muir-ah` daemon: its command line, its startup, and its loop
+//! The `ozd` daemon: its command line, its startup, and its loop
 //! (`DESIGN.md` §4, §10).
 //!
 //! ```text
-//! muir-ah [--address <addr>] [--name <NAME>[,<NAME>...][,system=<TYPE>]]
+//! ozd [--address <addr>] [--name <NAME>[,<NAME>...][,system=<TYPE>]]
 //!         [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
 //!         [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
 //!         [--peer <addr>@<ip>[:<port>]] [--trace] [--check]
 //!         [-c|--config <file>] [-h|--help]
 //! ```
 //!
-//! The site is flags (`muir_ah::config`), on the command line or in a file
+//! The site is flags (`ozd::config`), on the command line or in a file
 //! of flags: the one `-c` or `--config` names, which must be there; else
-//! the one the environment variable `MUIR_AH_RC` names; else `.muir-ahrc`
-//! in the directory muir-ah is run from; else `.muir-ahrc` in `$HOME` ---
+//! the one the environment variable `OZD_RC` names; else `.ozdrc`
+//! in the directory ozd is run from; else `.ozdrc` in `$HOME` ---
 //! the first of those, not all of them, and one looked for need not be
 //! there, as with muir's `.muirrc` (muir's `config_path`, `src/main.rs`). A
 //! flag the command line gives leaves that flag's lines out of the file.
@@ -35,29 +35,29 @@
 //! roots. A daemon that starts runs until it is stopped --- `SIGTERM`'s
 //! default action is the shutdown (`DESIGN.md` §10).
 
-use muir_ah::config::{Error, Flags, Place, Run};
-use muir_ah::daemon::Daemon;
-use muir_ah::log;
-use muir_ah::roots::Tree;
+use ozd::config::{Error, Flags, Place, Run};
+use ozd::daemon::Daemon;
+use ozd::log;
+use ozd::roots::Tree;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// What a file of flags is called where muir-ah looks for one, as muir's
+/// What a file of flags is called where ozd looks for one, as muir's
 /// is `.muirrc`.
-const RC: &str = ".muir-ahrc";
+const RC: &str = ".ozdrc";
 
 /// The environment variable that names a file of flags in place of the two
 /// looked for, as muir's `MUIR_RC` does.
-const RC_NAMED: &str = "MUIR_AH_RC";
+const RC_NAMED: &str = "OZD_RC";
 
-const USAGE: &str = "usage: muir-ah [--address <addr>] [--name <NAME>[,<NAME>...][,system=<TYPE>]]
-               [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
-               [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
-               [--peer <addr>@<ip>[:<port>]] [--trace] [--check]
-               [-c|--config <file>] [-h|--help]";
+const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,system=<TYPE>]]
+           [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
+           [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
+           [--peer <addr>@<ip>[:<port>]] [--trace] [--check]
+           [-c|--config <file>] [-h|--help]";
 
 /// What `-h` and `--help` print after the usage: what this is, then each
 /// flag in the order the usage gives them, then the file of flags and how
@@ -116,10 +116,10 @@ time and their host table, and passing packets between them.
                                if all is well and 1 if not; binds nothing and
                                changes nothing.
   -c, --config <file>          the file of flags to read, which must be
-                               there. Without it muir-ah reads the file
-                               MUIR_AH_RC names, or failing that .muir-ahrc
+                               there. Without it ozd reads the file
+                               OZD_RC names, or failing that .ozdrc
                                in the directory it was run from, or failing
-                               that .muir-ahrc in the home directory --- the
+                               that .ozdrc in the home directory --- the
                                first of those, not all of them; one looked
                                for need not be there.
   -h, --help                   print this, and exit.
@@ -201,7 +201,7 @@ fn main() {
     let mut daemon = Daemon::new(&config, tree, trace)
         .unwrap_or_else(|e| fail(&format!("--listen {}: {e}", config.listen)));
     log::event(format_args!(
-        "muir-ah {}: {} at {:o}, listening at {}",
+        "ozd {}: {} at {:o}, listening at {}",
         env!("CARGO_PKG_VERSION"),
         config.names[0],
         config.address,
@@ -218,7 +218,7 @@ fn main() {
 ///
 /// The one `-c` names, `named`, which must be there: one that cannot be
 /// read is a usage error. Else the one [`RC_NAMED`] names, else [`RC`] in
-/// the directory muir-ah was run from if it is there, else [`RC`] in
+/// the directory ozd was run from if it is there, else [`RC`] in
 /// `$HOME`: **the first of those, not all of them**, as muir's
 /// `config_path` (muir's `src/main.rs`). One looked for that is not there
 /// is none, as most of muir's runs have. **One that is there and cannot be
@@ -287,7 +287,7 @@ fn help() -> ! {
 /// What was given is not flags, on the command line or in the file of
 /// flags: what is wrong, and the usage, on stderr; exit code 2.
 fn usage(msg: &str) -> ! {
-    eprintln!("muir-ah: {msg}");
+    eprintln!("ozd: {msg}");
     eprintln!("{USAGE}");
     exit(2);
 }
@@ -301,8 +301,8 @@ fn refused(e: &Error, read: Option<&Path>) -> ! {
     match (e.place, read) {
         (Some(Place::Line(_)), Some(path)) => eprintln!("{}: {e}", path.display()),
         (Some(_), _) => eprintln!("{e}"),
-        (None, Some(path)) => eprintln!("muir-ah: {e}, and this run read {}", path.display()),
-        (None, None) => eprintln!("muir-ah: {e}, and this run read none"),
+        (None, Some(path)) => eprintln!("ozd: {e}, and this run read {}", path.display()),
+        (None, None) => eprintln!("ozd: {e}, and this run read none"),
     }
     exit(1);
 }
@@ -310,6 +310,6 @@ fn refused(e: &Error, read: Option<&Path>) -> ! {
 /// A daemon that cannot start, for a reason that is not the shape of what
 /// it was given: why, on stderr; exit code 1.
 fn fail(msg: &str) -> ! {
-    eprintln!("muir-ah: {msg}");
+    eprintln!("ozd: {msg}");
     exit(1);
 }

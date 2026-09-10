@@ -4,28 +4,28 @@
   SPDX-FileCopyrightText: 2026 Mete Balci
   SPDX-License-Identifier: AGPL-3.0-or-later
 
-  muir-ah as a launchd daemon (DESIGN.md §10), for /Library/LaunchDaemons.
-  Install the binary at /usr/local/bin/muir-ah and its flags in
-  /usr/local/etc/muir-ahrc, and make a user _muir-ah that owns the
+  ozd as a launchd daemon (DESIGN.md §10), for /Library/LaunchDaemons.
+  Install the binary at /usr/local/bin/ozd and its flags in
+  /usr/local/etc/ozdrc, and make a user _ozd that owns the
   writable root and nothing else. Not yet tried on a system.
 -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.metebalci.muir-ah</string>
+  <string>com.metebalci.ozd</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/muir-ah</string>
+    <string>/usr/local/bin/ozd</string>
     <string>-c</string>
-    <string>/usr/local/etc/muir-ahrc</string>
+    <string>/usr/local/etc/ozdrc</string>
   </array>
   <key>UserName</key>
-  <string>_muir-ah</string>
+  <string>_ozd</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
   <key>StandardErrorPath</key>
-  <string>/usr/local/var/log/muir-ah.log</string>
+  <string>/usr/local/var/log/ozd.log</string>
 </dict>
 </plist>

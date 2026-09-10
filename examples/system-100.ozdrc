@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Mete Balci
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# muir-ah as the associated machine of a System 100 band (DESIGN.md §8).
+# ozd as the associated machine of a System 100 band (DESIGN.md §8).
 # A file of flags: a flag a line, its value the rest of the line, and a
 # line beginning with # a comment. Name it with -c, or copy it to
-# .muir-ahrc where muir-ah is run.
+# .ozdrc where ozd is run.
 #
 # The numbers are the band's own, and a host answering at any others is one
 # it never calls. Its host table, sys/site/hosts.text in the release, has
@@ -31,7 +31,7 @@
 # --- and is written to. The release's sources are mounted at /tree,
 # read-only, because the band asks for them as /tree/sys/... (muir's
 # --chaos-file-root help); muir's own vendor/run/file-root links tree to the
-# same directory. Each must be a directory when muir-ah starts, and the
+# same directory. Each must be a directory when ozd starts, and the
 # base one it can write (DESIGN.md §6).
 --root    /srv/lispm
 --root    tree=/path/to/muir/vendor/system-100-0/sys,ro

@@ -7,7 +7,7 @@
 //! - **A daemon** built from the text of a file of flags, listening on
 //!   the loopback at a port the system picks: [`site`] and [`daemon`].
 //! - **The binary**, run where no file of flags of the user's is found:
-//!   [`muir_ah`].
+//!   [`ozd`].
 //! - **Test hosts**: each an [`Ncp`] at an address of its own on a
 //!   loopback socket of its own, speaking CHUDP through [`chudp::wrap`] and
 //!   [`chudp::unwrap`], with the daemon as its one peer --- as a muir with
@@ -23,13 +23,13 @@
 
 #![allow(dead_code)]
 
-use muir_ah::chudp;
-use muir_ah::config::Config;
-use muir_ah::daemon::Daemon;
-use muir_ah::lispm;
-use muir_ah::ncp::{Ncp, Out, Session, op};
-use muir_ah::packet::{self, Framed, Packet};
-use muir_ah::roots::Tree;
+use ozd::chudp;
+use ozd::config::Config;
+use ozd::daemon::Daemon;
+use ozd::lispm;
+use ozd::ncp::{Ncp, Out, Session, op};
+use ozd::packet::{self, Framed, Packet};
+use ozd::roots::Tree;
 use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
@@ -39,7 +39,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 /// This host in the tests: System 100's file and time host, `MIT-OZ` at
-/// 3060 (`examples/system-100.muir-ahrc`).
+/// 3060 (`examples/system-100.ozdrc`).
 pub const OZ: u16 = 0o3060;
 
 /// Machines on its subnet: System 100's band, `MIT-LISPM-1` at 3050, and
@@ -115,7 +115,7 @@ pub fn scratch() -> &'static Path {
     static SCRATCH: OnceLock<PathBuf> = OnceLock::new();
     SCRATCH.get_or_init(|| {
         let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("muir-ah-test-{}", std::process::id()));
+            .join(format!("ozd-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("a scratch directory");
         dir
     })
@@ -340,15 +340,15 @@ pub fn running_as_root() -> bool {
 }
 
 /// The daemon's binary, run where nothing of the user's is: no
-/// `MUIR_AH_RC`, and both the directory it is run from and its `HOME` a
-/// directory of this test binary's own with no `.muir-ahrc` in it. So a
+/// `OZD_RC`, and both the directory it is run from and its `HOME` a
+/// directory of this test binary's own with no `.ozdrc` in it. So a
 /// run reads no file of flags but one its test gives it --- by `-c`, by
-/// `MUIR_AH_RC`, or by setting `HOME` or the directory again --- and never
+/// `OZD_RC`, or by setting `HOME` or the directory again --- and never
 /// the user's own.
-pub fn muir_ah() -> Command {
+pub fn ozd() -> Command {
     let away = scratch().join("no-file-of-flags");
     std::fs::create_dir_all(&away).expect("a directory with no file of flags");
-    let mut c = Command::new(env!("CARGO_BIN_EXE_muir-ah"));
-    c.env_remove("MUIR_AH_RC").env("HOME", &away).current_dir(&away);
+    let mut c = Command::new(env!("CARGO_BIN_EXE_ozd"));
+    c.env_remove("OZD_RC").env("HOME", &away).current_dir(&away);
     c
 }

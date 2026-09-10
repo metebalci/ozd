@@ -14,9 +14,9 @@
 
 mod support;
 
-use muir_ah::ncp::{self, Ncp, Out, Response, Service, Session, op};
-use muir_ah::packet::{self, Framed, Packet};
-use muir_ah::service::time::Time;
+use ozd::ncp::{self, Ncp, Out, Response, Service, Session, op};
+use ozd::packet::{self, Framed, Packet};
+use ozd::service::time::Time;
 use std::sync::{Arc, Mutex};
 use support::arriving;
 

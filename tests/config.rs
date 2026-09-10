@@ -3,7 +3,7 @@
 
 //! The site's flags (`DESIGN.md` §8): each flag, each form of `--listen`,
 //! and each refusal with where it was given; the file of flags,
-//! `.muir-ahrc` --- its comments, a value that is the rest of its line,
+//! `.ozdrc` --- its comments, a value that is the rest of its line,
 //! the command line having the last word, and a file that would name
 //! another; which file a run reads, run as the binary; and the two
 //! example files that ship (`DESIGN.md` §11, test 2).
@@ -14,8 +14,8 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use muir_ah::config::{Config, Error, Flags, Host, Peer, Place, Root, Run};
-use support::muir_ah;
+use ozd::config::{Config, Error, Flags, Host, Peer, Place, Root, Run};
+use support::ozd;
 
 /// The least a file of flags can be: an address, a name and a root, on
 /// lines 1 to 3. A line added after it is line 4.
@@ -673,7 +673,7 @@ fn the_file_is_read_before_the_command_line() {
 
 /// **A command line of anything but flags is a usage error**: a word that
 /// is not a flag; an argument that is no flag's value, whose refusal says
-/// that the config is flags, on the command line or in `.muir-ahrc`, or in
+/// that the config is flags, on the command line or in `.ozdrc`, or in
 /// the file `-c` names; a flag with no value after it, or with a flag
 /// where its value would be; and `-c` twice.
 #[test]
@@ -683,7 +683,7 @@ fn a_command_line_of_anything_but_flags_is_refused() {
     let positional: [&[&str]; 3] =
         [&["site.conf"], &["--trace", "site.conf"], &["--address", "3060", "3061"]];
     for typed in positional {
-        for says in ["the config is flags", ".muir-ahrc", "-c <file>"] {
+        for says in ["the config is flags", ".ozdrc", "-c <file>"] {
             misused_typed(typed, says);
         }
     }
@@ -700,8 +700,8 @@ fn a_command_line_of_anything_but_flags_is_refused() {
 #[test]
 fn config_names_the_file_of_flags() {
     for flag in ["-c", "--config"] {
-        let typed = Flags::command_line(&[flag, "/path/to/site.muir-ahrc", "--trace"]).unwrap();
-        assert_eq!(typed.config(), Some(Path::new("/path/to/site.muir-ahrc")), "{flag}");
+        let typed = Flags::command_line(&[flag, "/path/to/site.ozdrc", "--trace"]).unwrap();
+        assert_eq!(typed.config(), Some(Path::new("/path/to/site.ozdrc")), "{flag}");
     }
     assert_eq!(Flags::command_line(&["--trace"]).unwrap().config(), None);
 }
@@ -746,11 +746,11 @@ fn dir(name: &str) -> PathBuf {
     dir
 }
 
-/// A `.muir-ahrc` in `dir` whose one flag is none, `--from-<from>`: a
+/// A `.ozdrc` in `dir` whose one flag is none, `--from-<from>`: a
 /// usage error that names it, so that a run's refusal says which file it
 /// read.
 fn rc(dir: &Path, from: &str) -> PathBuf {
-    let path = dir.join(".muir-ahrc");
+    let path = dir.join(".ozdrc");
     let text = format!("# which file this is\n--from-{from}\n");
     std::fs::write(&path, text).expect("a file of flags");
     path
@@ -768,10 +768,10 @@ fn read_from(out: &Output) -> Option<&'static str> {
         .find(|from| said.contains(&format!("--from-{from}: not a flag")))
 }
 
-/// The binary, run from `cwd` with `HOME` at `home`, and no `MUIR_AH_RC`
+/// The binary, run from `cwd` with `HOME` at `home`, and no `OZD_RC`
 /// unless the test gives it one.
 fn from(cwd: &Path, home: &Path) -> Command {
-    let mut c = muir_ah();
+    let mut c = ozd();
     c.current_dir(cwd).env("HOME", home);
     c
 }
@@ -786,8 +786,8 @@ fn reads(c: &mut Command) -> Option<&'static str> {
 
 /// **The file read is the first of those there, not all of them**, as with
 /// muir's `.muirrc` (muir's `config_path`, `src/main.rs`): the one `-c`
-/// names; else the one `MUIR_AH_RC` names; else `.muir-ahrc` in the
-/// directory muir-ah is run from; else `.muir-ahrc` in `$HOME`. `HOME` is
+/// names; else the one `OZD_RC` names; else `.ozdrc` in the
+/// directory ozd is run from; else `.ozdrc` in `$HOME`. `HOME` is
 /// a directory of the test's own, so the user's own file is never read.
 /// Each file here is a usage error, found before who is running it is, so
 /// this holds as root too.
@@ -799,15 +799,15 @@ fn the_file_read_is_the_first_of_those_there() {
     rc(&here, "here");
     rc(&home, "home");
     let mut c = from(&here, &home);
-    assert_eq!(reads(c.env("MUIR_AH_RC", &env).arg("-c").arg(&named)), Some("named"), "-c first");
-    assert_eq!(reads(from(&here, &home).env("MUIR_AH_RC", &env)), Some("env"), "then MUIR_AH_RC");
+    assert_eq!(reads(c.env("OZD_RC", &env).arg("-c").arg(&named)), Some("named"), "-c first");
+    assert_eq!(reads(from(&here, &home).env("OZD_RC", &env)), Some("env"), "then OZD_RC");
     assert_eq!(reads(&mut from(&here, &home)), Some("here"), "then the directory run from");
     assert_eq!(reads(&mut from(&empty, &home)), Some("home"), "then the home directory");
 }
 
-/// **One looked for need not be there**, and `MUIR_AH_RC` stands in place
+/// **One looked for need not be there**, and `OZD_RC` stands in place
 /// of the two that are looked for: naming a file that is not there, the
-/// run reads none, a `.muir-ahrc` in the directory it was run from and in
+/// run reads none, a `.ozdrc` in the directory it was run from and in
 /// `$HOME` notwithstanding. A run that reads none has its command line's
 /// flags alone, and checks with them.
 #[test]
@@ -819,7 +819,7 @@ fn one_looked_for_need_not_be_there() {
     let typed =
         ["--check", "--address", "3060", "--name", "OZ", "--listen", "127.0.0.1:0", "--root"];
     let out = from(&here, &home)
-        .env("MUIR_AH_RC", here.join("no-such"))
+        .env("OZD_RC", here.join("no-such"))
         .args(typed)
         .arg(&root)
         .output()
@@ -838,36 +838,36 @@ fn one_looked_for_need_not_be_there() {
 /// root too, since it is found before who is running it is.
 #[test]
 fn a_file_config_names_must_be_there() {
-    let missing = support::scratch().join("no-such.muir-ahrc");
+    let missing = support::scratch().join("no-such.ozdrc");
     for flag in ["-c", "--config"] {
-        let out = muir_ah().arg(flag).arg(&missing).output().expect("it runs");
+        let out = ozd().arg(flag).arg(&missing).output().expect("it runs");
         assert_eq!(out.status.code(), Some(2), "{flag}: {}", said(&out));
         assert!(said(&out).contains(&missing.display().to_string()), "{flag}: {}", said(&out));
-        assert!(said(&out).contains("usage: muir-ah"), "{flag}: {}", said(&out));
+        assert!(said(&out).contains("usage: ozd"), "{flag}: {}", said(&out));
     }
 }
 
 /// **One looked for that is there and cannot be read is refused**, exit
-/// 1, naming it --- here a directory called `.muir-ahrc` --- and not taken
+/// 1, naming it --- here a directory called `.ozdrc` --- and not taken
 /// for none: a run without the flags it was meant to have would look as
 /// though it had them. It is found before who is running it is, so this
 /// holds as root too.
 #[test]
 fn one_looked_for_that_cannot_be_read_is_refused() {
     let here = dir("rc-unreadable");
-    std::fs::create_dir(here.join(".muir-ahrc")).expect("a directory");
+    std::fs::create_dir(here.join(".ozdrc")).expect("a directory");
     let out = from(&here, &here).output().expect("it runs");
     assert_eq!(out.status.code(), Some(1), "{}", said(&out));
-    assert!(said(&out).contains(".muir-ahrc"), "{}", said(&out));
+    assert!(said(&out).contains(".ozdrc"), "{}", said(&out));
 }
 
 /// **A file of flags cannot name another**, run as the binary: a usage
 /// error, exit 2, naming the file and its line.
 #[test]
 fn a_file_that_names_another_is_a_usage_error() {
-    let file = dir("rc-names-another").join(".muir-ahrc");
+    let file = dir("rc-names-another").join(".ozdrc");
     std::fs::write(&file, "--trace\n--config /somewhere/else\n").expect("a file of flags");
-    let out = muir_ah().env("MUIR_AH_RC", &file).output().expect("it runs");
+    let out = ozd().env("OZD_RC", &file).output().expect("it runs");
     assert_eq!(out.status.code(), Some(2), "{}", said(&out));
     let want = format!("{}: line 2: --config: a file of flags cannot name another", file.display());
     assert!(said(&out).contains(&want), "{}", said(&out));
@@ -883,15 +883,15 @@ fn the_command_line_has_the_last_word() {
     }
     let d = dir("rc-last-word");
     let root = dir("rc-last-word-root");
-    let file = d.join("site.muir-ahrc");
+    let file = d.join("site.ozdrc");
     let text = format!(
         "--address 3060\n--name OZ\n--listen 127.0.0.1:0\n--root {}\n",
         d.join("no-such").display()
     );
     std::fs::write(&file, text).expect("a file of flags");
-    let out = muir_ah().arg("--check").arg("-c").arg(&file).output().expect("it runs");
+    let out = ozd().arg("--check").arg("-c").arg(&file).output().expect("it runs");
     assert_eq!(out.status.code(), Some(1), "its own base is not there: {}", said(&out));
-    let out = muir_ah().arg("--check").arg("-c").arg(&file).arg("--root").arg(&root).output();
+    let out = ozd().arg("--check").arg("-c").arg(&file).arg("--root").arg(&root).output();
     let out = out.expect("it runs");
     assert!(out.status.success(), "{}", said(&out));
 }
@@ -913,7 +913,7 @@ fn example(name: &str) -> Config {
 /// at `/tree`, where the band asks for them. On the loopback, at 42042.
 #[test]
 fn the_system_100_example_is_a_site() {
-    let config = example("system-100.muir-ahrc");
+    let config = example("system-100.ozdrc");
     assert_eq!(config.address, 0o3060);
     assert_eq!(config.names, ["MIT-OZ", "OZ"]);
     assert_eq!(config.system.as_deref(), Some("UNIX"));
@@ -936,7 +936,7 @@ fn the_system_100_example_is_a_site() {
 /// sources mounted read-only at `/sys`.
 #[test]
 fn the_system_304_example_is_a_site() {
-    let config = example("system-304.muir-ahrc");
+    let config = example("system-304.ozdrc");
     assert_eq!(config.address, 0o4403);
     assert_eq!(config.names, ["OZ", "AMS-BRIDGE-1"]);
     assert_eq!(config.system, None);

@@ -1,4 +1,8 @@
-# muir-ah
+# ozd
+
+OZ, MIT-OZ, was the host MIT's Lisp Machines kept their system files on
+and asked for the time and their host table (System 100's
+`sys/site/site.lisp`); ozd is OZ, as a daemon.
 
 The associated machine for a site of MIT CADR Lisp Machines: one host on
 one Chaosnet subnet, over UDP, serving the machines their files, their
@@ -24,19 +28,19 @@ dependencies: nothing else is downloaded.
 
 ## Run
 
-    target/release/muir-ah -c examples/system-100.muir-ahrc
+    target/release/ozd -c examples/system-100.ozdrc
 
 Everything is a flag, as muir's are (`DESIGN.md` §8): `--address`,
 `--name`, `--listen`, `--root`, `--host` and `--peer`. Their defaults
 come from a file of flags --- the one `-c` names, else the one
-`MUIR_AH_RC` names, else `.muir-ahrc` in the directory it is run from or
+`OZD_RC` names, else `.ozdrc` in the directory it is run from or
 in the home directory --- and the command line has the last word.
 `--check` reads them and checks the roots, changing nothing, then exits;
 `--trace` prints every packet; `--help` says what each flag is. It will
 not run as root, and it logs to stderr, one line an event.
 
-The two examples, `examples/system-100.muir-ahrc` and
-`examples/system-304.muir-ahrc`, are for System 100 and System 304, with
+The two examples, `examples/system-100.ozdrc` and
+`examples/system-304.ozdrc`, are for System 100 and System 304, with
 each band's own numbers; edit their paths before using one. Without
 `--listen` it
 answers on `127.0.0.1:42042`, which is enough for muir runs on the same
@@ -48,17 +52,17 @@ host:
 
 A second machine takes 3051 on 42044, and so on. Until muir has a
 default peer, each run also names every other machine's address at
-muir-ah's endpoint, so that their packets to each other come through it
+ozd's endpoint, so that their packets to each other come through it
 (`DESIGN.md` §9).
 
 ## Trying it with muir
 
 The acceptance test is by hand (`DESIGN.md` §11). With the System 100
-release in muir's `vendor/`, and `examples/system-100.muir-ahrc` edited so
+release in muir's `vendor/`, and `examples/system-100.ozdrc` edited so
 that its `tree` mount is that release's `sys` directory and its base an
-empty directory muir-ah may write:
+empty directory ozd may write:
 
-    target/release/muir-ah -c examples/system-100.muir-ahrc
+    target/release/ozd -c examples/system-100.ozdrc
 
 and beside it two muir runs, each with a pack of its own:
 
@@ -71,15 +75,15 @@ and beside it two muir runs, each with a pack of its own:
 
 Each should boot knowing the date, read its sources from `/tree/` and
 write in the base, print its uptime right with `(uptime)`, and show
-muir-ah and the other machine with `(hostat)`. The second boots as a
+ozd and the other machine with `(hostat)`. The second boots as a
 machine its band has no name for, since System 100's table names only
 3050 (`DESIGN.md` §9).
 
 ## As a service
 
-`contrib/muir-ah.service` is a systemd unit, and
-`contrib/com.metebalci.muir-ah.plist` a launchd daemon, each running
-muir-ah as a user of its own that owns the writable root and nothing
+`contrib/ozd.service` is a systemd unit, and
+`contrib/com.metebalci.ozd.plist` a launchd daemon, each running
+ozd as a user of its own that owns the writable root and nothing
 else. Neither has yet been tried on the system it is for.
 
 ## Licence

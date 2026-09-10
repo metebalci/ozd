@@ -1,22 +1,22 @@
 # SPDX-FileCopyrightText: 2026 Mete Balci
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# muir-ah as a systemd service (DESIGN.md §10). Install the binary at
-# /usr/local/bin/muir-ah and its flags in /etc/muir-ahrc; make a user
-# muir-ah that owns the writable root and nothing else, and list that root
+# ozd as a systemd service (DESIGN.md §10). Install the binary at
+# /usr/local/bin/ozd and its flags in /etc/ozdrc; make a user
+# ozd that owns the writable root and nothing else, and list that root
 # in ReadWritePaths. Not yet tried on a system.
 
 [Unit]
-Description=muir-ah, the associated machine for a site of CADR Lisp Machines
+Description=ozd, the associated machine for a site of CADR Lisp Machines
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=muir-ah
-ExecStart=/usr/local/bin/muir-ah -c /etc/muir-ahrc
+User=ozd
+ExecStart=/usr/local/bin/ozd -c /etc/ozdrc
 Restart=on-failure
 
-# Hardening that costs nothing here: muir-ah needs no privilege and
+# Hardening that costs nothing here: ozd needs no privilege and
 # writes nothing but its writable roots.
 NoNewPrivileges=yes
 ProtectSystem=strict

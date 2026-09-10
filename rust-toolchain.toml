@@ -1,4 +1,4 @@
-# Pinned so every machine builds muir-ah with the same compiler; with no
+# Pinned so every machine builds ozd with the same compiler; with no
 # dependencies, this file is the whole of its build environment.
 #
 # A stable release, not muir's beta: muir pins 1.99.0-beta.4 because 1.98

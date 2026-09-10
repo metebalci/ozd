@@ -24,11 +24,11 @@
 //! the roots and, beside them, what must never be reached; it is removed
 //! when the test ends.
 
-use muir_ah::lispm::{self, NEWLINE};
-use muir_ah::ncp::{Ncp, Out, Response, Service, Session, op};
-use muir_ah::packet::{self, Framed, Packet};
-use muir_ah::roots::{Root, Tree, is_temporary, temporary_name};
-use muir_ah::service::file::{self, File, LogHook};
+use ozd::lispm::{self, NEWLINE};
+use ozd::ncp::{Ncp, Out, Response, Service, Session, op};
+use ozd::packet::{self, Framed, Packet};
+use ozd::roots::{Root, Tree, is_temporary, temporary_name};
+use ozd::service::file::{self, File, LogHook};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -344,7 +344,7 @@ struct Scratch {
 
 impl Scratch {
     fn new(name: &str) -> Scratch {
-        let dir = std::env::temp_dir().join(format!("muir-ah-file-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ozd-file-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         Scratch { dir: std::fs::canonicalize(&dir).unwrap() }
@@ -1033,7 +1033,7 @@ fn a_completion_is_cut_between_characters() {
 /// the same; they come at once.
 #[test]
 fn a_wildcard_is_matched_in_linear_time() {
-    use muir_ah::service::file::matches;
+    use ozd::service::file::matches;
     for (pattern, name, want) in [
         ("*", "anything", true),
         ("*", "", true),

@@ -8,15 +8,15 @@
 
 mod support;
 
-use muir_ah::log;
-use muir_ah::ncp::{self, op};
+use ozd::log;
+use ozd::ncp::{self, op};
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::{Child, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use support::{
-    LM1, OZ, Recorder, SECOND, TestHost, ask, daemon, datagram, hear, meters, muir_ah, packet, rfc,
+    LM1, OZ, Recorder, SECOND, TestHost, ask, daemon, datagram, hear, meters, ozd, packet, rfc,
     settle, site,
 };
 
@@ -146,18 +146,18 @@ fn refused_as_root(out: &Output) -> bool {
 
 /// How the usage begins: every usage error prints it on stderr, and the
 /// help, first, on stdout.
-const USAGE: &str = "usage: muir-ah [--address <addr>] [--name ";
+const USAGE: &str = "usage: ozd [--address <addr>] [--name ";
 
 /// **A command line that is not flags is refused with the usage**, on
 /// stderr, with exit code 2, and nothing on stdout: a word that is not a
 /// flag, an argument that is no flag's value, a flag missing its value,
 /// and a file `-c` names that is not there --- each before who is running
 /// it is looked at, so as root too. An argument that is no flag's value
-/// says that the config is flags, on the command line or in `.muir-ahrc`,
+/// says that the config is flags, on the command line or in `.ozdrc`,
 /// or in the file `-c` names.
 #[test]
 fn a_command_line_that_is_not_flags_is_refused_with_the_usage() {
-    let missing = support::scratch().join("no-such.muir-ahrc");
+    let missing = support::scratch().join("no-such.ozdrc");
     let missing = missing.to_str().expect("a path in UTF-8");
     let lines: [&[&str]; 8] = [
         &["--frobnicate"],
@@ -170,14 +170,14 @@ fn a_command_line_that_is_not_flags_is_refused_with_the_usage() {
         &["-c", missing],
     ];
     for args in lines {
-        let out = muir_ah().args(args).output().expect("it runs");
+        let out = ozd().args(args).output().expect("it runs");
         assert_eq!(out.status.code(), Some(2), "{args:?}: {}", said(&out));
         assert!(said(&out).contains(USAGE), "{args:?}: {}", said(&out));
         assert!(out.stdout.is_empty(), "{args:?}");
     }
-    let out = muir_ah().arg("examples/system-100.conf").output().expect("it runs");
+    let out = ozd().arg("examples/system-100.conf").output().expect("it runs");
     let told = said(&out);
-    for words in ["examples/system-100.conf", "the config is flags", ".muir-ahrc", "-c <file>"] {
+    for words in ["examples/system-100.conf", "the config is flags", ".ozdrc", "-c <file>"] {
         assert!(told.contains(words), "{words} in {told}");
     }
 }
@@ -191,14 +191,14 @@ fn a_command_line_that_is_not_flags_is_refused_with_the_usage() {
 fn with_nothing_given_a_required_flag_is_missing() {
     let lines: [&[&str]; 3] = [&[], &["--trace"], &["--check"]];
     for args in lines {
-        let out = muir_ah().args(args).output().expect("it runs");
+        let out = ozd().args(args).output().expect("it runs");
         if support::running_as_root() {
             assert!(refused_as_root(&out), "as root: {}", said(&out));
             continue;
         }
         assert_eq!(out.status.code(), Some(1), "{args:?}: {}", said(&out));
         let told = said(&out);
-        assert!(told.starts_with("muir-ah: no --address"), "{args:?}: {told}");
+        assert!(told.starts_with("ozd: no --address"), "{args:?}: {told}");
         assert!(told.contains("on the command line or in a file of flags"), "{told}");
         assert!(told.contains("read none"), "{told}");
         assert!(out.stdout.is_empty(), "{args:?}");
@@ -215,34 +215,34 @@ fn with_nothing_given_a_required_flag_is_missing() {
 /// those is refused for that instead.
 #[test]
 fn check_reads_the_flags_binds_nothing_and_says_what_is_wrong() {
-    let misused = flags_file("check-misused.muir-ahrc", &site("--bogus\n"));
-    let out = muir_ah().arg("--check").arg("-c").arg(&misused).output().expect("it runs");
+    let misused = flags_file("check-misused.ozdrc", &site("--bogus\n"));
+    let out = ozd().arg("--check").arg("-c").arg(&misused).output().expect("it runs");
     assert_eq!(out.status.code(), Some(2), "{}", said(&out));
-    let want = format!("muir-ah: {}: line 5: --bogus: not a flag", misused.display());
+    let want = format!("ozd: {}: line 5: --bogus: not a flag", misused.display());
     assert!(said(&out).starts_with(&want), "{}", said(&out));
     assert!(said(&out).contains(USAGE), "{}", said(&out));
 
     let (_taken, taken_at) = support::socket();
     let text = site("").replace("--listen 127.0.0.1:0", &format!("--listen {taken_at}"));
     assert!(text.contains(&format!("--listen {taken_at}")));
-    let good = flags_file("check-good.muir-ahrc", &text);
-    let out = muir_ah().arg("--check").arg("-c").arg(&good).output().expect("it runs");
+    let good = flags_file("check-good.ozdrc", &text);
+    let out = ozd().arg("--check").arg("-c").arg(&good).output().expect("it runs");
     if support::running_as_root() {
         assert!(refused_as_root(&out), "as root: {}", said(&out));
         return;
     }
     assert!(out.status.success(), "{}", said(&out));
     assert!(out.stderr.is_empty() && out.stdout.is_empty(), "silent: {}", said(&out));
-    let run = muir_ah().arg("-c").arg(&good).output().expect("it runs");
+    let run = ozd().arg("-c").arg(&good).output().expect("it runs");
     assert_eq!(run.status.code(), Some(1), "{}", said(&run));
     assert!(said(&run).contains(&format!("--listen {taken_at}")), "{}", said(&run));
 
-    let bad = flags_file("check-bad.muir-ahrc", &site("--host 6:0,LM1\n"));
-    let out = muir_ah().arg("--check").arg("-c").arg(&bad).output().expect("it runs");
+    let bad = flags_file("check-bad.ozdrc", &site("--host 6:0,LM1\n"));
+    let out = ozd().arg("--check").arg("-c").arg(&bad).output().expect("it runs");
     assert_eq!(out.status.code(), Some(1), "{}", said(&out));
     let want = format!("{}: line 5: --host 6:0,LM1: ", bad.display());
     assert!(said(&out).starts_with(&want), "{}", said(&out));
-    let out = muir_ah().args(["--check", "-c"]).arg(&good).args(["--address", "6:0"]).output();
+    let out = ozd().args(["--check", "-c"]).arg(&good).args(["--address", "6:0"]).output();
     let out = out.expect("it runs");
     assert_eq!(out.status.code(), Some(1), "{}", said(&out));
     assert!(said(&out).starts_with("--address 6:0: not an address"), "{}", said(&out));
@@ -268,7 +268,7 @@ impl Drop for Running {
 #[test]
 fn the_daemon_runs_from_its_command_line_and_answers_status() {
     let oz = format!("{OZ:o}");
-    let mut child = muir_ah()
+    let mut child = ozd()
         .args(["--address", &oz, "--name", "MIT-OZ,OZ", "--listen", "127.0.0.1:0", "--root"])
         .arg(support::own_root())
         .stdin(Stdio::null())
@@ -353,20 +353,20 @@ fn the_roots_are_checked_at_startup() {
     std::fs::create_dir_all(dir.join("mount")).unwrap();
     let head = format!("--address {OZ:o}\n--name MIT-OZ,OZ\n--listen 127.0.0.1:0\n");
     let check = |name: &str, text: &str| {
-        muir_ah().args(["--check", "-c"]).arg(flags_file(name, text)).output().expect("it runs")
+        ozd().args(["--check", "-c"]).arg(flags_file(name, text)).output().expect("it runs")
     };
     let text = format!("{head}--root {}\n", dir.join("no-such").display());
-    let out = check("roots-missing.muir-ahrc", &text);
+    let out = check("roots-missing.ozdrc", &text);
     assert_eq!(out.status.code(), Some(1), "{}", said(&out));
     assert!(said(&out).contains("no-such"), "naming it: {}", said(&out));
-    let out = check("roots-slash.muir-ahrc", &format!("{head}--root /\n"));
+    let out = check("roots-slash.ozdrc", &format!("{head}--root /\n"));
     assert_eq!(out.status.code(), Some(1), "{}", said(&out));
     let text = format!(
         "{head}--root {}\n--root tree={},ro\n",
         dir.join("base").display(),
         dir.join("mount").display()
     );
-    let out = check("roots-covered.muir-ahrc", &text);
+    let out = check("roots-covered.ozdrc", &text);
     assert!(out.status.success(), "{}", said(&out));
     assert!(said(&out).contains("tree"), "the covered directory warned of: {}", said(&out));
 }
@@ -383,7 +383,7 @@ fn a_run_removes_stale_temporaries_and_check_does_not() {
     let dir = support::scratch().join("stale");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let stale = dir.join(muir_ah::roots::temporary_name(LM1));
+    let stale = dir.join(ozd::roots::temporary_name(LM1));
     std::fs::write(&stale, b"half a file").unwrap();
     let kept = dir.join("kept.lisp");
     std::fs::write(&kept, b"a file").unwrap();
@@ -391,11 +391,11 @@ fn a_run_removes_stale_temporaries_and_check_does_not() {
         "--address {OZ:o}\n--name MIT-OZ,OZ\n--listen 127.0.0.1:0\n--root {}\n",
         dir.display()
     );
-    let path = flags_file("temporaries.muir-ahrc", &text);
-    let out = muir_ah().args(["--check", "-c"]).arg(&path).output().expect("it runs");
+    let path = flags_file("temporaries.ozdrc", &text);
+    let out = ozd().args(["--check", "-c"]).arg(&path).output().expect("it runs");
     assert!(out.status.success(), "{}", said(&out));
     assert!(stale.exists(), "--check changes nothing");
-    let mut child = muir_ah()
+    let mut child = ozd()
         .arg("-c")
         .arg(&path)
         .stdin(Stdio::null())
@@ -424,8 +424,8 @@ fn a_run_removes_stale_temporaries_and_check_does_not() {
 /// test's, until the line comes or five seconds pass.
 #[test]
 fn a_connection_is_logged() {
-    let path = flags_file("logged.muir-ahrc", &site(""));
-    let mut child = muir_ah()
+    let path = flags_file("logged.ozdrc", &site(""));
+    let mut child = ozd()
         .arg("-c")
         .arg(&path)
         .stdin(Stdio::null())
@@ -488,7 +488,7 @@ fn file_is_served_from_the_roots() {
 }
 
 /// **`-h` and `--help` print the help on stdout, and exit 0**, as muir's
-/// do: the usage, what muir-ah is, each flag, the file of flags and where
+/// do: the usage, what ozd is, each flag, the file of flags and where
 /// it is looked for, and the default endpoint --- wherever the flag is on
 /// the command line and whatever else is there, even a flag that is not
 /// one or a file of flags that is not there, and before anything else is
@@ -501,10 +501,10 @@ fn help_is_printed_on_stdout_and_exits_0() {
         &["--check", "--help"],
         &["--help", "site.conf"],
         &["--frobnicate", "--help"],
-        &["-c", "/no/such.muir-ahrc", "-h"],
+        &["-c", "/no/such.ozdrc", "-h"],
     ];
     for args in lines {
-        let out = muir_ah().args(args).output().expect("it runs");
+        let out = ozd().args(args).output().expect("it runs");
         assert_eq!(out.status.code(), Some(0), "{args:?}: {}", said(&out));
         let text = String::from_utf8_lossy(&out.stdout);
         assert!(text.starts_with(USAGE), "{args:?}: {text}");
@@ -519,8 +519,8 @@ fn help_is_printed_on_stdout_and_exits_0() {
             "--check",
             "-c, --config",
             "-h, --help",
-            ".muir-ahrc",
-            "MUIR_AH_RC",
+            ".ozdrc",
+            "OZD_RC",
             "127.0.0.1:42042",
             ",ro",
         ] {

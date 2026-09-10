@@ -11,11 +11,11 @@
 
 mod support;
 
-use muir_ah::lispm::{self, NEWLINE};
-use muir_ah::ncp::{Ncp, op};
-use muir_ah::packet::Packet;
-use muir_ah::service::status::{Meters, Status};
-use muir_ah::service::time::{Time, Uptime};
+use ozd::lispm::{self, NEWLINE};
+use ozd::ncp::{Ncp, op};
+use ozd::packet::Packet;
+use ozd::service::status::{Meters, Status};
+use ozd::service::time::{Time, Uptime};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};

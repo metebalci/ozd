@@ -1,4 +1,4 @@
-# muir-ah: design
+# ozd: design
 
 The detailed design, agreed on 2026-09-10 before any code was written,
 and built to since: where the code and this differ, one of them is
@@ -9,7 +9,7 @@ this repository.
 
 ## 1. The shape of it
 
-One process, one thread, one UDP socket, one loop. muir-ah is the **hub**
+One process, one thread, one UDP socket, one loop. ozd is the **hub**
 of one subnet: the hosts on it name it as their CHUDP peer, it passes
 packets between them as the cable would, and it answers its own
 services.
@@ -377,10 +377,10 @@ The host table and the endpoints are separate: a `--host` is what HOSTAB
 says, a `--peer` where packets go. A machine needs neither to be served;
 it needs a `--host` to be found by name.
 
-**The file of flags, `.muir-ahrc`**, is muir's `.muirrc` for muir-ah
+**The file of flags, `.ozdrc`**, is muir's `.muirrc` for ozd
 (`config_path` and `muirrc`, muir's `src/main.rs`): `-c|--config <file>`
-names one, which must be there; else `MUIR_AH_RC` names one; else
-`.muir-ahrc` in the directory muir-ah is run from; else `.muir-ahrc` in
+names one, which must be there; else `OZD_RC` names one; else
+`.ozdrc` in the directory ozd is run from; else `.ozdrc` in
 the home directory --- the first of those there, not all of them. A line
 is a flag and, after a space, the rest of the line is its value; a blank
 line, or one beginning with `#`, is a comment. A flag the command line
@@ -392,7 +392,7 @@ may hold a blank or a `#`. The file is read first and the command line
 after it. `--trace` may be in a file; `--check`, `--help` and `--config`
 may not: each is what one run is asked to do, and in a file every run
 would do it --- a service would exit at once, cleanly, and never serve.
-A flag's value is the next word unless that word is one of muir-ah's
+A flag's value is the next word unless that word is one of ozd's
 flags, so `--address --name OZ` is `--address` without its value. Two
 things muir takes are refused here: `-c` given twice, and a file that is
 there but cannot be read.
@@ -428,8 +428,8 @@ its file and line when it came from one (`src/config.rs`):
 - **Endpoints**: IP literals, as `--listen` takes them; no names to
   resolve at startup.
 
-**Two examples ship**, `examples/system-100.muir-ahrc` and
-`examples/system-304.muir-ahrc`, files of flags with each release's own
+**Two examples ship**, `examples/system-100.ozdrc` and
+`examples/system-304.ozdrc`, files of flags with each release's own
 numbers from muir (`chaos/mod.rs`): System 100's file host is `MIT-OZ`
 at 3060 and its band asks for `/tree/...`; System 304's is `OZ`,
 `AMS-BRIDGE-1`, at 4403, and asks for `/sys/...`. Each mounts that
@@ -456,7 +456,7 @@ links point --- over a base for homes.
   every other machine's address at this host's endpoint ---
   `--chaos-udp-peer 3051@<this host> --chaos-udp-peer 3052@<this host>`
   --- the same endpoint every time, which works with muir as it is.
-- **On one host**, ports. muir-ah takes 42042, and each muir its own:
+- **On one host**, ports. ozd takes 42042, and each muir its own:
   `muir --chaos-address 3050 --chaos-udp 42043 --chaos-udp-peer
   3060@127.0.0.1:42042`, the next `3051` on `42044`, and so on. muir's
   `--chaos-address` without its `,<server>` half leaves muir's own
@@ -483,11 +483,11 @@ links point --- over a base for homes.
 - **`--check`**: read the flags and the file of them, run the startup
   checks, exit. For an
   administrator, and for the tests.
-- **systemd**, `contrib/muir-ah.service`: `User=muir-ah`, `Restart=on-failure`,
+- **systemd**, `contrib/ozd.service`: `User=ozd`, `Restart=on-failure`,
   and hardening that costs nothing here --- `NoNewPrivileges=yes`,
   `ProtectSystem=strict`, `ReadWritePaths=` each writable root,
   `ProtectHome=yes`, `PrivateTmp=yes`.
-- **launchd**, `contrib/com.metebalci.muir-ah.plist`: `UserName`,
+- **launchd**, `contrib/com.metebalci.ozd.plist`: `UserName`,
   `ProgramArguments`, `KeepAlive`, `StandardErrorPath`.
 - **Shutdown** is `SIGTERM`'s default. The only state is the roots, and
   an interrupted write's temporary is removed at the next start.
@@ -535,9 +535,9 @@ a test host's side. All are turned by the test with one clock it sets.
    machine's own user end.
 
 **The acceptance test** is by hand, and written in the README: two muir
-runs against muir-ah, with `examples/system-100.muir-ahrc`, boot, know the
+runs against ozd, with `examples/system-100.ozdrc`, boot, know the
 date, read their sources from the read-only mount and write in the base,
-print the right `(uptime)`; `(hostat)` on each shows muir-ah and the
+print the right `(uptime)`; `(hostat)` on each shows ozd and the
 other.
 
 ## 12. Order of work
@@ -549,7 +549,7 @@ other.
    pinned bytes.
 3. **Config** → verify: its tests.
 4. **Link, hub, NCP, loop, STATUS** → verify: the link's and STATUS's
-   tests; then by hand, `(hostat)` on a band run with muir-ah as its
+   tests; then by hand, `(hostat)` on a band run with ozd as its
    CHUDP peer, which is the first interoperation of this CHUDP with
    anything but itself.
 5. **TIME, UPTIME** → verify: their tests; then a band that boots knowing
@@ -582,6 +582,6 @@ Nothing here changes muir; these are notes for it, done there if at all.
    where the machine's own lets it fall silent (`RECEIVE-BRD`,
    `chsncp.lisp:1613`, with `CLS-ON-ERROR-P` nil, `:1588`). Here it is
    silent (`tests/ncp.rs`); a hub meets every broadcast on the subnet.
-5. **CHUDP against anything but muir.** muir and muir-ah share one
+5. **CHUDP against anything but muir.** muir and ozd share one
    reading of the frame's byte order, marked unverified in both; the
    first run against `cbridge` or `klh10` settles it for both.

@@ -5,7 +5,7 @@
 //! address and names, the UDP endpoint it binds, the roots FILE serves,
 //! the site's host table for HOSTAB, and the few peers whose endpoints are
 //! fixed --- given on the command line, or in a **file of flags**,
-//! `.muir-ahrc`, as muir takes its own flags and its `.muirrc` (muir's
+//! `.ozdrc`, as muir takes its own flags and its `.muirrc` (muir's
 //! `muirrc`, `src/main.rs`).
 //!
 //! ```text
@@ -114,11 +114,11 @@ const LISTEN: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST,
 /// Where a required flag may be given, as its refusal says.
 const WHERE: &str = "on the command line or in a file of flags";
 
-/// What an argument that is no flag's value is told: muir-ah takes flags
+/// What an argument that is no flag's value is told: ozd takes flags
 /// and nothing else, and a file given as its one argument, as the config
 /// once was, meets this.
-const FLAGS_ONLY: &str = "not a flag, and muir-ah takes nothing else: the config is flags, \
-     on the command line or in .muir-ahrc, or in the file -c <file> names";
+const FLAGS_ONLY: &str = "not a flag, and ozd takes nothing else: the config is flags, \
+     on the command line or in .ozdrc, or in the file -c <file> names";
 
 /// The site, as its flags give it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -271,7 +271,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// Every flag muir-ah takes.
+/// Every flag ozd takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Flag {
     Address,
@@ -350,7 +350,7 @@ struct Given {
 }
 
 /// The flags one place gives, the command line or a file of flags, in the
-/// order given: each a flag muir-ah takes, with a value if it wants one.
+/// order given: each a flag ozd takes, with a value if it wants one.
 /// Nothing of a value is checked here but that it is there; [`Run::new`]
 /// checks the rest.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
