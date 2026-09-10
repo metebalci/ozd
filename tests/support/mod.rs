@@ -105,8 +105,8 @@ pub fn rfc(from: u16, to: u16, contact: &str) -> Packet {
 
 // --- the daemon ----------------------------------------------------------
 
-/// A directory of this test binary's own, under the system's temporary
-/// directory (`DESIGN.md` §11), made once.
+/// A directory of this test binary's own, under Cargo's
+/// `CARGO_TARGET_TMPDIR` (`DESIGN.md` §11), made once.
 pub fn scratch() -> &'static Path {
     static SCRATCH: OnceLock<PathBuf> = OnceLock::new();
     SCRATCH.get_or_init(|| {

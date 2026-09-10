@@ -248,3 +248,26 @@ fn the_daemon_runs_from_its_command_line_and_answers_status() {
     assert_eq!((ans.source, ans.dest), (OZ, LM1));
     assert!(ans.data.starts_with(b"MIT-OZ\0"), "this host's STATUS");
 }
+
+/// **HOSTAB and NAME are served**, each opened through the daemon as a
+/// band opens it (`DESIGN.md` §7). NAME answers its one line and an EOF;
+/// HOSTAB opens and waits for a name --- what it answers is
+/// `tests/hostab.rs`'s business.
+#[test]
+fn hostab_and_name_are_served() {
+    let mut d = daemon(&site(""));
+    let mut lm1 = TestHost::new(LM1, d.at());
+    let name = Recorder::default();
+    lm1.ncp.connect(0, OZ, "NAME", Box::new(name.clone()));
+    let hostab = Recorder::default();
+    lm1.ncp.connect(0, OZ, "HOSTAB", Box::new(hostab.clone()));
+    settle(&mut d, &mut [&mut lm1], 0);
+    let name = name.events();
+    assert_eq!(name.first().map(String::as_str), Some("opened"), "NAME opens: {name:?}");
+    assert!(
+        name.iter().any(|e| e.starts_with("data ") && e.contains("Nobody is logged in.")),
+        "its line: {name:?}"
+    );
+    assert!(name.iter().any(|e| e == "eof"), "and an EOF: {name:?}");
+    assert_eq!(hostab.events(), ["opened"], "HOSTAB opens and waits for a name");
+}

@@ -12,6 +12,8 @@
 use crate::chudp::Link;
 use crate::config::Config;
 use crate::ncp::{Ncp, Service};
+use crate::service::hostab::Hostab;
+use crate::service::name::Name;
 use crate::service::status::{Meters, Status};
 use crate::service::time::{Time, Uptime};
 use std::io;
@@ -99,23 +101,16 @@ impl Daemon {
     }
 }
 
-/// What this host serves, and **the one place a service is added**
-/// (`DESIGN.md` §7); the NCP and the link know nothing of any of them.
-///
-/// - STATUS, with the official name --- the first of the `name` line's ---
-///   this host's subnet, the high byte of its address, and the meters the
-///   link counts into;
-/// - TIME, from the system clock;
-/// - UPTIME, from 0 on the daemon's clock, which is when it started
-///   ([`Daemon::turn`]).
-///
-/// FILE comes here with `src/roots.rs`, given the roots the startup checks
-/// canonicalised (`DESIGN.md` §6, §12 step 6); HOSTAB, with the `host`
-/// lines, and NAME at step 8.
+/// The services this host serves, built from the config: the one place a
+/// service is added (`DESIGN.md` §7). STATUS counts into the link's
+/// meters; UPTIME counts from the daemon's start, `now` 0; HOSTAB answers
+/// from the config's names and host lines. FILE comes with `src/roots.rs`.
 fn services(config: &Config, meters: &Arc<Meters>) -> Vec<Box<dyn Service>> {
     vec![
         Box::new(Status::new(&config.names[0], (config.address >> 8) as u8, meters.clone())),
         Box::new(Time::new()),
         Box::new(Uptime::new(0)),
+        Box::new(Hostab::new(config.address, &config.names, &config.hosts)),
+        Box::new(Name::new()),
     ]
 }
