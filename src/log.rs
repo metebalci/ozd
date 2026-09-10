@@ -15,21 +15,20 @@
 //! whole before it is written, so it goes out in one piece; one that
 //! cannot be written is lost rather than taking the daemon with it.
 //!
-//! [`civil`] is the one calendar function: FILE's dates are to be made
-//! with it too when FILE comes across (`DESIGN.md` §12), rather than with
-//! a copy of its own.
+//! [`civil`] is the one calendar function: FILE's dates are made with it
+//! too, through a re-export, rather than with a copy of its own.
 
 use std::fmt;
 use std::io::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// One event, on a line of its own: the time now, in UTC, and `what`.
 /// Where a module hands its lines for the log: the daemon gives each one
 /// that logs a closure calling [`event`], and a test gives one that keeps
 /// them. An `Arc`, since FILE shares one among every control connection's
 /// session; `Send` and `Sync`, as a session is `Send`.
 pub type Hook = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
+/// One event, on a line of its own: the time now, in UTC, and `what`.
 pub fn event(what: impl fmt::Display) {
     let unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let line = format!("{} {what}\n", stamp(unix));
