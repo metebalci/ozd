@@ -974,6 +974,23 @@ fn a_temporary_is_named_for_its_client_and_a_count() {
     }
 }
 
+/// **A temporary's name is refused in any case**, with `ATD`: on a
+/// filesystem that folds case, as macOS's usually does, `#OZD-1576-0#`
+/// names the temporary `#ozd-1576-0#`, so a pathname that differs from one
+/// only in ASCII case is refused as the name itself is. The startup's
+/// cleanup still takes only a name the daemon makes, exactly.
+#[test]
+fn a_temporarys_name_is_refused_in_any_case() {
+    let s = Scratch::new("temporary-case");
+    let b = s.dir("base");
+    s.file("base/ok.text", "ok\n");
+    let t = Tree::new(vec![base(&b)]).unwrap();
+    let name = temporary_name(0o3050);
+    for other in [name.to_uppercase(), name.replacen("ozd", "Ozd", 1)] {
+        refused_everywhere(&s, &t, "ATD", &format!("/{other}"));
+    }
+}
+
 /// An entry's resolution for writing, or the test fails.
 #[track_caller]
 fn entry(t: &Tree, pathname: &str) -> ozd::roots::Entry {

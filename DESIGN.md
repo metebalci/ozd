@@ -265,9 +265,11 @@ file is ever half one and half the other.
 - **Roots may not overlap**; startup refuses it. A read-only mount inside
   a writable base could otherwise be written through a link made in the
   base, which resolves under the base.
-- **A temporary's name is refused in every pathname**, with `ATD`. No
-  client can delete one mid-write and put a link in its place, and the
-  cleanup touches only what this daemon made.
+- **A temporary's name is refused in every pathname**, in any ASCII
+  case, with `ATD`: a filesystem that folds case would take `#OZD-...#`
+  for one. No client can delete one mid-write and put a link in its place,
+  and the cleanup, which matches the name exactly, touches only what this
+  daemon made.
 - **A link that does not resolve**, dangling or looping, is refused:
   creating through a dangling link would make its target, wherever it
   points.

@@ -34,9 +34,12 @@
 //!   link in the base to one of the mount's files with `CREATE-LINK` ---
 //!   whose target resolves, the mount being a root --- and opens the link
 //!   for writing, and the file it reaches lies under the base.
-//! - **The service's temporaries cannot be named.** A client that could
-//!   name one could delete it mid-write and put a link in its place, and
-//!   the startup's cleanup would remove what the daemon did not make.
+//! - **The service's temporaries cannot be named**, in any case. A client
+//!   that could name one could delete it mid-write and put a link in its
+//!   place, and the startup's cleanup would remove what the daemon did not
+//!   make. A filesystem that folds case takes `#OZD-...#` for one, so a
+//!   pathname is refused a temporary's name in any ASCII case; the cleanup
+//!   still matches exactly.
 //!
 //! **Why checking a path and then opening it is safe here.** The path
 //! checked is the path opened, and it contains no link when it is checked:
@@ -255,8 +258,9 @@ impl Tree {
     /// What a pathname names, for reading (`DESIGN.md` §6, `resolve`):
     ///
     /// 1. Split on `/`, empty components dropped. A `.` or a `..` is
-    ///    refused, `ATD`, not normalised; so is a temporary's name (see
-    ///    [`is_temporary`]). No components at all is [`Resolved::Top`].
+    ///    refused, `ATD`, not normalised; so is a temporary's name, in any
+    ///    ASCII case (see [`is_temporary`]). No components at all is
+    ///    [`Resolved::Top`].
     /// 2. The first component is a mount if it is exactly a mount's name,
     ///    case and all --- FILE folds no case in a pathname, and a
     ///    band sends its pathnames in lower case (`DESIGN.md` §6) --- and
@@ -423,7 +427,7 @@ impl Tree {
     /// the root they are in, with the components under it.
     fn pick<'p>(&self, pathname: &'p str) -> Result<Picked<'_, 'p>, Refusal> {
         let parts: Vec<&str> = pathname.split('/').filter(|c| !c.is_empty()).collect();
-        if parts.iter().any(|c| *c == "." || *c == ".." || is_temporary(c)) {
+        if parts.iter().any(|c| *c == "." || *c == ".." || names_a_temporary(c)) {
             return Err(denied());
         }
         let Some(&first) = parts.first() else {
@@ -606,6 +610,14 @@ static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
 pub fn temporary_name(client: u16) -> String {
     let n = NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed);
     format!("{TEMPORARY_PREFIX}{client}-{n}{TEMPORARY_SUFFIX}")
+}
+
+/// Whether a client's `name` could reach a temporary: [`is_temporary`] in
+/// any ASCII case, since on a filesystem that folds case, as macOS's
+/// usually does, `#OZD-1576-0#` opens `#ozd-1576-0#`. What a pathname may
+/// not hold; the cleanup matches exactly, and takes only what it made.
+fn names_a_temporary(name: &str) -> bool {
+    is_temporary(&name.to_ascii_lowercase())
 }
 
 /// Whether `name` is a temporary's name, as [`temporary_name`] makes them:
