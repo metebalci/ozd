@@ -1,0 +1,17 @@
+// SPDX-FileCopyrightText: 2026 Mete Balci
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//! muir-ah: the associated machine for a site of CADR Lisp Machines, and
+//! the hub of their one Chaosnet subnet over UDP.
+//!
+//! `DESIGN.md` is the design, its §3 these modules, and `PROTOCOLS.md`
+//! what each protocol is.
+
+pub mod address;
+pub mod chudp;
+pub mod config;
+pub mod lispm;
+pub mod ncp;
+pub mod packet;
+pub mod roots;
+pub mod service;

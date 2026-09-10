@@ -1,0 +1,17 @@
+[package]
+name = "muir-ah"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+authors = ["Mete Balci"]
+description = "The associated machine for a site of MIT CADR Lisp Machines: Chaosnet services over UDP."
+readme = "README.md"
+
+# None, and deliberately: std has the socket, both clocks, the filesystem
+# and the test harness. DESIGN.md §2 says where a crate would be the
+# honest answer, and why neither is taken.
+[dependencies]
+
+# The one `unsafe` is `geteuid`, which allows it for itself (DESIGN.md §2).
+[lints.rust]
+unsafe_code = "deny"
