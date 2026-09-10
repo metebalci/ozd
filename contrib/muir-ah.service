@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Mete Balci
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# muir-ah as a systemd service (DESIGN.md §10). Install the binary at
+# /usr/local/bin/muir-ah and the config at /etc/muir-ah.conf; make a user
+# muir-ah that owns the writable root and nothing else, and list that root
+# in ReadWritePaths. Not yet tried on a system.
+
+[Unit]
+Description=muir-ah, the associated machine for a site of CADR Lisp Machines
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=muir-ah
+ExecStart=/usr/local/bin/muir-ah /etc/muir-ah.conf
+Restart=on-failure
+
+# Hardening that costs nothing here: muir-ah needs no privilege and
+# writes nothing but its writable roots.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/srv/lispm
+ProtectHome=yes
+PrivateTmp=yes
+# A root under /home needs ProtectHome=read-only instead, or none.
+
+[Install]
+WantedBy=multi-user.target

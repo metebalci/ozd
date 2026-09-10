@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  SPDX-FileCopyrightText: 2026 Mete Balci
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  muir-ah as a launchd daemon (DESIGN.md §10), for /Library/LaunchDaemons.
+  Install the binary at /usr/local/bin/muir-ah and the config at
+  /usr/local/etc/muir-ah.conf, and make a user _muir-ah that owns the
+  writable root and nothing else. Not yet tried on a system.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.metebalci.muir-ah</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/muir-ah</string>
+    <string>/usr/local/etc/muir-ah.conf</string>
+  </array>
+  <key>UserName</key>
+  <string>_muir-ah</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardErrorPath</key>
+  <string>/usr/local/var/log/muir-ah.log</string>
+</dict>
+</plist>
