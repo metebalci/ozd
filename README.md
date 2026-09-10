@@ -27,8 +27,9 @@ dependencies: nothing else is downloaded.
     target/release/muir-ah examples/system-100.conf
 
 The one argument is the site's config (`DESIGN.md` §8). `--check` reads
-it and checks its roots, changing nothing, then exits; `--trace` prints every packet. It will not run as root, and
-it logs to stderr, one line an event.
+it and checks its roots, changing nothing, then exits; `--trace` prints
+every packet; `--help` says what each argument is. It will not run as
+root, and it logs to stderr, one line an event.
 
 The two examples are for System 100 and System 304, with each band's own
 numbers; edit their paths before using one. Without a `listen` line it

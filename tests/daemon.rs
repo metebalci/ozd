@@ -427,3 +427,28 @@ fn file_is_served_from_the_roots() {
     let events = file.events();
     assert_eq!(events.first().map(String::as_str), Some("opened"), "FILE opens: {events:?}");
 }
+
+/// **`-h` and `--help` print the help on stdout, and exit 0**, as muir's
+/// do: the usage, what muir-ah is, and each argument --- wherever the flag
+/// is on the command line and whatever else is there, even a flag that is
+/// not one, and before anything else is checked, so as root too.
+#[test]
+fn help_is_printed_on_stdout_and_exits_0() {
+    let lines: [&[&str]; 5] = [
+        &["--help"],
+        &["-h"],
+        &["--check", "--help"],
+        &["--help", "no-such.conf"],
+        &["--frobnicate", "--help"],
+    ];
+    for args in lines {
+        let out = muir_ah().args(args).output().expect("it runs");
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", said(&out));
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(text.starts_with("usage: muir-ah [--trace] [--check] <config>\n"), "{args:?}");
+        for word in ["--trace", "--check", "<config>", "--help", "root"] {
+            assert!(text.contains(word), "{args:?}: {word} in {text}");
+        }
+        assert!(out.stderr.is_empty(), "{args:?}: nothing on stderr: {}", said(&out));
+    }
+}

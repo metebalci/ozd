@@ -8,6 +8,8 @@
 //! muir-ah [--trace] [--check] <config>
 //! ```
 //!
+//! `-h` or `--help`, anywhere on the line, prints the usage and what each
+//! argument is on stdout, and exits 0, as muir's does.
 //! `--trace` prints every packet, every packet passed on, and every drop
 //! with why. `--check` reads the config and runs the startup checks, binds
 //! nothing, and exits 0 if all is well and 1 if not. The usage and every
@@ -26,6 +28,31 @@ use std::time::{Duration, Instant};
 
 const USAGE: &str = "usage: muir-ah [--trace] [--check] <config>";
 
+/// What `-h` and `--help` print after the usage: what this is, then each
+/// argument in the order the usage gives them, then how it runs --- as
+/// muir's help is laid out.
+const HELP: &str = "\
+The associated machine for a site of MIT CADR Lisp Machines: one host on
+one Chaosnet subnet, over UDP, serving the machines their files, their
+time and their host table, and passing packets between them.
+
+  --trace                      print every packet, every packet passed on to
+                               another host, and every drop, with why.
+  --check                      read the config and check its roots, then exit, 0
+                               if all is well and 1 if not; binds nothing and
+                               changes nothing.
+  <config>                     the site's config file, one directive a line:
+                               this host's address and names, where it listens
+                               --- without a listen line, 127.0.0.1:42042 ---
+                               its roots, the site's host table and any fixed
+                               peers (DESIGN.md §8; examples/ has System 100's
+                               and System 304's).
+  -h | --help                  print this, and exit.
+
+It will not run as root. It logs to stderr, a line an event, stamped in
+UTC. A command line that is not one config file exits 2, a daemon that
+cannot start exits 1, and one that starts runs until it is stopped.";
+
 /// How long the loop waits for a datagram before it turns anyway: an idle
 /// daemon wakes ten times a second, which costs nothing measurable, and a
 /// retransmission is at most this late against its 500 ms (`DESIGN.md`
@@ -33,6 +60,10 @@ const USAGE: &str = "usage: muir-ah [--trace] [--check] <config>";
 const WAIT: Duration = Duration::from_millis(100);
 
 fn main() {
+    // `-h` or `--help`, wherever it is: the help, and nothing else checked.
+    if std::env::args_os().skip(1).any(|a| a.to_str().is_some_and(|a| a == "-h" || a == "--help")) {
+        help();
+    }
     let (mut trace, mut check, mut path) = (false, false, None);
     for arg in std::env::args_os().skip(1) {
         match arg.to_str() {
@@ -110,6 +141,13 @@ fn running_as_root() -> bool {
     }
     // SAFETY: no argument, no failure, no memory; as above.
     unsafe { geteuid() == 0 }
+}
+
+/// `-h` or `--help`: the usage and the help, on stdout; exit code 0, as
+/// muir's.
+fn help() -> ! {
+    println!("{USAGE}\n\n{HELP}");
+    exit(0);
 }
 
 /// A command line that is not `muir-ah [--trace] [--check] <config>`: what
