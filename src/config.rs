@@ -31,7 +31,9 @@
 //! absolute, a second base, and a mount's name twice; an attribute on a
 //! `name` or `host` line other than one `system=` with a type; an address
 //! that would be two answers, a host name given twice, and a system type
-//! that is not upper case (below). The first refusal is the one reported.
+//! that is not upper case, and a name, a system type or a mount's name
+//! that is not printable ASCII (below). The first refusal is the one
+//! reported.
 //! One that no line is to blame for --- a required line missing --- has no
 //! line. [`Config::parse`] touches no disk: whether a root exists, is a
 //! directory and can be written is the startup's to check (`DESIGN.md` §6).
@@ -65,6 +67,13 @@
 //! a host with no type does --- `WAITS`, which its SUPDUP asks after
 //! (`sys/window/supdup.lisp:968`), is one --- so the types the band knows
 //! are not a list the file keeps to.
+//!
+//! **A name, a system type and a mount's name are printable ASCII**, `!`
+//! to `~`. HOSTAB sends a name, and FILE a mount's name in a listing of
+//! `/`, a byte a character ([`crate::lispm::lispm_text`]): a character
+//! below 256 is that byte, and U+008D would go out as 215 octal, the band's
+//! newline, in the middle of an answer. The band's own tables hold nothing
+//! else.
 
 use crate::address::parse_address;
 use crate::chudp::PORT;
@@ -334,6 +343,11 @@ impl Reading {
                     "root {name}: not a mount's name, which is one directory name at the top of the tree"
                 ));
             }
+            if !name.chars().all(|c| c.is_ascii_graphic()) {
+                return Err(format!(
+                    "root {name:?}: not printable ASCII, which a mount's name is (the module documentation)"
+                ));
+            }
             if name.chars().any(char::is_uppercase) {
                 return Err(format!(
                     "root {name}: a mount's name is lower case, as a band's pathnames are, and names match exactly"
@@ -501,9 +515,19 @@ fn names_and_system<'a>(
     let (mut names, mut system) = (Vec::new(), None);
     for &w in words {
         match w.split_once('=') {
+            None if !w.chars().all(|c| c.is_ascii_graphic()) => {
+                return Err(format!(
+                    "{line} {w:?}: not printable ASCII, which a name is (the module documentation)"
+                ));
+            }
             None => names.push(w),
             Some(("system", "")) => {
                 return Err(format!("{line} {w}: system= wants a type, as system=LISPM"));
+            }
+            Some(("system", t)) if !t.chars().all(|c| c.is_ascii_graphic()) => {
+                return Err(format!(
+                    "{line} {w:?}: not printable ASCII, which a system type is (the module documentation)"
+                ));
             }
             Some(("system", t)) if t.chars().any(char::is_lowercase) => {
                 return Err(format!(

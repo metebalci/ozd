@@ -363,7 +363,9 @@ case and names match exactly (§6); every address valid by
   different questions about one host, which is how `cbridge` gets a name
   and a fixed endpoint.
 - **Names**: each once across `name` and every `host` line, ignoring
-  case, as HOSTAB looks them up.
+  case, as HOSTAB looks them up. A name, a system type and a mount's
+  name are printable ASCII: HOSTAB and FILE send a character as one
+  byte, and U+008D would be the band's newline in an answer.
 - **System types**: `system=` on a `host` line, and on the `name` line
   for this host's own; once a line, with a value, in upper case. The band
   interns the value as it comes, and a type it has no flavor for gives

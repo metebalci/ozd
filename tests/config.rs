@@ -488,3 +488,17 @@ fn a_file_that_is_not_there_is_refused() {
     let e = Config::load(&path).unwrap_err();
     assert_eq!(e.line, None, "{e}");
 }
+
+/// **A name, a system type and a mount's name are printable ASCII**, and
+/// refused with their line otherwise. HOSTAB sends a name a byte a
+/// character, and FILE a mount's name in a listing of `/`, through
+/// `lispm::lispm_text`, where a character below 256 is that byte: U+008D
+/// would go out as 215 octal, the band's newline, in the middle of an
+/// answer. The band's own tables hold nothing else.
+#[test]
+fn names_system_types_and_mount_names_are_printable_ascii() {
+    refused("address 3060\nroot /srv/lispm\nname MIT-OZ\u{8d}\n", Some(3), "printable ASCII");
+    refused_after("host 3050 LM\u{e9}1\n", 4, "printable ASCII");
+    refused_after("host 3050 LM1 system=UNI\u{8d}X\n", 4, "printable ASCII");
+    refused_after("root tr\u{e9}e /srv/tree\n", 4, "printable ASCII");
+}
