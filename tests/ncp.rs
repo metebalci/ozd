@@ -876,3 +876,43 @@ fn a_log_line_is_one_line_whatever_arrives() {
         ]
     );
 }
+
+/// **A session's close reason is cut to fit a packet**, as a refusal's is
+/// (`refuse`): a CLS carries at most `MAX_DATA` bytes of reason (AIM-628
+/// §3.5), or its count word would run past what an interface takes.
+#[test]
+fn a_sessions_close_reason_fits_a_packet() {
+    struct Closer;
+    struct Closing(bool);
+    impl Service for Closer {
+        fn contact(&self) -> &str {
+            "CLOSER"
+        }
+        fn request(&mut self, _now: u64, _args: &str, _from: (u16, u16)) -> Response {
+            Response::Accept(Box::new(Closing(false)))
+        }
+    }
+    impl Session for Closing {
+        fn data(&mut self, _now: u64, _op: u8, _bytes: &[u8]) {}
+        fn eof(&mut self, _now: u64) {}
+        fn closed(&mut self, _now: u64, _reason: &str) {}
+        fn poll(&mut self, _now: u64) -> Vec<Out> {
+            if std::mem::replace(&mut self.0, true) {
+                Vec::new()
+            } else {
+                vec![Out::Close("x".repeat(600))]
+            }
+        }
+    }
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Closer));
+    let me = (0o3050, 7);
+    h.receive(0, &arriving(&rfc(me, 0o3060, 100, "CLOSER")));
+    let opn = next_from(&mut h, 0).expect("an OPN");
+    assert_eq!(opn.opcode, op::OPN);
+    let server = (0o3060, opn.source_index);
+    h.receive(10, &arriving(&sts(me, server, 101, opn.number, 5)));
+    let cls = next_from(&mut h, 10).expect("the session's CLS");
+    assert_eq!(cls.opcode, op::CLS);
+    assert!(cls.data.len() <= packet::MAX_DATA, "{} bytes of reason", cls.data.len());
+}

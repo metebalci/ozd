@@ -675,7 +675,10 @@ impl Ncp {
                 Out::Eof => self.packet(op::EOF, remote, index, number, ack, Vec::new()),
                 Out::Close(reason) => {
                     self.note(index, format_args!("closed by our CLS: {}", OneLine(&reason)));
-                    let p = self.packet(op::CLS, remote, index, number, ack, reason.into_bytes());
+                    // Cut to what a packet carries, as `refuse` cuts a refusal's.
+                    let mut bytes = reason.into_bytes();
+                    bytes.truncate(MAX_DATA);
+                    let p = self.packet(op::CLS, remote, index, number, ack, bytes);
                     self.send(p);
                     self.conns[index as usize] = None;
                     return;
