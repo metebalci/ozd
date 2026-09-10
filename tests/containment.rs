@@ -33,20 +33,20 @@ type Refusal = (&'static str, String);
 
 /// Names that look like a temporary's and are not one.
 const LOOKALIKES: [&str; 16] = [
-    "#muir-1576-x#",
-    "#muir-1576-1",
-    "muir-1576-1#",
-    "#muir--1#",
-    "#muir-1576-#",
-    "#muir-#",
-    "#ozd-1-2#",
-    "#MUIR-1576-1#",
-    "x#muir-1-2#",
-    "#muir-1-2#.text",
-    "#muir-1-2-3#",
-    "#muir-+1-2#",
-    "#muir-1-+2#",
-    "#muir-1-2# ",
+    "#ozd-1576-x#",
+    "#ozd-1576-1",
+    "ozd-1576-1#",
+    "#ozd--1#",
+    "#ozd-1576-#",
+    "#ozd-#",
+    "#oz-1-2#",
+    "#OZD-1576-1#",
+    "x#ozd-1-2#",
+    "#ozd-1-2#.text",
+    "#ozd-1-2-3#",
+    "#ozd-+1-2#",
+    "#ozd-1-+2#",
+    "#ozd-1-2# ",
     "##",
     "#",
 ];
@@ -581,7 +581,7 @@ fn a_root_that_is_missing_not_a_directory_slash_or_relative_does_not_start() {
     }
     does_not_start(&s, vec![base(&b), base(&one)], "more than one base");
     does_not_start(&s, vec![mount("tree", &b), mount("tree", &one)], "named twice");
-    for name in ["", "a/b", "/tree", ".", "..", "#muir-1576-0#"] {
+    for name in ["", "a/b", "/tree", ".", "..", "#ozd-1576-0#"] {
         does_not_start(&s, vec![base(&b), mount(name, &one)], "not a name");
     }
     does_not_start(&s, vec![base(&b), readonly(mount("inner", &inner))], "overlaps");
@@ -960,21 +960,20 @@ fn stale_temporaries_are_removed_and_nothing_else() {
     assert!(t.remove_temporaries().is_empty(), "a second pass finds nothing");
 }
 
-/// **A temporary is named as muir names its own**: `#muir-`, the client's
-/// address in decimal, `-`, a count taken once per write for the whole
-/// process, and `#` (`src/chaos/file.rs:865`, and `NEXT_TEMP` at `:70`),
-/// so that no two writes, from one client or two, ever share one. What
-/// only looks like one is not one.
+/// **A temporary is named for its client and a count**: `#ozd-`, the
+/// client's address in decimal, `-`, a count taken once per write for the
+/// whole process, and `#`, so that no two writes, from one client or two,
+/// ever share one. What only looks like one is not one.
 #[test]
-fn a_temporary_is_named_as_muirs_are() {
+fn a_temporary_is_named_for_its_client_and_a_count() {
     let (a, b) = (temporary_name(0o3050), temporary_name(0o3050));
     assert_ne!(a, b);
     for n in [&a, &b] {
-        let count = n.strip_prefix("#muir-1576-").and_then(|n| n.strip_suffix('#'));
+        let count = n.strip_prefix("#ozd-1576-").and_then(|n| n.strip_suffix('#'));
         assert!(count.is_some_and(|c| !c.is_empty() && c.bytes().all(|d| d.is_ascii_digit())));
         assert!(is_temporary(n), "{n}");
     }
-    assert!(is_temporary("#muir-0-0#") && is_temporary("#muir-65535-18446744073709551615#"));
+    assert!(is_temporary("#ozd-0-0#") && is_temporary("#ozd-65535-18446744073709551615#"));
     for name in LOOKALIKES {
         assert!(!is_temporary(name), "{name:?}");
     }

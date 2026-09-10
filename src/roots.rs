@@ -580,11 +580,9 @@ impl Place {
     }
 }
 
-/// How FILE's temporaries are named: `#muir-`, the client's address, `-`, a
-/// count, `#`. muir's, `format!("#muir-{}-{}#", self.client, NEXT_TEMP...)`
-/// (`src/chaos/file.rs:865`), the address in decimal as `{}` prints a
-/// `u16`.
-const TEMPORARY_PREFIX: &str = "#muir-";
+/// How FILE's temporaries are named: `#ozd-`, the client's address in
+/// decimal, `-`, a count, `#`.
+const TEMPORARY_PREFIX: &str = "#ozd-";
 const TEMPORARY_SUFFIX: &str = "#";
 
 /// The count in a temporary's name, taken once per name for the whole
@@ -595,7 +593,7 @@ const TEMPORARY_SUFFIX: &str = "#";
 static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
 
 /// A new name for a write's temporary, for the host at `client`, never
-/// given before in this process: `#muir-1576-0#` for 3050, the first time.
+/// given before in this process: `#ozd-1576-0#` for 3050, the first time.
 ///
 /// FILE writes into a temporary and renames it over the file on CLOSE
 /// (`src/chaos/file.rs:809`, `open_write`). What keeps that in the root:
@@ -621,7 +619,7 @@ pub fn temporary_name(client: u16) -> String {
 }
 
 /// Whether `name` is a temporary's name, as [`temporary_name`] makes them:
-/// `#muir-`, digits, `-`, digits, `#`, exactly.
+/// `#ozd-`, digits, `-`, digits, `#`, exactly.
 pub fn is_temporary(name: &str) -> bool {
     let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
     name.strip_prefix(TEMPORARY_PREFIX)
