@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Chaosnet over UDP: the frame, and --- when they are written --- the
-//! link and the hub.
+//! Chaosnet over UDP: the frame, and the link and the hub.
 //!
 //! CHUDP puts one Chaosnet packet in one UDP datagram behind a four-byte
 //! header, and it is what `cbridge`, `usim`, `klh10` and the live
@@ -17,7 +16,7 @@
 //! speaks of this host's. muir's link is a node on that cable and does
 //! not come. The link and the hub --- the socket, the table of endpoints,
 //! and a packet for another host of the subnet passed on untouched ---
-//! are written later, in this module (`DESIGN.md` §5).
+//! are [`Link`], below the frame (`DESIGN.md` §5).
 //!
 //! ## The frame
 //!
@@ -72,7 +71,18 @@
 //! [`VERSION`] is checked on receipt for the same reason: an unknown
 //! version is refused with its number rather than parsed as this one.
 
-use crate::packet::{Framed, MAX_DATA, check_word};
+use crate::config::Config;
+use crate::log;
+use crate::ncp::op_name;
+use crate::packet::{Framed, MAX_DATA, Packet, check_word};
+use crate::service::status::Meters;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
+use std::io;
+use std::net::{SocketAddr, UdpSocket};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 /// The port CHUDP is spoken on unless the config's `listen` names another
 /// (`DESIGN.md` §5).
@@ -256,4 +266,318 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
     over.push(source);
     let check_ok = check_word(&over) == check;
     Ok(Framed { buffer, source, check, check_ok })
+}
+
+// --- the link and the hub ------------------------------------------------
+
+/// The link, and the hub of this host's subnet (`DESIGN.md` §5): the one
+/// socket, the table of endpoints, and what becomes of each datagram.
+///
+/// **Endpoints are learned**, as muir's `--chaos-udp-dynamic` learns them
+/// (muir's `src/chaos/udp.rs`, `arrived`): a packet's source --- the
+/// header's, since that is where an answer is addressed --- is recorded at
+/// the UDP address its datagram came from. A host behind `cbridge` is
+/// learned at `cbridge`'s endpoint, which is where its packets go. A
+/// `peer` line fixes an endpoint, and a packet does not move a fixed one.
+/// This host's own address is never learned, and neither is 0, which is
+/// no host's. The table is not expired, and holds one endpoint an address.
+///
+/// **Receiving**, in order ([`Link::receive`]); each drop is counted, and
+/// printed with why under [`Link::trace`]:
+///
+/// 1. [`unwrap`], verbatim: length, version, function. A datagram it
+///    refuses for its length is meter 7, `bad_bit_count`; for anything
+///    else, meter 8, `other_discarded` (`DESIGN.md` §7).
+/// 2. The trailer's source is this host's address, or 0: dropped, muir's
+///    rule for a frame claiming to be from its own station.
+/// 3. The header's source is learned, before anything else is done with
+///    the packet, so that an answer to it can be passed on at once.
+/// 4. By the trailer's destination, the cable's, which is what a cable
+///    delivers by:
+///    - **this host**: to the NCP;
+///    - **0**, a broadcast: to the NCP, and passed on to every endpoint
+///      but the one it came from;
+///    - **another host of this subnet with an endpoint**: passed on to
+///      that endpoint, unless it is the one the datagram came from;
+///    - **anything else** --- another subnet, a host not yet heard from,
+///      or back where it came from: dropped.
+///
+/// **Passed on means untouched**: the datagram goes out as it came, byte
+/// for byte, as a cable does not change a frame --- no forwarding count,
+/// no new trailer. That is what makes this a hub and not a bridge, and
+/// why nothing goes to another subnet: there is no routing to decide
+/// where. A check word that is not the hardware's is traced and the
+/// packet handled all the same (`DESIGN.md` §5).
+///
+/// **Sending this host's own** ([`Link::send`]): [`wrap`] with this host's
+/// address and the hardware's check word, to the destination's endpoint,
+/// or once to every distinct endpoint for a destination of 0. A
+/// destination with no endpoint is dropped, and counted.
+///
+/// Meter 1, `received`, counts every datagram; meter 2, `transmitted`,
+/// every datagram sent, this host's own and those passed on ([`Meters`]).
+pub struct Link {
+    socket: UdpSocket,
+    /// Where the socket is bound, as the system bound it.
+    at: SocketAddr,
+    /// This host's address.
+    address: u16,
+    endpoints: BTreeMap<u16, Endpoint>,
+    meters: Arc<Meters>,
+    /// How the socket waits for a datagram now: not at all, non-blocking,
+    /// or at most this long. Changed only when a turn asks for another.
+    waiting: Option<Duration>,
+    /// Every packet, every packet passed on, and every drop with why,
+    /// printed as they go by: `--trace` (`DESIGN.md` §10).
+    pub trace: bool,
+}
+
+/// Where a host's packets go.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Endpoint {
+    at: SocketAddr,
+    /// Given by a `peer` line, so that no packet moves it.
+    fixed: bool,
+}
+
+impl Link {
+    /// Binds `config.listen` and holds the endpoints `config.peers` fixes,
+    /// for the host at `config.address`, counting into `meters`. A socket
+    /// that cannot be bound is the error.
+    pub fn bind(config: &Config, meters: Arc<Meters>) -> io::Result<Link> {
+        let socket = UdpSocket::bind(config.listen)?;
+        socket.set_nonblocking(true)?;
+        let at = socket.local_addr()?;
+        let endpoints = config
+            .peers
+            .iter()
+            .map(|p| (p.address, Endpoint { at: p.endpoint, fixed: true }))
+            .collect();
+        let address = config.address;
+        Ok(Link { socket, at, address, endpoints, meters, waiting: None, trace: false })
+    }
+
+    /// Where the socket is bound: a `listen` at port 0 is the port the
+    /// system picked.
+    pub fn at(&self) -> SocketAddr {
+        self.at
+    }
+
+    /// Where packets for `address` go: its endpoint, fixed or learned, if
+    /// it has one.
+    pub fn endpoint(&self, address: u16) -> Option<SocketAddr> {
+        self.endpoints.get(&address).map(|e| e.at)
+    }
+
+    /// Waits at most `wait` for one datagram --- not at all for a `wait`
+    /// of zero --- and puts it through the receive order. What comes back
+    /// is the packet for the NCP: one for this host, or a broadcast.
+    ///
+    /// The buffer is one byte longer than [`MAX_FRAME`], as that says, so
+    /// a datagram longer than any packet fills it and is refused for its
+    /// length. A socket error is logged, and is nothing arrived.
+    pub fn receive(&mut self, now: u64, wait: Duration) -> Option<Framed> {
+        if let Err(e) = self.wait_at_most(wait) {
+            log::event(format_args!("chudp: the socket at {}: {e}", self.at));
+            return None;
+        }
+        let mut datagram = [0u8; MAX_FRAME + 1];
+        let (n, from) = match self.socket.recv_from(&mut datagram) {
+            Ok(got) => got,
+            Err(e) if nothing_there(&e) => return None,
+            Err(e) => {
+                log::event(format_args!("chudp: the socket at {}: {e}", self.at));
+                return None;
+            }
+        };
+        self.meters.received.fetch_add(1, Ordering::Relaxed);
+        self.arrived(now, &datagram[..n], from)
+    }
+
+    /// Sets how the socket waits, when a turn asks for another way than it
+    /// has. std refuses a read timeout of zero, so zero is non-blocking.
+    fn wait_at_most(&mut self, wait: Duration) -> io::Result<()> {
+        let want = (!wait.is_zero()).then_some(wait);
+        if want != self.waiting {
+            match want {
+                None => self.socket.set_nonblocking(true)?,
+                Some(w) => {
+                    self.socket.set_read_timeout(Some(w))?;
+                    self.socket.set_nonblocking(false)?;
+                }
+            }
+            self.waiting = want;
+        }
+        Ok(())
+    }
+
+    /// One datagram, from `from`, through the receive order.
+    fn arrived(&mut self, now: u64, datagram: &[u8], from: SocketAddr) -> Option<Framed> {
+        let f = match unwrap(datagram) {
+            Ok(f) => f,
+            Err(why) => {
+                let meter = if refused_for_length(datagram) {
+                    &self.meters.bad_bit_count
+                } else {
+                    &self.meters.other_discarded
+                };
+                meter.fetch_add(1, Ordering::Relaxed);
+                self.traced(now, format_args!("from {from}: dropped: {why}"));
+                return None;
+            }
+        };
+        // What `unwrap` takes is a whole packet, its count answering its
+        // length, so this does not fail; if it did, the datagram would be
+        // dropped as any other.
+        let Ok((p, dest)) = Packet::from_buffer(&f.buffer) else {
+            let words = f.buffer.len();
+            self.discard(now, format_args!("from {from}: {words} words are not a packet"));
+            return None;
+        };
+        let (source, opcode) = (f.source, p.opcode);
+        let odd = if f.check_ok { "" } else { ", its check word not the hardware's" };
+        let op = op_name(opcode);
+        self.traced(now, format_args!("from {from}: {source:o} -> {dest:o} {op}{odd}"));
+        if source == self.address || source == 0 {
+            let who = if source == 0 { "no host" } else { "this host" };
+            self.discard(now, format_args!("from {from}: a frame from {source:o}, {who}"));
+            return None;
+        }
+        self.learn(now, p.source, from);
+        if dest == self.address {
+            return Some(f);
+        }
+        if dest == 0 {
+            for to in self.everyone_but(Some(from)) {
+                self.pass_on(now, datagram, (source, dest, opcode), to);
+            }
+            return Some(f);
+        }
+        if dest >> 8 != self.address >> 8 {
+            let subnet = dest >> 8;
+            self.discard(
+                now,
+                format_args!("{source:o} -> {dest:o}: subnet {subnet:o} is not this one"),
+            );
+            return None;
+        }
+        match self.endpoint(dest) {
+            None => self.discard(now, format_args!("{source:o} -> {dest:o}: not heard from")),
+            Some(to) if to == from => self.discard(
+                now,
+                format_args!("{source:o} -> {dest:o}: at {from}, where it came from"),
+            ),
+            Some(to) => self.pass_on(now, datagram, (source, dest, opcode), to),
+        }
+        None
+    }
+
+    /// The header's source learned at `from`, unless it is 0, this host,
+    /// or fixed by a `peer` line.
+    fn learn(&mut self, now: u64, source: u16, from: SocketAddr) {
+        if source == 0 || source == self.address {
+            return;
+        }
+        match self.endpoints.get(&source).copied() {
+            Some(e) if e.fixed && e.at != from => {
+                let at = e.at;
+                self.traced(now, format_args!("{source:o} is fixed at {at}, not moved to {from}"));
+            }
+            Some(e) if e.fixed || e.at == from => {}
+            _ => {
+                self.endpoints.insert(source, Endpoint { at: from, fixed: false });
+                self.traced(now, format_args!("{source:o} is at {from}"));
+            }
+        }
+    }
+
+    /// One of this host's own packets out: the NCP's buffer, cable
+    /// destination last, as `wrap(buffer, own address, check_word(buffer +
+    /// own address))` --- the 9401's CRC-16, which is what muir sends ---
+    /// to the destination's endpoint, or once to every distinct endpoint
+    /// for 0. A destination with no endpoint is dropped, and counted.
+    pub fn send(&self, now: u64, buffer: &[u16]) {
+        let mut over = buffer.to_vec();
+        over.push(self.address);
+        let framed = wrap(buffer, self.address, check_word(&over));
+        let (Some(datagram), Some(&dest)) = (framed, buffer.last()) else {
+            self.discard(now, format_args!("an empty buffer is no packet"));
+            return;
+        };
+        let to = match dest {
+            0 => self.everyone_but(None),
+            d => self.endpoint(d).into_iter().collect(),
+        };
+        let (own, op) = (self.address, op_name(buffer[0].to_be_bytes()[0]));
+        if to.is_empty() {
+            self.discard(now, format_args!("{own:o} -> {dest:o} {op}: no endpoint"));
+            return;
+        }
+        for at in to {
+            self.traced(now, format_args!("{own:o} -> {dest:o} {op} to {at}"));
+            self.send_to(&datagram, at);
+        }
+    }
+
+    /// The datagram as it came, to `to`.
+    fn pass_on(&self, now: u64, datagram: &[u8], packet: (u16, u16, u8), to: SocketAddr) {
+        let (source, dest, op) = (packet.0, packet.1, op_name(packet.2));
+        self.traced(now, format_args!("{source:o} -> {dest:o} {op} passed on to {to}"));
+        self.send_to(datagram, to);
+    }
+
+    /// Every distinct endpoint, each once, but `but`.
+    fn everyone_but(&self, but: Option<SocketAddr>) -> BTreeSet<SocketAddr> {
+        self.endpoints.values().map(|e| e.at).filter(|&at| Some(at) != but).collect()
+    }
+
+    /// `datagram` to `to`: meter 2 if it went; logged, and meter 8, if the
+    /// socket would not take it.
+    fn send_to(&self, datagram: &[u8], to: SocketAddr) {
+        match self.socket.send_to(datagram, to) {
+            Ok(_) => {
+                self.meters.transmitted.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(e) => {
+                self.meters.other_discarded.fetch_add(1, Ordering::Relaxed);
+                log::event(format_args!("chudp: to {to}: {e}"));
+            }
+        }
+    }
+
+    /// A packet dropped for anything but its length: meter 8, and why,
+    /// under trace.
+    fn discard(&self, now: u64, why: fmt::Arguments) {
+        self.meters.other_discarded.fetch_add(1, Ordering::Relaxed);
+        self.traced(now, format_args!("dropped: {why}"));
+    }
+
+    /// A line of the trace, at `now` on the daemon's clock, as muir's
+    /// `--chaos-trace` prints its own.
+    fn traced(&self, now: u64, what: fmt::Arguments) {
+        if self.trace {
+            eprintln!("chudp {now:>6}: {what}");
+        }
+    }
+}
+
+/// Whether [`unwrap`] refused `datagram` for its length --- too short for
+/// a packet, longer than any, or not the length its data count wants ---
+/// rather than for its version or its function, which it reads between
+/// the two. Meter 7 counts the first kind, meter 8 the second (`DESIGN.md`
+/// §7).
+fn refused_for_length(datagram: &[u8]) -> bool {
+    let fits = (HEADER + SOFTWARE_HEADER + TRAILER..=MAX_FRAME).contains(&datagram.len());
+    !fits || (datagram[0] == VERSION && datagram[1] == PACKET)
+}
+
+/// Whether a read that failed only found nothing: its timeout ran out ---
+/// `WouldBlock` on Unix, and `TimedOut` on some platforms, std's
+/// `set_read_timeout` says --- or, not waiting, there was nothing there,
+/// or a signal came first.
+fn nothing_there(e: &io::Error) -> bool {
+    matches!(
+        e.kind(),
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+    )
 }

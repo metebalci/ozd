@@ -10,7 +10,9 @@
 pub mod address;
 pub mod chudp;
 pub mod config;
+pub mod daemon;
 pub mod lispm;
+pub mod log;
 pub mod ncp;
 pub mod packet;
 pub mod roots;

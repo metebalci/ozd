@@ -9,24 +9,17 @@
 //! From muir's `tests/chaos.rs` where muir has the test. STATUS's meters
 //! and UPTIME's unit are this host's own (`DESIGN.md` §7).
 
+mod support;
+
 use muir_ah::lispm::{self, NEWLINE};
 use muir_ah::ncp::{Ncp, op};
-use muir_ah::packet::{self, Framed, Packet};
+use muir_ah::packet::Packet;
 use muir_ah::service::status::{Meters, Status};
 use muir_ah::service::time::{Time, Uptime};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-/// A packet as the link would hand it to the NCP, with the check word the
-/// CADR's hardware would have made; `tests/ncp.rs` has the same.
-fn arriving(p: &Packet) -> Framed {
-    let buffer = p.to_buffer(p.dest);
-    let mut over = buffer.clone();
-    over.push(p.source);
-    let check = packet::check_word(&over);
-    Framed { buffer, source: p.source, check, check_ok: true }
-}
+use support::arriving;
 
 /// Asks `contact` of the host at 3060, from index 7 of 3050, at `now`: the
 /// RFC in, and the ANS that comes back.

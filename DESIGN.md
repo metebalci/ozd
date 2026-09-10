@@ -62,9 +62,11 @@ optimisation.
 ## 3. Modules
 
     src/
-      lib.rs            the modules, and Daemon (§4)
+      lib.rs            the modules
       main.rs           arguments, startup, the loop
       config.rs         the site file, parsed and checked (§8)
+      daemon.rs         the daemon: the link, the NCP, the services, turn (§4)
+      log.rs            one line an event on stderr, stamped in UTC (§10)
       address.rs        parse_address
       packet.rs         the packet and the check word
       roots.rs          the tree FILE serves: roots, resolve, readonly (§6)
@@ -432,8 +434,10 @@ homes.
 
 ## 11. Tests
 
-`cargo test`, std only: loopback sockets, temporary directories under
-`std::env::temp_dir()`.
+`cargo test`, std only: loopback sockets, and temporary directories
+that a test removes when done, or that the harness keeps under Cargo's
+`CARGO_TARGET_TMPDIR`, inside `target/`, so that a run leaves nothing
+behind outside it.
 
 **The harness**, `tests/support/`: a daemon built from a config in a
 temporary directory, and **test hosts** --- each an `Ncp` at its own

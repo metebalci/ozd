@@ -10,21 +10,13 @@
 //! packet in flight, a connection opened from this end, a bad check word,
 //! what is not this host's, and a packet for no connection.
 
+mod support;
+
 use muir_ah::ncp::{self, Ncp, Out, Response, Service, Session, op};
 use muir_ah::packet::{self, Framed, Packet};
 use muir_ah::service::time::Time;
 use std::sync::{Arc, Mutex};
-
-/// A packet as the link would hand it to the NCP: the buffer its sender
-/// wrote, cable destination last, and the trailer's source and check word
-/// --- the check word the CADR's hardware would have made, so `check_ok`.
-fn arriving(p: &Packet) -> Framed {
-    let buffer = p.to_buffer(p.dest);
-    let mut over = buffer.clone();
-    over.push(p.source);
-    let check = packet::check_word(&over);
-    Framed { buffer, source: p.source, check, check_ok: true }
-}
+use support::arriving;
 
 fn rfc(from: (u16, u16), to: u16, number: u16, text: &str) -> Packet {
     Packet {

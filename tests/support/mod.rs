@@ -1,0 +1,315 @@
+// SPDX-FileCopyrightText: 2026 Mete Balci
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//! The harness (`DESIGN.md` §11), shared by the test binaries, each taking
+//! what it needs.
+//!
+//! - **A daemon** built from a config's text, listening on the loopback
+//!   at a port the system picks: [`site`] and [`daemon`].
+//! - **Test hosts**: each an [`Ncp`] at an address of its own on a
+//!   loopback socket of its own, speaking CHUDP through [`chudp::wrap`] and
+//!   [`chudp::unwrap`], with the daemon as its one peer --- as a muir with
+//!   a default peer would (`DESIGN.md` §13). The NCP is symmetric, so a
+//!   test host opens its connections with [`Ncp::connect`] and serves what
+//!   it is given to serve.
+//! - **One clock**, set by the test: [`settle`] turns the daemon and the
+//!   hosts at the same `now` until nothing moves, so what a test asserts
+//!   of a time is exact rather than timed.
+//!
+//! And [`arriving`], a packet as the link hands it to the NCP, which the
+//! NCP's own tests drive it with.
+
+#![allow(dead_code)]
+
+use muir_ah::chudp;
+use muir_ah::config::Config;
+use muir_ah::daemon::Daemon;
+use muir_ah::lispm;
+use muir_ah::ncp::{Ncp, Out, Session, op};
+use muir_ah::packet::{self, Framed, Packet};
+use std::io::ErrorKind;
+use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
+
+/// This host in the tests: System 100's file and time host, `MIT-OZ` at
+/// 3060 (`examples/system-100.conf`).
+pub const OZ: u16 = 0o3060;
+
+/// Machines on its subnet: System 100's band, `MIT-LISPM-1` at 3050, and
+/// the next two, as `DESIGN.md` §9 numbers a site's further machines.
+pub const LM1: u16 = 0o3050;
+pub const LM2: u16 = 0o3051;
+pub const LM3: u16 = 0o3052;
+
+/// How long a test host's socket waits for a datagram before taking the
+/// quiet for all there is. Loopback delivers in microseconds; this is a
+/// margin, not a rate.
+const HOST_WAIT: Duration = Duration::from_millis(5);
+
+/// How long the daemon waits for a datagram at each turn of [`settle`].
+const DAEMON_WAIT: Duration = Duration::from_millis(10);
+
+/// A second, in the nanoseconds of the daemon's clock (`DESIGN.md` §4).
+pub const SECOND: u64 = 1_000_000_000;
+
+// --- packets ---------------------------------------------------------------
+
+/// A buffer with the source and check word the CADR's hardware would add
+/// to it: the check word is the hardware's, so `check_ok`.
+fn framed(buffer: Vec<u16>, source: u16) -> Framed {
+    let mut over = buffer.clone();
+    over.push(source);
+    let check = packet::check_word(&over);
+    Framed { buffer, source, check, check_ok: true }
+}
+
+/// A packet as the link would hand it to the NCP: the buffer its sender
+/// wrote, cable destination last, and the trailer's source and check word
+/// --- the check word the CADR's hardware would have made, so `check_ok`.
+pub fn arriving(p: &Packet) -> Framed {
+    framed(p.to_buffer(p.dest), p.source)
+}
+
+/// `p` as a CHUDP datagram from `source`, as that host's interface would
+/// put it on a cable: at the cable destination `p.dest`, with `source` and
+/// the hardware's check word in the trailer.
+pub fn datagram(p: &Packet, source: u16) -> Vec<u8> {
+    let f = framed(p.to_buffer(p.dest), source);
+    chudp::wrap(&f.buffer, f.source, f.check).expect("a frame")
+}
+
+/// The packet a datagram carries, and the cable destination it was sent
+/// to.
+pub fn packet(datagram: &[u8]) -> (Packet, u16) {
+    let f = chudp::unwrap(datagram).expect("a frame");
+    Packet::from_buffer(&f.buffer).expect("a packet")
+}
+
+/// An RFC for `contact` from index 0o21 of `from` to `to`.
+pub fn rfc(from: u16, to: u16, contact: &str) -> Packet {
+    Packet {
+        opcode: op::RFC,
+        forward: 0,
+        dest: to,
+        dest_index: 0,
+        source: from,
+        source_index: 0o21,
+        number: 1,
+        ack: 0,
+        data: contact.as_bytes().to_vec(),
+    }
+}
+
+// --- the daemon ----------------------------------------------------------
+
+/// A directory of this test binary's own, under the system's temporary
+/// directory (`DESIGN.md` §11), made once.
+pub fn scratch() -> &'static Path {
+    static SCRATCH: OnceLock<PathBuf> = OnceLock::new();
+    SCRATCH.get_or_init(|| {
+        let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("muir-ah-test-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("root")).expect("a scratch directory");
+        dir
+    })
+}
+
+/// A site's config text: this host at [`OZ`] as `MIT-OZ`, listening on the
+/// loopback at a port the system picks, its base root an empty directory
+/// in [`scratch`] --- which nothing reads until FILE is written
+/// (`DESIGN.md` §6) --- and then the lines in `more`.
+pub fn site(more: &str) -> String {
+    format!(
+        "address {OZ:o}\nname MIT-OZ OZ\nlisten 127.0.0.1:0\nroot {}\n{more}",
+        scratch().join("root").display()
+    )
+}
+
+/// A daemon for the site `text` gives, bound and not yet turned.
+pub fn daemon(text: &str) -> Daemon {
+    let config = Config::parse(text).expect("the site's config");
+    Daemon::new(&config, false).expect("a daemon")
+}
+
+/// The daemon's meters that count anything, in STATUS's order: every
+/// datagram received, every one sent, those rejected for their length,
+/// and those rejected for anything else (`DESIGN.md` §7).
+pub fn meters(d: &Daemon) -> [u32; 4] {
+    let m = d.meters();
+    [&m.received, &m.transmitted, &m.bad_bit_count, &m.other_discarded]
+        .map(|c| c.load(Ordering::Relaxed))
+}
+
+/// Everything the daemon's meters have counted, together: it moves
+/// whenever a datagram arrives, goes out, or is dropped.
+fn counted(d: &Daemon) -> u64 {
+    meters(d).iter().map(|&m| m as u64).sum()
+}
+
+/// Turns the daemon and the hosts at `now`, round after round, until two
+/// rounds in a row move nothing. At one `now` nothing is sent again, so
+/// this ends; what it leaves is every answer to what the test started.
+pub fn settle(d: &mut Daemon, hosts: &mut [&mut TestHost], now: u64) {
+    let mut quiet = 0;
+    for _ in 0..1000 {
+        let before = counted(d);
+        d.turn(now, DAEMON_WAIT);
+        let mut moved = counted(d) != before;
+        for h in hosts.iter_mut() {
+            moved |= h.turn(now) > 0;
+        }
+        quiet = if moved { 0 } else { quiet + 1 };
+        if quiet == 2 {
+            return;
+        }
+    }
+    panic!("the daemon and the test hosts never fell quiet");
+}
+
+/// Asks `contact` of the daemon from `host` at `now`, as a band's user end
+/// asks a simple transaction: an RFC from the host's NCP, everything
+/// turned until quiet, and the one ANS that came back --- which the host's
+/// NCP took through `unwrap` too, ending the connection it had opened.
+/// What the host heard is taken with it, so its `heard` is empty after.
+pub fn ask(d: &mut Daemon, host: &mut TestHost, now: u64, contact: &str) -> Packet {
+    host.take();
+    let session = Recorder::default();
+    host.ncp.connect(now, OZ, contact, Box::new(session.clone()));
+    settle(d, &mut [host], now);
+    let heard: Vec<Packet> = host.take().iter().map(|d| packet(d).0).collect();
+    let answers: Vec<&Packet> =
+        heard.iter().filter(|p| p.opcode == op::ANS && p.source == OZ).collect();
+    assert_eq!(answers.len(), 1, "one answer to {contact}: {heard:?}");
+    assert_eq!(session.events(), ["closed answered"], "and the asker's NCP took it");
+    answers[0].clone()
+}
+
+// --- test hosts ------------------------------------------------------------
+
+/// A socket on the loopback at a port the system picks, and where it is.
+/// Its reads wait [`HOST_WAIT`] at most.
+pub fn socket() -> (UdpSocket, SocketAddr) {
+    let s = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("a socket");
+    s.set_read_timeout(Some(HOST_WAIT)).expect("a read timeout");
+    let at = s.local_addr().expect("where it is");
+    (s, at)
+}
+
+/// Every datagram waiting at `socket`, as it came, oldest first.
+pub fn hear(socket: &UdpSocket) -> Vec<Vec<u8>> {
+    let mut heard = Vec::new();
+    let mut buffer = [0u8; 2048];
+    loop {
+        match socket.recv_from(&mut buffer) {
+            Ok((n, _)) => heard.push(buffer[..n].to_vec()),
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                return heard;
+            }
+            Err(e) => panic!("a test host's socket: {e}"),
+        }
+    }
+}
+
+/// A host on the subnet that is not this one: an [`Ncp`] at its own
+/// address, on its own loopback socket, whose one peer is the daemon.
+pub struct TestHost {
+    /// Its NCP, which the test opens connections from and gives services
+    /// to.
+    pub ncp: Ncp,
+    socket: UdpSocket,
+    /// Where its socket is: the endpoint the daemon learns for it.
+    pub at: SocketAddr,
+    /// Where it sends everything: the daemon.
+    pub hub: SocketAddr,
+    /// Every datagram it has had, as it came, oldest first.
+    pub heard: Vec<Vec<u8>>,
+}
+
+impl TestHost {
+    pub fn new(address: u16, hub: SocketAddr) -> TestHost {
+        let (socket, at) = socket();
+        TestHost { ncp: Ncp::new(address), socket, at, hub, heard: Vec::new() }
+    }
+
+    /// A datagram, whatever its bytes, from this host's socket to the hub.
+    pub fn send_bytes(&self, datagram: &[u8]) {
+        self.socket.send_to(datagram, self.hub).expect("a datagram goes");
+    }
+
+    /// One turn at `now`: every datagram the socket has, kept in
+    /// [`TestHost::heard`] and handed to the NCP through `unwrap`; then
+    /// everything the NCP has to send, through `wrap` with this host's
+    /// address and the hardware's check word, to the hub. How many
+    /// datagrams moved.
+    pub fn turn(&mut self, now: u64) -> usize {
+        let mut moved = 0;
+        for datagram in hear(&self.socket) {
+            if let Ok(f) = chudp::unwrap(&datagram) {
+                self.ncp.receive(now, &f);
+            }
+            self.heard.push(datagram);
+            moved += 1;
+        }
+        while let Some(buffer) = self.ncp.transmit(now) {
+            let f = framed(buffer, self.ncp.address());
+            self.send_bytes(&chudp::wrap(&f.buffer, f.source, f.check).expect("a frame"));
+            moved += 1;
+        }
+        moved
+    }
+
+    /// What it has heard, and nothing since.
+    pub fn take(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.heard)
+    }
+
+    /// The packets it has heard, oldest first.
+    pub fn packets(&self) -> Vec<Packet> {
+        self.heard.iter().map(|d| packet(d).0).collect()
+    }
+}
+
+/// A session that writes down what happens to it, for the test to read,
+/// and sends nothing.
+#[derive(Clone, Default)]
+pub struct Recorder(Arc<Mutex<Vec<String>>>);
+
+impl Recorder {
+    pub fn events(&self) -> Vec<String> {
+        self.0.lock().unwrap().clone()
+    }
+    fn note(&self, event: String) {
+        self.0.lock().unwrap().push(event);
+    }
+}
+
+impl Session for Recorder {
+    fn opened(&mut self, _now: u64) {
+        self.note("opened".into());
+    }
+    fn data(&mut self, _now: u64, _op: u8, bytes: &[u8]) {
+        self.note(format!("data {}", lispm::from_bytes(bytes)));
+    }
+    fn eof(&mut self, _now: u64) {
+        self.note("eof".into());
+    }
+    fn closed(&mut self, _now: u64, reason: &str) {
+        self.note(format!("closed {reason}"));
+    }
+    fn poll(&mut self, _now: u64) -> Vec<Out> {
+        Vec::new()
+    }
+}
+
+// --- the command line ------------------------------------------------------
+
+/// Whether these tests run as root, which the daemon refuses to: asked of
+/// `id -u`, since a test may not call `geteuid` itself --- `unsafe_code` is
+/// denied for the whole package, tests included (`DESIGN.md` §2).
+pub fn running_as_root() -> bool {
+    let out = std::process::Command::new("id").arg("-u").output().expect("id -u runs");
+    String::from_utf8_lossy(&out.stdout).trim() == "0"
+}
