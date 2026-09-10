@@ -5,9 +5,8 @@
 //! machine's newline, its text against Unix's, and protocol text a byte a
 //! character.
 //!
-//! From muir's `src/chaos/file.rs`, where FILE alone used them; a module
-//! of their own here, since HOSTAB and NAME speak the character set too
-//! (`DESIGN.md` §3).
+//! A module of their own, since FILE, HOSTAB and NAME all speak the
+//! character set (`DESIGN.md` §3).
 
 /// The Lisp Machine's newline, `#/NEWLINE`, which is what separates the
 /// lines of a command and a reply: `CHNL` in `FILE.c`, `0200|'\r'`.
@@ -60,9 +59,8 @@ pub fn lispm_text(s: &str) -> Vec<u8> {
 /// continuation byte in UTF-8, so reading a command with
 /// `String::from_utf8_lossy` replaces it and every line after the first
 /// is lost --- an `OPEN` then reads its pathname as empty and answers
-/// about the root directory. `the_file_service_serves_files_and_directories`
-/// in muir's `tests/chaos.rs` is the regression there, and
-/// `protocol_text_is_a_byte_a_character` in `tests/services.rs` here.
+/// about the root directory. `protocol_text_is_a_byte_a_character`, in
+/// `tests/services.rs`, is the regression.
 pub fn from_bytes(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| b as char).collect()
 }

@@ -4,8 +4,7 @@ The detailed design, agreed on 2026-09-10 before any code was written,
 and built to since: where the code and this differ, one of them is
 wrong. `CLAUDE.md` holds the decisions and rules this follows, and
 `PROTOCOLS.md` what each protocol is. What is left is the acceptance
-test with a band, by hand (§11), and §13's notes, all of them outside
-this repository.
+test with a band, by hand (§11).
 
 ## 1. The shape of it
 
@@ -19,7 +18,7 @@ services.
     chudp::Link       the socket, the endpoints, the checks;
         │             a packet for another host passed on, untouched
         │  Framed, for this host
-    Ncp               AIM-628 chapters 3 and 4, from muir
+    Ncp               AIM-628 chapters 3 and 4
         │  Service / Session
     services          STATUS  TIME  UPTIME  FILE  ·  HOSTAB  NAME
 
@@ -30,17 +29,13 @@ optimisation.
 
 ## 2. Build
 
-- **Rust 2024**, the latest edition (`edition = "2024"`), as muir.
+- **Rust 2024**, the latest edition (`edition = "2024"`).
 - **Toolchain pinned to 1.98.0**, stable, in `rust-toolchain.toml` with
-  `clippy` and `rustfmt`. muir pins `1.99.0-beta.4` because 1.98
-  miscompiles its `board.rs` at `opt-level = 3` with `codegen-units = 1`
-  (muir's `rust-toolchain.toml`); neither that code nor that profile
-  comes here, and the release profile is Cargo's default. When 1.99
-  ships, the pin moves.
+  `clippy` and `rustfmt`; the release profile is Cargo's default. When
+  1.99 ships, the pin moves.
 - **No dependencies.** `[dependencies]` stays empty. std has the socket,
   both clocks, the filesystem, the test harness and the arguments; the
-  flags and the file of them are parsed by hand, as muir's are. Two
-  places where a
+  flags and the file of them are parsed by hand. Two places where a
   crate would be the honest answer, and neither is taken:
   - **`openat` with `O_NOFOLLOW`**, for containment that holds against a
     concurrent writer. std has it only as a private helper
@@ -54,14 +49,15 @@ optimisation.
   library already --- so the daemon can refuse to run as root.
   `unsafe_code` is denied for the whole package in `Cargo.toml`'s
   `[lints]`, tests included, and that one function allows it.
-- **Library and binary**, as muir: `src/lib.rs` is the daemon, so tests
+- **Library and binary**: `src/lib.rs` is the daemon, so tests
   drive it in-process; `src/main.rs` is arguments and the loop.
 - **Lints**: `cargo clippy --all-targets -- -D warnings` clean, and
   `cargo doc --no-deps` with `RUSTDOCFLAGS="-D warnings"`, so that a doc
   link that leads nowhere, or to a private item, is caught.
-- **rustfmt**: `use_small_heuristics = "Max"`, muir's.
-- **Licence**: AGPL-3.0-or-later with SPDX headers, as muir.
-- **Git**, as muir. `.gitignore`: `/target`, and `CLAUDE.md`, which is
+- **rustfmt**: `use_small_heuristics = "Max"`, a call or a struct
+  literal on one line whenever it fits.
+- **Licence**: AGPL-3.0-or-later with SPDX headers.
+- **Git**. `.gitignore`: `/target`, and `CLAUDE.md`, which is
   not committed for now. `Cargo.lock` is committed: this is a binary.
 
 ## 3. Modules
@@ -81,28 +77,18 @@ optimisation.
       service/
         status.rs  time.rs  file.rs  hostab.rs  name.rs
 
-| here | from muir | what changes |
-|---|---|---|
-| `address.rs` | `chaos/mod.rs`, `parse_address` | nothing |
-| `packet.rs` | `chaos/packet.rs`, 246 lines | keeps `Packet`, `MAX_DATA`, `check_word`, `Framed`; leaves `frame`, `unframe`, `unframe_any` and `Received`, which are cable bits --- about 150 lines come |
-| `chudp.rs` | `chaos/udp.rs`, 495 lines | `wrap`, `unwrap`, `Order`, `PACKET_ORDER`, `TRAILER_ORDER` and the constants verbatim, with their unverified marks; `Link` and `Chudp` replaced (§5), the learning kept, the hub new |
-| `ncp.rs` | `chaos/server.rs`, 730 lines | `Server` is `Ncp`; `impl Node` becomes inherent `receive(now, &Framed)` and `transmit(now)`, and `aborted` goes; `receive` stops dropping on the trailer's check word (§5). `op`, `Response`, `Service`, `Out`, `Session`, `connect`, one packet in flight, `RETRANSMIT_NS`, `HOST_DOWN_NS`, the trace: verbatim, except that a BRD for a contact no service takes is let fall, as the machine's own NCP does (`chsncp.lisp:1613`) |
-| `lispm.rs` | `chaos/file.rs`: `NEWLINE`, `to_lispm`, `from_lispm`, `lispm_text` | in a module of its own, since HOSTAB and NAME speak the character set too |
-| `roots.rs` | `chaos/file.rs`: `resolve`, `resolve_for_writing` | rewritten (§6), apart from FILE, so that the containment tests come first and alone |
-| `service/status.rs` | `chaos/status.rs`, 118 lines | real meters (§7) |
-| `service/time.rs` | `chaos/time.rs`, 106 lines | UPTIME in sixtieths, not seconds (`PROTOCOLS.md`, UPTIME) |
-| `service/file.rs` | `chaos/file.rs`, 1491 lines | containment, roots, and read-only roots (§6); no allowlist |
-| the rest | --- | new |
+**`ncp`** is Chaosnet's connection layer, its TCP. It opens and closes
+connections --- RFC, OPN, CLS --- numbers and acknowledges packets, sends
+again what is lost, carries EOF, and hands each request to the service
+registered for its contact name. MIT's name for that layer is the Network
+Control Program; the Lisp Machine's own is
+`sys/network/chaos/chsncp.lisp`. Each service module is named after its
+contact name.
 
-Copied, never moved: muir is read from here, and not written.
-
-**`ncp`** is the module that is muir's `server.rs`: Chaosnet's
-connection layer, its TCP. It opens and closes connections --- RFC, OPN,
-CLS --- numbers and acknowledges packets, sends again what is lost,
-carries EOF, and hands each request to the service registered for its
-contact name. MIT's name for that layer is the Network Control Program;
-the Lisp Machine's own is `sys/network/chaos/chsncp.lisp`. Each service
-module is named after its contact name.
+A BRD for a contact no service takes is let fall, as the machine's own
+NCP lets it fall (`RECEIVE-BRD`, `chsncp.lisp:1613`, with
+`CLS-ON-ERROR-P` nil, `:1588`), not refused with a CLS: a hub meets every
+broadcast on the subnet (`tests/ncp.rs`).
 
 ## 4. The loop
 
@@ -114,9 +100,9 @@ module is named after its contact name.
 **Why it wakes when nothing arrives.** Two jobs are due even on a silent
 network: sending again a packet the other end has not acknowledged,
 every half second (`RETRANSMIT_NS`), and giving up a connection silent
-for three minutes (`HOST_DOWN_NS`). muir's NCP has no timer of its own;
+for three minutes (`HOST_DOWN_NS`). The NCP has no timer of its own;
 it does both whenever it is asked for output --- `transmit` runs
-`service_all` when its queue is empty (`server.rs:611`, `:679`). So the
+`service_all` when its queue is empty. So the
 loop waits for a packet at most 100 ms, the socket's read timeout: a
 packet that arrives is handled at once, and if none does the loop wakes
 anyway, asks for output, and waits again. An idle daemon wakes ten times
@@ -128,22 +114,20 @@ most 100 ms late against its 500 ms interval.
 - **The body is `Daemon::turn(now, wait)`.** `main` calls it for ever with
   the clock; the tests call it with a clock they set, so a test of UPTIME
   or of a retransmission is exact rather than timed.
-- **One packet in flight per connection**, as muir (`server.rs:554`): the
-  far end is a CADR interface that holds one packet, and a burst was lost
-  into it. A file moves at the other end's acknowledgement rate.
+- **One packet in flight per connection**: the far end is a CADR
+  interface that holds one packet, and a burst would be lost into it. A file moves at the other end's acknowledgement rate.
 
 ## 5. The link and the hub
 
 `chudp::Link` owns the socket and the table of endpoints, and is the hub.
 
-- **It binds what `--listen` says**, in muir's `--chaos-udp` forms: a port,
-  an address, or an address and a port. A bare port is on the
+- **It binds what `--listen` says**: a port, an address, or an address
+  and a port. A bare port is on the
   loopback, and no `--listen` at all is `127.0.0.1:42042` --- a fresh
   install answers its own host and nothing else. An address without a
   port takes 42042. `0.0.0.0`, or `::`, is every interface.
-- **Endpoints are learned**, as muir's `--chaos-udp-dynamic` learns them
-  (`udp.rs`, `arrived`): a packet's source address --- the header's ---
-  is recorded at the UDP address the datagram came from. A host behind
+- **Endpoints are learned**: a packet's source address --- the header's
+  --- is recorded at the UDP address the datagram came from. A host behind
   `cbridge` is learned at `cbridge`'s endpoint, which is right: that is
   where its packets go. A `--peer` fixes an endpoint, and a packet
   does not move a fixed one. The table is not expired; it holds at most
@@ -151,8 +135,8 @@ most 100 ms late against its 500 ms interval.
 - **Receiving**, in order; each drop is counted for STATUS and printed
   under `--trace`:
   1. `unwrap`, verbatim: version, function, length.
-  2. The trailer's source is this host's address, or 0: dropped, muir's
-     rule for a frame claiming to be from this station.
+  2. The trailer's source is this host's address, or 0: dropped, as a
+     frame claiming to be from this station.
   3. The source is learned, unless it is fixed or is this host --- before
      anything else, so that an answer to it can be passed on at once.
   4. By destination:
@@ -170,22 +154,19 @@ most 100 ms late against its 500 ms interval.
   routing to decide where.
 - **The trailer's check word**, on a packet for this host, is compared
   and a mismatch traced, never dropped: what a CHUDP peer puts there is
-  unverified (`udp.rs`, `unwrap`), and UDP carries a checksum of its
+  unverified (`chudp.rs`, `unwrap`), and UDP carries a checksum of its
   own --- optional over IPv4, where a sender may leave it zero.
-  muir's `Server::receive` drops on it, which is safe there only because
-  muir's `Chudp` puts a check word it computed itself on the modelled
-  cable. `Ncp::receive` does not drop on it.
+  `Ncp::receive` does not drop on it.
 - **Sending this host's own packets**: the NCP's buffer ends in the
   destination; it goes out as `wrap(buffer, own address,
-  check_word(buffer + own address))` --- the 9401's CRC-16, which is what
-  muir sends --- to the destination's endpoint, or to every distinct
+  check_word(buffer + own address))` --- the 9401's CRC-16 (`packet.rs`)
+  --- to the destination's endpoint, or to every distinct
   endpoint once for a destination of 0. A destination with no endpoint
   is dropped and counted.
-- **A muir needs a default peer to use the hub**, which it does not have:
-  it sends a unicast frame only to a peer named for that destination
-  (`udp.rs:433`, `addressed`), so a packet for another machine is dropped
-  in muir before it reaches this host. §9 has the way round it, which
-  works with muir as it is; §13 notes what muir could add, in muir.
+- **A machine names this host as its CHUDP peer.** One whose CHUDP sends
+  a unicast only to a peer named for its destination also names every
+  other machine of the subnet at this host's endpoint, or its packets for
+  them never reach the hub (§9).
 
 ## 6. Containment
 
@@ -205,31 +186,31 @@ Then two things that are not refusals. The base's entries that a mount
 covers are **warned about**, by name: they exist and cannot be reached.
 And in each writable root, stale FILE temporaries are removed: a daemon
 killed mid-write leaves one. Their name comes from one constant, so the
-cleanup matches what `file.rs` makes (`file.rs:868`) and nothing else.
+cleanup matches what FILE makes (`roots.rs`, `temporary_name`) and
+nothing else.
 
 **Roots.** FILE serves one tree: a **base root**, and optionally **named
 roots mounted at its top level**, each read-only or not (`,ro`).
 
-    --root /srv/lispm                                      # the base: homes, and the rest
-    --root tree=/path/to/muir/vendor/system-100-0/sys,ro   # mounted at /tree, read-only
+    --root /srv/lispm                         # the base: homes, and the rest
+    --root tree=/path/to/system-100-0/sys,ro  # mounted at /tree, read-only
 
 `/tree/...` is the second directory, read-only; everything else under
-`/` --- `/<user>/`, the home muir's LOGIN gives a user (`file.rs:426`) ---
-is the base.
+`/` --- `/<user>/`, the home LOGIN gives a user --- is the base.
 
 - **A mount covers the base.** If the base has a `tree` of its own, a
   mount named `tree` wins, as a Unix mount point covers the directory
   under it; the base's `tree` cannot be reached, and startup says so.
 - **A listing of `/`** shows the base's entries and the mounts' names,
   each name once. Nothing can be made at `/` under a mount's name.
-- **Names match exactly**, as every directory name does: muir's FILE
-  folds no case in a pathname, only LOGIN's home (`file.rs:426`), and a
-  band sends its pathnames in lower case (`/tree/sys/...`, muir's
-  `--chaos-file-root` help). So mounts are named in lower case.
+- **Names match exactly**, as every directory name does: FILE folds no
+  case in a pathname, only LOGIN's home, and a band sends its pathnames
+  in lower case (`/tree/...`, System 100's `sys/site/sys.translations`).
+  So mounts are named in lower case.
 - **With mounts and no base**, `/` itself is read-only and names only
-  the mounts. One `--root` without a name is a single root, as muir's.
+  the mounts. One `--root` without a name is a single root.
 
-**`resolve(pathname)`**, rewritten from muir's (`file.rs:375`):
+**`resolve(pathname)`**:
 
 1. Split on `/` and drop empty components; a `.` or `..` is refused with
    `ATD`, not normalised. So no path climbs out of a root, or from one
@@ -239,14 +220,14 @@ is the base.
 3. Canonicalise the deepest part that exists, following every symlink
    on the way; the result must be that root or lie under it. A symlink
    anywhere is followed, and one that resolves outside its own root is
-   refused with `ATD` when used. **No second tree by symlink**: muir's
-   admission of the targets of the root's top-level symlinks does not
-   come across --- a mount is how a directory elsewhere is served.
+   refused with `ATD` when used. **No second tree by symlink**: a link
+   at a root's top level does not bring its target into the tree --- a
+   mount is how a directory elsewhere is served.
 4. Return the canonical existing part with the not-yet-existing rest
    joined back on. That is what is opened, never the client's string.
 
-`resolve_for_writing` also refuses a root itself, as muir's does, and
-anything in a read-only root (below).
+`resolve_for_writing` also refuses a root itself, and anything in a
+read-only root (below).
 
 **Why a check and then an open are safe here**: the path checked is the
 path opened, it contains no symlink when checked, and nothing else runs
@@ -257,8 +238,8 @@ they are relied on.
 
 **Opening**: `symlink_metadata` first; anything but a regular file or a
 directory is refused with `WKF`, "wrong kind of file", which the band
-turns into its `WRONG-KIND-OF-FILE` condition (`sys/io/file/open.lisp:260`),
-as muir answered. A FIFO would block the loop at `open`.
+turns into its `WRONG-KIND-OF-FILE` condition (`sys/io/file/open.lisp:260`).
+A FIFO would block the loop at `open`.
 
 **A read-only root**, `,ro`: in one, OPEN for output, DELETE, RENAME,
 CREATE-DIRECTORY, CREATE-LINK and CHANGE-PROPERTIES are refused with
@@ -273,7 +254,7 @@ same resolve holds it inside its root, and it is renamed over the
 target. Two machines writing one file: the last rename wins, whole; no
 file is ever half one and half the other.
 
-**CREATE-LINK**: both ends resolved, as muir does.
+**CREATE-LINK**: both ends resolved.
 
 **Holes closed in writing `roots.rs`**, each with its test in
 `tests/containment.rs`:
@@ -295,14 +276,13 @@ file is ever half one and half the other.
 
 - A link is followed to read or to write through; **DELETE and RENAME act
   on the link itself** --- its directory resolved, its own name not
-  followed --- as Unix does, and as muir did. Removing a link that does
+  followed --- as Unix does. Removing a link that does
   not resolve is how one is got rid of.
 - **DIRECTORY reads each entry with `symlink_metadata`, or through
-  `resolve`, never `metadata`**: muir's follows links, and would give the
+  `resolve`, never `metadata`**, which follows links, and would give the
   size and date of a file outside the root.
 - **A write's temporary is created once**, `create_new`, and written
-  through the handle it was made with. muir reopens it by name for each
-  packet (`file.rs:1390`).
+  through the handle it was made with, never reopened by name.
 - `/` itself resolves to the top, not to a path: PROBE and PROPERTIES of
   it, and DIRECTORY, read it through `Tree::list_top`.
 - **A listing** describes a link inside its own root as what it leads
@@ -321,13 +301,13 @@ file is ever half one and half the other.
   `Arc` of atomics (`Service` is `Send`): 1, every datagram received; 2,
   every datagram sent, this host's own and those passed on; 7, those
   rejected for their length; 8, those rejected for anything else. 3 to
-  6 are zero and true, as muir's documentation argues: there is no
+  6 are zero and true: there is no
   interface here to abort, lose a packet in, or fail a CRC.
 - **TIME**: universal time from the system clock, least significant
-  byte first. Verbatim.
+  byte first.
 - **UPTIME**: sixtieths of a second since start, `now × 60 / 10⁹`,
   wrapping at 32 bits, about 828 days.
-- **FILE**: muir's, with §6.
+- **FILE**: `sys/doc/chfile.text`, with §6.
 
 **Stage 2.**
 
@@ -347,10 +327,9 @@ file is ever half one and half the other.
 
 ## 8. The flags, and the file of them
 
-Everything is a flag, as muir's are, and a file of flags gives the
-defaults. Addresses are octal, or `subnet:host`. A value is one word,
-its parts separated by commas, as muir's flags' values are
-(`--disk-pack <image>,ro`). As a file of them:
+Everything is a flag, and a file of flags gives the defaults. Addresses
+are octal, or `subnet:host`. A value is one word, its parts separated by
+commas (`--root /srv/lispm,ro`). As a file of them:
 
     # this host's Chaos address; required
     --address 3060
@@ -360,7 +339,7 @@ its parts separated by commas, as muir's flags' values are
     --listen 192.0.2.10
     # the base root, and a root mounted at /tree, read-only
     --root /srv/lispm
-    --root tree=/path/to/muir/vendor/system-100-0/sys,ro
+    --root tree=/path/to/system-100-0/sys,ro
     # the site's host table, for HOSTAB
     --host 3050,MIT-LISPM-1,LM1,system=LISPM
     # an endpoint that is fixed; the rest are learned
@@ -370,16 +349,14 @@ its parts separated by commas, as muir's flags' values are
 if at all; `--root`, `--host` and `--peer` may each be given again. A
 `--root` whose value begins with `/` is the base; any other is
 `<name>=<path>`, mounted at `/<name>`; `,ro` makes either read-only.
-`--peer` is muir's `--chaos-udp-peer`, `<address>@<ip>[:<port>]`, the
-port 42042 unless given. A comma cannot be in a path.
+`--peer` is `<address>@<ip>[:<port>]`, the port 42042 unless given. A comma cannot be in a path.
 
 The host table and the endpoints are separate: a `--host` is what HOSTAB
 says, a `--peer` where packets go. A machine needs neither to be served;
 it needs a `--host` to be found by name.
 
-**The file of flags, `.ozdrc`**, is muir's `.muirrc` for ozd
-(`config_path` and `muirrc`, muir's `src/main.rs`): `-c|--config <file>`
-names one, which must be there; else `OZD_RC` names one; else
+**The file of flags, `.ozdrc`**: `-c|--config <file>` names one, which
+must be there; else `OZD_RC` names one; else
 `.ozdrc` in the directory ozd is run from; else `.ozdrc` in
 the home directory --- the first of those there, not all of them. A line
 is a flag and, after a space, the rest of the line is its value; a blank
@@ -393,9 +370,9 @@ after it. `--trace` may be in a file; `--check`, `--help` and `--config`
 may not: each is what one run is asked to do, and in a file every run
 would do it --- a service would exit at once, cleanly, and never serve.
 A flag's value is the next word unless that word is one of ozd's
-flags, so `--address --name OZ` is `--address` without its value. Two
-things muir takes are refused here: `-c` given twice, and a file that is
-there but cannot be read.
+flags, so `--address --name OZ` is `--address` without its value. `-c`
+given twice is refused, and so is a file that is there but cannot be
+read.
 
 **What is refused, and how.** What is not flags --- an unknown flag, a
 word that is none, a flag without its value, `-c` naming a file that is
@@ -429,13 +406,14 @@ its file and line when it came from one (`src/config.rs`):
   resolve at startup.
 
 **Two examples ship**, `examples/system-100.ozdrc` and
-`examples/system-304.ozdrc`, files of flags with each release's own
-numbers from muir (`chaos/mod.rs`): System 100's file host is `MIT-OZ`
-at 3060 and its band asks for `/tree/...`; System 304's is `OZ`,
-`AMS-BRIDGE-1`, at 4403, and asks for `/sys/...`. Each mounts that
-release's sources read-only from muir's `vendor/` --- `system-100-0/sys`
-and `system-304-0/sys-304-0`, where muir's own `vendor/run/file-root`
-links point --- over a base for homes.
+`examples/system-304.ozdrc`, files of flags with each band's own
+numbers. System 100's file host is `MIT-OZ` at 3060
+(`sys/site/hosts.text`), and its band asks for `/tree/...`
+(`sys/site/sys.translations`). System 304's is `OZ`, `AMS-BRIDGE-1`, at
+4403, as its band's listener gives it, and its band asks for `/sys/...`
+(the site files in its pack). Each mounts that release's sources
+read-only --- `system-100-0/sys` and `system-304-0/sys-304-0` --- over a
+base for homes.
 
 ## 9. A site of several machines
 
@@ -450,36 +428,27 @@ links point --- over a base for homes.
   name. That System 100's table knows `OZ`, the name its site option
   gives, as 3060 is not verified here; the first HOSTAB test against a
   band shows it.
-- **Every machine names this host, and reaches the others through it**
-  (§5). With a default peer in muir (§13.1), one flag each:
-  `--chaos-udp-peer 3060@<this host>`. Until then, each muir also names
-  every other machine's address at this host's endpoint ---
-  `--chaos-udp-peer 3051@<this host> --chaos-udp-peer 3052@<this host>`
-  --- the same endpoint every time, which works with muir as it is.
-- **On one host**, ports. ozd takes 42042, and each muir its own:
-  `muir --chaos-address 3050 --chaos-udp 42043 --chaos-udp-peer
-  3060@127.0.0.1:42042`, the next `3051` on `42044`, and so on. muir's
-  `--chaos-address` without its `,<server>` half leaves muir's own
-  server at its default, 177002, out of the band's way, so the band's
-  calls to 3060 go out to this host. While muir keeps that server
-  (`CLAUDE.md` §8a), a band's broadcast for TIME may be answered by
-  either; both have the same clock.
+- **Every machine names this host as its CHUDP peer, and reaches the
+  others through it** (§5). A machine whose CHUDP sends a unicast only to
+  a peer named for its destination also names every other machine's
+  address at this host's endpoint --- the same endpoint every time.
+- **On one host**, ports: ozd takes 42042, and each machine one of its
+  own, the first 42043, the next 42044, and so on (the README).
 - **On several hosts**, `--listen` an address on the segment, or
-  `0.0.0.0`, and each muir's `--chaos-udp-peer` names it.
+  `0.0.0.0`, and each machine names it as its peer.
 - **The Global Chaosnet** is not reached through the hub, which passes
   nothing to another subnet. A machine that wants it has `cbridge` as a
   peer of its own for those addresses.
 
 ## 10. Logging and running
 
-- **stderr**, one line an event, with a UTC timestamp made by
-  `file.rs`'s `civil`, which comes across: startup, its checks and its
+- **stderr**, one line an event, with a UTC timestamp made by `civil`
+  (`log.rs`): startup, its checks and its
   warnings; each connection opened, refused and closed, with the host
   and contact; every FILE operation that changes a root --- write,
   rename, delete, create-directory, create-link --- with its pathname;
   errors.
-- **`--trace`**: every packet, every packet passed on, and every drop,
-  as muir's `--chaos-trace`.
+- **`--trace`**: every packet, every packet passed on, and every drop.
 - **`--check`**: read the flags and the file of them, run the startup
   checks, exit. For an
   administrator, and for the tests.
@@ -502,15 +471,15 @@ behind outside it.
 **The harness**, `tests/support/`: a daemon built from a config in a
 temporary directory, and **test hosts** --- each an `Ncp` at its own
 address on its own loopback socket, with scripted sessions. The NCP is
-symmetric, and `Ncp::connect` (`server.rs:347`) opens a connection from
+symmetric, and `Ncp::connect` opens a connection from
 a test host's side. All are turned by the test with one clock it sets.
 
 **The tests**, in the order they are written (`CLAUDE.md` §10):
 
-1. **The frame**: the first five tests of muir's `tests/chudp.rs`, from
-   `the_frame_is_these_bytes` (line 83), copied with the bytes unchanged,
-   and muir's `the_check_word_is_the_boards`, which pins the check word.
-   They are the contract between the two repositories (`CLAUDE.md` §8e).
+1. **The frame**: one whole packet's bytes, and the check word, pinned
+   (`tests/frame.rs`). The byte order is unverified (§5); the first run
+   against another implementation, `cbridge` or `klh10`, settles it, and
+   a correction is a change to two constants and to those tests.
 2. **The flags**: each flag; each form of `--listen`; the file of them,
    its comments, the command line winning, the search order; each refusal,
    with its line.
@@ -525,7 +494,7 @@ a test host's side. All are turned by the test with one clock it sets.
 5. **TIME** within a second of the system clock; **UPTIME** 600 at ten
    seconds of the test's clock.
 6. **Containment**, the table of `CLAUDE.md` §10.4, written before
-   `file.rs` comes across; with it, a symlink inside a root followed, one
+   FILE; with it, a symlink inside a root followed, one
    pointing out of it refused, a mount reached by its name and not by
    `..`, a mount covering a base directory of its name and startup
    warning of it, every write in a read-only root refused with `ATF` and
@@ -534,9 +503,9 @@ a test host's side. All are turned by the test with one clock it sets.
 8. **HOSTAB** and **NAME**, each with a scripted client taken from the
    machine's own user end.
 
-**The acceptance test** is by hand, and written in the README: two muir
-runs against ozd, with `examples/system-100.ozdrc`, boot, know the
-date, read their sources from the read-only mount and write in the base,
+**The acceptance test** is by hand, and written in the README: two
+machines run against ozd, with `examples/system-100.ozdrc`, boot, know
+the date, read their sources from the read-only mount and write in the base,
 print the right `(uptime)`; `(hostat)` on each shows ozd and the
 other.
 
@@ -545,8 +514,8 @@ other.
 1. **Scaffold** --- `git init`, `Cargo.toml`, the pins, the licence, the
    lints → verify: `cargo build`, `cargo clippy --all-targets -- -D
    warnings` and `cargo test` pass on an empty crate.
-2. **Address, packet, frame**, copied from muir with its tests → verify: the
-   pinned bytes.
+2. **Address, packet, frame**, with their tests → verify: the pinned
+   bytes.
 3. **Config** → verify: its tests.
 4. **Link, hub, NCP, loop, STATUS** → verify: the link's and STATUS's
    tests; then by hand, `(hostat)` on a band run with ozd as its
@@ -554,34 +523,10 @@ other.
    anything but itself.
 5. **TIME, UPTIME** → verify: their tests; then a band that boots knowing
    the date.
-6. **Containment tests**, failing → **FILE**, copied from muir and
-   changed as §6 says → verify:
+6. **Containment tests**, failing → **FILE**, as §6 says → verify:
    containment, the scripted client and two clients pass; then a band
    reads and writes its files.
 7. **The daemon's edges**: startup checks and warnings, logging,
    `--check`, the units, the two example configs → verify: a test for
    each refusal; the README's acceptance steps, by hand.
 8. **HOSTAB**, then **NAME**, each test first.
-
-## 13. Outside this repository
-
-Nothing here changes muir; these are notes for it, done there if at all.
-
-1. **A default peer in muir**: a unicast frame for an address with no
-   peer of its own goes to one named peer, this host, instead of being
-   dropped (`udp.rs:433`, `addressed`). A few lines in muir, and what
-   turns §9's list of flags into one.
-2. **muir's own server** (`CLAUDE.md` §8a): how much of it goes, now
-   that this host serves what it served.
-3. **A slip in muir's `tests/chudp.rs`**: `an_unknown_version_is_refused`
-   passes `"{what} {value} is refused"` to `expect_err`, which takes a
-   plain string, so on a failure the braces print as they are. The check
-   itself holds. The copy in `tests/frame.rs` keeps it, so the two stay
-   the same until muir changes.
-4. **muir's NCP refuses a broadcast it does not serve**, with a CLS,
-   where the machine's own lets it fall silent (`RECEIVE-BRD`,
-   `chsncp.lisp:1613`, with `CLS-ON-ERROR-P` nil, `:1588`). Here it is
-   silent (`tests/ncp.rs`); a hub meets every broadcast on the subnet.
-5. **CHUDP against anything but muir.** muir and ozd share one
-   reading of the frame's byte order, marked unverified in both; the
-   first run against `cbridge` or `klh10` settles it for both.

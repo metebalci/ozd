@@ -8,15 +8,15 @@
 # The numbers are the band's own, asked at its listener, since its host
 # table is in the pack and not in the sources: the band is AMS-LISPM-1 at
 # 4401, and looks for its files and its time at 4403, OZ --- AMS-BRIDGE-1
-# under its other name (muir's src/chaos/mod.rs). This host is that one.
+# under its other name. This host is that one.
 
 --address 4403
 
-# OZ first, the name muir's own server answers STATUS with for this band.
+# OZ first, the name the band's site file gives its SYS host
+# (SET-LOGICAL-PATHNAME-HOST "SYS" :PHYSICAL-HOST "OZ", in the pack).
 # Unverified: whether OZ is that host's own name in the band's table or a
-# nickname of AMS-BRIDGE-1 (muir's tests/cc_harness), which
-# (si:get-host-from-address #o4403 :chaos) at the band's listener would
-# settle.
+# nickname of AMS-BRIDGE-1, which (si:get-host-from-address #o4403 :chaos)
+# at the band's listener would settle.
 #
 # No system=: what the band's table gives this host is not known. That
 # table is in the pack; the one in this release's sources,
@@ -30,21 +30,17 @@
 #--listen 192.0.2.10
 
 # The homes in the base, writable; the release's sources mounted at /sys,
-# read-only, because the band asks for them as /sys/... (muir's
-# --chaos-file-root help), and where muir's own vendor/run/file-root links
-# sys.
+# read-only, because the band asks for them as /sys/... (the SYS
+# translations in its pack's site files).
 --root    /srv/lispm
---root    sys=/path/to/muir/vendor/system-304-0/sys-304-0,ro
+--root    sys=/path/to/system-304-0/sys-304-0,ro
 
 # The band's machine. Its system type is not read from the band: LISPM is
 # what System 100's table gives its Lisp Machine, taken as this one's.
 --host    4401,AMS-LISPM-1,system=LISPM
 
-# A muir run for this band, on this host (DESIGN.md §9):
+# A muir run for this band, on this host, for one (DESIGN.md §9):
 #
-#   muir --disk-pack /path/to/muir/vendor/run/disk-sys-304-0.img \
+#   muir --disk-pack /path/to/disk-sys-304-0.img \
 #        --chaos-address 4401 --chaos-udp 42043 \
 #        --chaos-udp-peer 4403@127.0.0.1:42042
-#
-# --chaos-address 4401 without its ,<server> half leaves muir's own server
-# at 177002, out of the band's way, so the band's calls to 4403 come here.

@@ -39,8 +39,8 @@
 //! stand-in, which are different machines, and 3060 is the restorers'
 //! address. No MIT machine was ever there. `sys/site/site.lisp` confirms
 //! what the band expects of it: `OZ-SYS-PATHNAME-TRANSLATIONS` is Unix,
-//! `("SYS" "//TREE//SYS//")`, which is the tree muir's `src/main.rs`
-//! serves, and here the mount `tree` (`DESIGN.md` §8).
+//! `("SYS" "//TREE//SYS//")`, which here is the mount `tree`
+//! (`DESIGN.md` §8).
 //!
 //! The shape: the user end opens a *control connection* to contact `FILE
 //! 1` and sends commands on it as data packets of text, one command a
@@ -56,18 +56,18 @@
 //! and followed by a *synchronous mark* on the data connection, which is
 //! what the user end reads until.
 //!
-//! **What is not muir's** is containment (`DESIGN.md` §6; `CLAUDE.md` §3),
-//! since this FILE answers anyone who reaches it (`CLAUDE.md` §2):
+//! **Containment** is not the protocol's but this server's (`DESIGN.md`
+//! §6; `CLAUDE.md` §3), since this FILE answers anyone who reaches it
+//! (`CLAUDE.md` §2):
 //!
-//! - **Every pathname is resolved in the [`Tree`]**, never against one
-//!   root directory as muir's own `resolve` did (muir's
-//!   `src/chaos/file.rs:375`): a read through [`Tree::resolve`], a write
+//! - **Every pathname is resolved in the [`Tree`]**, never against a root
+//!   directory directly: a read through [`Tree::resolve`], a write
 //!   through [`Tree::resolve_for_writing`], DELETE and RENAME as entries,
 //!   which act on a link itself ([`Tree::resolve_entry_for_writing`]).
 //!   Nothing outside a root is opened, listed, described, renamed or
 //!   removed.
-//! - **No allowlist.** muir's `serving`, `--chaos-file-peers`, does not
-//!   come; `LOGIN` records a user name, and is never a credential.
+//! - **No allowlist**: `LOGIN` records a user name, and is never a
+//!   credential.
 //! - **A read-only root refuses every command that writes**, `ATF`,
 //!   before anything is touched: the tree refuses the pathname first.
 //! - **Only a regular file or a directory is opened**, and anything else
@@ -75,8 +75,7 @@
 //! - **DIRECTORY describes each entry through the tree**, never with
 //!   `metadata`, which follows a link out of a root (`Control::describe`).
 //! - **A write's temporary is made once**, new, and written through the
-//!   handle it was made with; muir's reopened it by name for every packet
-//!   (`append`, muir's `src/chaos/file.rs:1390`).
+//!   handle it was made with, never reopened by name.
 //! - **Each change to a root is reported** through the [`LogHook`] the
 //!   service is given, with its pathname (`DESIGN.md` §10).
 
@@ -105,11 +104,10 @@ pub const ASYNC_MARK_OP: u8 = 0o202;
 /// begins with.
 pub const QFASL_MAGIC: [u8; 4] = [0o150, 0o306, 0o260, 0o163];
 
-/// `ATD`, "Access to directory denied", the error `FILE.c` gives a
-/// pathname the user may not reach, and muir's `denied()`. The tree gives
-/// it for every pathname outside a root; here it is for what the tree
-/// allows and FILE still cannot do: make a write's temporary, or link to
-/// `/` itself.
+/// `ATD`, the band's `INCORRECT-ACCESS-TO-DIRECTORY`, as the tree gives it
+/// for every pathname outside a root; here it is for what the tree allows
+/// and FILE still cannot do: make a write's temporary, or link to `/`
+/// itself.
 fn denied() -> Refusal {
     ("ATD", "Access to directory denied".into())
 }
@@ -141,9 +139,8 @@ pub struct File {
 
 impl File {
     /// A service over `tree`, answering **every** host that reaches it
-    /// (`CLAUDE.md` §2): muir's `serving`, the addresses it answers, does
-    /// not come. Each change to a root is reported through `log`, if
-    /// given.
+    /// (`CLAUDE.md` §2). Each change to a root is reported through `log`,
+    /// if given.
     pub fn new(tree: Arc<Tree>, log: Option<LogHook>) -> File {
         File { tree, time: None, log }
     }
@@ -733,9 +730,9 @@ impl Control {
     /// link, never what it leads to, so that it is listed and can be
     /// deleted. `None` for a name gone by the time it is looked at.
     ///
-    /// muir read each entry with `metadata`, which follows a link, and
-    /// gave the size and date of a file outside its root to anyone who
-    /// listed the link's directory.
+    /// Never with `metadata`, which follows a link, and would give the size
+    /// and date of a file outside its root to anyone who listed the link's
+    /// directory.
     fn describe(&self, pathname: &str) -> Option<std::fs::Metadata> {
         match self.tree.resolve(pathname) {
             Ok(Resolved::Place(p)) => described(&p),
@@ -1071,10 +1068,10 @@ impl Control {
     /// stopped, it is the server's own `BUG`, "CONTINUE received when
     /// not in error state".
     ///
-    /// **Not reached by a test here.** muir's stopped a write by taking its
-    /// temporary away between two packets, which no longer fails a write
-    /// that goes through its own handle; what stops one now is the disk
-    /// itself failing, full or erring.
+    /// **Not reached by a test here.** Taking a write's temporary away
+    /// between two packets fails nothing, since the write goes through its
+    /// own handle; what stops one is the disk itself failing, full or
+    /// erring.
     fn cont(&mut self, tid: &str, handle: &str) {
         let stopped =
             matches!(self.transfers.get(handle), Some(Transfer::Write { stalled: Some(_), .. }));
@@ -1183,8 +1180,8 @@ impl Control {
         }
     }
 
-    /// `CREATE-LINK`, the link then what it points at, both resolved, as
-    /// muir resolves them (`DESIGN.md` §6): the link for writing, the
+    /// `CREATE-LINK`, the link then what it points at, both resolved
+    /// (`DESIGN.md` §6): the link for writing, the
     /// target for reading, so it can only lead into the tree. The link
     /// holds the target's canonical path. One into another root is made,
     /// and refused wherever it is used, since a link must lead into its
@@ -1444,7 +1441,7 @@ impl Session for Control {
         // one: the read's drain took the write's bytes, dropped them for
         // having nowhere to go, and the clear below finished the job.
         // `a_read_and_a_write_on_one_data_connection_keep_their_own_bytes`
-        // in `tests/file.rs`, from muir's `tests/chaos.rs`.
+        // in `tests/file.rs`.
         let writing: Vec<String> = self
             .handles
             .keys()
@@ -1490,11 +1487,11 @@ impl Session for Control {
 /// "Opening"). The loop is one thread, and opening a FIFO that has no
 /// writer would block it, and every client with it (`CLAUDE.md` §8d).
 ///
-/// **Anything else is `WKF`, as muir answered it**, and not the `ATD` that
-/// `DESIGN.md` §6 names and the tree gives. The band makes a condition of
-/// both: `sys/io/file/open.lisp` puts each code on `FILE-ERROR` (`:231`,
-/// `:260`), and `qfile.lisp`'s `QFILE-PROCESS-ERROR-NEW` signals what it
-/// finds there. So the choice is what each says. `ATD` is
+/// **Anything else is `WKF`**, and not the `ATD` the tree gives. The band
+/// makes a condition of both: `sys/io/file/open.lisp` puts each code on
+/// `FILE-ERROR` (`:231`, `:260`), and `qfile.lisp`'s
+/// `QFILE-PROCESS-ERROR-NEW` signals what it finds there. So the choice is
+/// what each says. `ATD` is
 /// `INCORRECT-ACCESS-TO-DIRECTORY`, an `ACCESS-ERROR`, "Directory
 /// protection screwed you." `WKF` is `WRONG-KIND-OF-FILE`, whose own kinds
 /// are an operation invalid for a directory or for a link --- what this
@@ -1537,8 +1534,7 @@ fn date(meta: &std::fs::Metadata) -> String {
     format!("{m:02}/{d:02}/{:02} {hh:02}:{mm:02}:{ss:02}", y % 100)
 }
 
-/// The calendar a date is made by: the log's, the one copy of muir's
-/// (`crate::log::civil`).
+/// The calendar a date is made by: the log's (`crate::log::civil`).
 pub use crate::log::civil;
 
 /// `*` any run, `?` any one, else itself: the glob the user end sends.

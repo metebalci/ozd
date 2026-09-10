@@ -9,39 +9,34 @@
 //! pathname whose first component is exactly a mount's name is in that
 //! mount, the rest of it under the mount's directory; any other pathname is
 //! in the base. With mounts and no base, `/` names the mounts and nothing
-//! else, and is read-only. One root without a name is a single root, as
-//! muir's.
+//! else, and is read-only. One root without a name is a single root.
 //!
 //! **Nothing outside a root is ever named by a [`Place`]**, and so nothing
 //! outside one is served. That is the whole of FILE's security, since FILE
-//! answers anyone who reaches it (`CLAUDE.md` §2, §3). [`Tree::resolve`] is
-//! muir's `resolve` (`src/chaos/file.rs:375`) rewritten. Like it, it splits
-//! a pathname on `/`, refuses `.` and `..` rather than normalising them,
-//! puts an absolute pathname under the root, and canonicalises the deepest
-//! part that exists. Unlike it:
+//! answers anyone who reaches it (`CLAUDE.md` §2, §3). [`Tree::resolve`]
+//! splits a pathname on `/`, refuses `.` and `..` rather than normalising
+//! them, puts an absolute pathname under the root, and canonicalises the
+//! deepest part that exists. Beyond that:
 //!
-//! - **No second tree by symlink.** muir admits the target of every link in
-//!   its root's top level as part of the tree, so that its fetch scripts can
-//!   link a release in; that serves a file outside the root to anyone who
-//!   names the link, and does not come across (`CLAUDE.md` §3). Here a link
-//!   anywhere is followed and must lead into its own root. A directory that
-//!   lives elsewhere is served by mounting it.
+//! - **No second tree by symlink.** A link at a root's top level does not
+//!   bring its target into the tree, which would serve a file outside the
+//!   root to anyone who names the link (`CLAUDE.md` §3). A link anywhere is
+//!   followed and must lead into its own root. A directory that lives
+//!   elsewhere is served by mounting it.
 //! - **What comes back is what was checked**: the canonical path, with the
-//!   part that does not exist yet joined on, never the client's string ---
-//!   muir checks the canonical path and returns the other.
-//! - **A link that does not resolve is refused.** muir walks up past it to
-//!   the nearest ancestor that canonicalises; but a link to a file that does
-//!   not exist yet, written through, makes that file wherever the link
-//!   points, and that is outside as easily as in.
+//!   part that does not exist yet joined on, never the client's string.
+//! - **A link that does not resolve is refused**, not walked up past to the
+//!   nearest ancestor that canonicalises: a link to a file that does not
+//!   exist yet, written through, makes that file wherever the link points,
+//!   and that is outside as easily as in.
 //! - **Roots do not overlap**, which startup refuses. A read-only mount
 //!   inside the base would be written through the base: a client makes a
 //!   link in the base to one of the mount's files with `CREATE-LINK` ---
 //!   whose target resolves, the mount being a root --- and opens the link
 //!   for writing, and the file it reaches lies under the base.
-//! - **The service's temporaries cannot be named.** muir's FILE writes into
-//!   a temporary and reopens it by name for every packet (`append`,
-//!   `src/chaos/file.rs:1390`); a client that could name it could delete it
-//!   between two packets and put a link in its place.
+//! - **The service's temporaries cannot be named.** A client that could
+//!   name one could delete it mid-write and put a link in its place, and
+//!   the startup's cleanup would remove what the daemon did not make.
 //!
 //! **Why checking a path and then opening it is safe here.** The path
 //! checked is the path opened, and it contains no link when it is checked:
@@ -68,14 +63,12 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// A refusal as FILE answers it: the error code and its message, as muir's
-/// `denied()` returns them (`src/chaos/file.rs:93`).
+/// A refusal as FILE answers it: the error code and its message.
 pub type Refusal = (&'static str, String);
 
-/// The refusal of a pathname that may not be reached: `ATD`, "Access to
-/// directory denied", muir's `denied()` (`src/chaos/file.rs:93`), which has
-/// it from `FILE.c` (`PROTOCOLS.md`, FILE). The band turns `ATD` into
-/// `INCORRECT-ACCESS-TO-DIRECTORY` (`sys/io/file/open.lisp:231`).
+/// The refusal of a pathname that may not be reached: `ATD`, which the band
+/// turns into `INCORRECT-ACCESS-TO-DIRECTORY` (`sys/io/file/open.lisp:231`),
+/// with a message of this host's own (`PROTOCOLS.md`, FILE).
 fn denied() -> Refusal {
     ("ATD", "Access to directory denied".into())
 }
@@ -137,8 +130,8 @@ pub struct Place {
 
 /// A name in a directory of one root, for what acts on the name itself and
 /// not on what it leads to (`DESIGN.md` §6, "FILE's rules"): DELETE and
-/// RENAME, which remove and move a link and never its target, as Unix does
-/// and as muir did; and DIRECTORY, which describes by it a name that the
+/// RENAME, which remove and move a link and never its target, as Unix
+/// does; and DIRECTORY, which describes by it a name that the
 /// tree will not follow, so that a link that leads nowhere is still listed,
 /// and can be deleted.
 ///
@@ -265,7 +258,7 @@ impl Tree {
     ///    refused, `ATD`, not normalised; so is a temporary's name (see
     ///    [`is_temporary`]). No components at all is [`Resolved::Top`].
     /// 2. The first component is a mount if it is exactly a mount's name,
-    ///    case and all --- muir's FILE folds no case in a pathname, and a
+    ///    case and all --- FILE folds no case in a pathname, and a
     ///    band sends its pathnames in lower case (`DESIGN.md` §6) --- and
     ///    the rest is under the mount. Otherwise the whole pathname is under
     ///    the base; with no base it names nothing, `FNF`.
@@ -307,9 +300,8 @@ impl Tree {
     /// `ATD` whatever root it starts in. Then a read-only root refuses with
     /// `ATF`, "Access to file denied", before anything is touched; so does
     /// `/` with no base, which is read-only. Then a root itself is refused
-    /// with `ATD`, as muir's `resolve_for_writing` refuses it
-    /// (`src/chaos/file.rs:405`); so nothing can be made at `/` under a
-    /// mount's name, since that pathname is the mount itself.
+    /// with `ATD`; so nothing can be made at `/` under a mount's name, since
+    /// that pathname is the mount itself.
     ///
     /// The place's directory is the root or lies in it, so a write's
     /// temporary made there --- beside the file, as FILE makes it ---
@@ -374,7 +366,7 @@ impl Tree {
     /// DELETE resolves its pathname here, and RENAME both of its (through
     /// [`Tree::resolve_entries_for_renaming`]): both act on a link itself,
     /// its directory resolved and its own name not followed, as Unix does
-    /// and as muir did (`DESIGN.md` §6, "FILE's rules"). So a link that
+    /// (`DESIGN.md` §6, "FILE's rules"). So a link that
     /// leads nowhere, which no read or write will touch, can still be
     /// deleted. The entry's directory is the root or lies in it, and its
     /// name, a link or not, is a name in that directory: removing or
@@ -526,8 +518,8 @@ impl Root {
     fn locate(&self, parts: &[&str]) -> Result<Place, Refusal> {
         // The deepest part that is there as an entry. `symlink_metadata`
         // sees a link itself, so one that leads nowhere is found here and
-        // refused below, where muir's walk up past everything that does
-        // not canonicalise would join it on to the path returned. Absent is
+        // refused below, where a walk up past everything that does not
+        // canonicalise would join it on to the path returned. Absent is
         // "not found" or "not a directory"; any other failure --- a
         // directory that may not be searched, a link that loops --- is a
         // refusal.
@@ -565,9 +557,8 @@ impl Place {
     /// resolved.
     ///
     /// Read with `symlink_metadata`, which opens nothing and follows
-    /// nothing. muir answers the same case with `WKF`, the band's
-    /// `WRONG-KIND-OF-FILE` (`src/chaos/file.rs`, `open`); `ATD` is
-    /// `DESIGN.md`'s.
+    /// nothing. FILE tells the case apart and answers it with `WKF`, the
+    /// band's `WRONG-KIND-OF-FILE` (`openable`, in `crate::service::file`).
     pub fn metadata(&self) -> Result<Option<std::fs::Metadata>, Refusal> {
         match std::fs::symlink_metadata(&self.path) {
             Ok(m) if m.is_file() || m.is_dir() => Ok(Some(m)),
@@ -586,17 +577,16 @@ const TEMPORARY_PREFIX: &str = "#ozd-";
 const TEMPORARY_SUFFIX: &str = "#";
 
 /// The count in a temporary's name, taken once per name for the whole
-/// process: muir's `NEXT_TEMP` (`src/chaos/file.rs:70`), which is shared
-/// across control connections because a count kept per connection once let
-/// two connections of one client make the same name, the second truncating
-/// the first's temporary.
+/// process and shared across control connections: a count kept per
+/// connection would let two connections of one client make the same name,
+/// the second truncating the first's temporary.
 static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
 
 /// A new name for a write's temporary, for the host at `client`, never
 /// given before in this process: `#ozd-1576-0#` for 3050, the first time.
 ///
-/// FILE writes into a temporary and renames it over the file on CLOSE
-/// (`src/chaos/file.rs:809`, `open_write`). What keeps that in the root:
+/// FILE writes into a temporary and renames it over the file on CLOSE.
+/// What keeps that in the root:
 ///
 /// - The temporary is made in the directory of the place
 ///   [`Tree::resolve_for_writing`] returned, beside the file: never a root

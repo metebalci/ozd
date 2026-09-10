@@ -1,2 +1,2 @@
-# muir's: keep a call or a struct literal on one line whenever it fits.
+# Keep a call or a struct literal on one line whenever it fits.
 use_small_heuristics = "Max"

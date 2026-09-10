@@ -7,22 +7,16 @@
 //! in the packing code, because its byte order is **unverified** ---
 //! `chudp::PACKET_ORDER` and `chudp::TRAILER_ORDER` say what is believed
 //! and why --- and a correction should be a change to two constants and
-//! to one test.
-//!
-//! The frame has two copies, muir's and this one, and nothing in the
-//! compiler makes them agree. So these are the first five tests of muir's
-//! `tests/chudp.rs`, and the check word's from its `tests/chaos.rs`, with
-//! the bytes unchanged: they are the contract between the two
-//! repositories (`DESIGN.md` §11), and a correction is made in both.
+//! to one test. The check word the hardware puts in the trailer is pinned
+//! the same way, below.
 
 use ozd::chudp;
 use ozd::ncp::op;
 use ozd::packet::{self, Framed, Packet};
 
-/// A machine, and a peer over UDP, as muir's `tests/chudp.rs` names them
-/// from the machine's side: 3050 is System 100's band, `MIT-LISPM-1` in
-/// its `sys/site/hosts.text`, and 3040 a host beside it on subnet 6. The
-/// frame between them is muir's, and its names come with its bytes.
+/// A machine, and a peer over UDP, named from the machine's side: 3050 is
+/// System 100's band, `MIT-LISPM-1` in its `sys/site/hosts.text`, and 3040
+/// a host beside it on subnet 6.
 const ME: u16 = 0o3050;
 const PEER: u16 = 0o3040;
 
@@ -150,7 +144,7 @@ fn an_unknown_version_is_refused() {
         for value in [0u8, 2, 255] {
             let mut bad = good.clone();
             bad[byte] = value;
-            let err = chudp::unwrap(&bad).expect_err("{what} {value} is refused");
+            let Err(err) = chudp::unwrap(&bad) else { panic!("{what} {value} is refused") };
             assert!(err.contains(what), "the refusal says which: {err}");
         }
     }
@@ -185,16 +179,15 @@ const HEADER_AND_TRAILER: usize = 4 + 6;
 
 // --- the check word -----------------------------------------------------
 
-/// **The check word is the board's.** The words muir's board loopback
-/// test writes (`a_packet_loops_back_through_the_board`, in muir's
-/// `tests/chaos_netlist.rs`), with the source address the hardware
-/// appends, and the check word muir's netlist board produced for them:
-/// `135771`. Of the 9401's polynomials, the two bit orders and the two
-/// seeds, only CRC-16 from a cleared register over the words
-/// most-significant bit first gives it.
+/// **The check word is the board's.** The words of a packet looped back
+/// through the board, with the source address the hardware appends, and
+/// the check word a simulation of the board's netlist produced for them:
+/// `135771`, **unverified** against a board. Of the 9401's polynomials,
+/// the two bit orders and the two seeds, only CRC-16 from a cleared
+/// register over the words most-significant bit first gives it.
 ///
-/// From muir's `tests/chaos.rs`. It needs no board: the words and the
-/// word the board made for them are written down.
+/// It needs no board: the words and the word made for them are written
+/// down.
 #[test]
 fn the_check_word_is_the_boards() {
     let words = [0o400, 0o4, 0o3050, 0, 0o3050, 0o21, 1, 0, 0o44524, 0o42515, 0o3050, 0o3050];

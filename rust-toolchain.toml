@@ -1,10 +1,8 @@
 # Pinned so every machine builds ozd with the same compiler; with no
 # dependencies, this file is the whole of its build environment.
 #
-# A stable release, not muir's beta: muir pins 1.99.0-beta.4 because 1.98
-# miscompiles its `board.rs` at opt-level 3 with codegen-units 1, and
-# neither that code nor that profile is here (DESIGN.md §2). When 1.99
-# ships, the channel moves to it.
+# A stable release (DESIGN.md §2). When 1.99 ships, the channel moves to
+# it.
 [toolchain]
 channel = "1.98.0"
 components = ["clippy", "rustfmt"]

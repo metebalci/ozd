@@ -43,9 +43,8 @@ fn brd(from: u16, contact: &str) -> Packet {
 
 /// **An unknown host's endpoint is learned, and it is answered there.** A
 /// packet's source --- the header's --- is recorded at the UDP address the
-/// datagram came from, as muir's `--chaos-udp-dynamic` records it (muir's
-/// `src/chaos/udp.rs`, `arrived`), before anything else is done with the
-/// packet, so the answer to it has somewhere to go (`DESIGN.md` §5). A
+/// datagram came from, before anything else is done with the packet, so
+/// the answer to it has somewhere to go (`DESIGN.md` §5). A
 /// learned endpoint moves when the host does: that is what learning means
 /// (`CLAUDE.md` §3).
 #[test]
@@ -69,8 +68,7 @@ fn an_unknown_hosts_endpoint_is_learned_and_answered() {
 /// **A fixed endpoint is not moved by a packet.** A `--peer` is a
 /// statement about where a host is; a packet claiming that host's address
 /// from somewhere else is answered at the endpoint it gave, and does
-/// not move it --- as muir keeps an endpoint a flag named (`CLAUDE.md` §3;
-/// muir's `a_packet_does_not_move_an_endpoint_a_flag_named`).
+/// not move it (`CLAUDE.md` §3).
 #[test]
 fn a_fixed_endpoint_is_not_moved_by_a_packet() {
     let (named, named_at) = support::socket();
@@ -90,8 +88,8 @@ fn a_fixed_endpoint_is_not_moved_by_a_packet() {
 }
 
 /// **A datagram from this host's own address is dropped**: a trailer
-/// whose source is this host's, or 0, which is no host's --- muir's rule
-/// for a frame claiming to be from its own station (`DESIGN.md` §5). Its
+/// whose source is this host's, or 0, which is no host's: a frame claiming
+/// to be from this station (`DESIGN.md` §5). Its
 /// sender is not learned, and nothing answers it. And this host's address
 /// is never learned at an endpoint: a packet whose header claims it, in a
 /// frame from another host, is taken, and the answer --- addressed to this

@@ -4,10 +4,9 @@
 //! The daemon: the link, the NCP and the services wired together, and the
 //! turn that is the body of its loop (`DESIGN.md` §4).
 //!
-//! In muir the NCP and CHUDP are two nodes that meet on a modelled cable.
-//! Here there is no cable: what the link has for this host goes to
-//! [`Ncp::receive`], and every buffer [`Ncp::transmit`] gives goes to
-//! [`Link::send`] --- "the pump" of `DESIGN.md` §7, none of it protocol.
+//! What the link has for this host goes to [`Ncp::receive`], and every
+//! buffer [`Ncp::transmit`] gives goes to [`Link::send`] --- the pump,
+//! `DESIGN.md` §4, none of it protocol.
 
 use crate::chudp::Link;
 use crate::config::Config;

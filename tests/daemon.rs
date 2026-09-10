@@ -487,8 +487,8 @@ fn file_is_served_from_the_roots() {
     assert_eq!(events.first().map(String::as_str), Some("opened"), "FILE opens: {events:?}");
 }
 
-/// **`-h` and `--help` print the help on stdout, and exit 0**, as muir's
-/// do: the usage, what ozd is, each flag, the file of flags and where
+/// **`-h` and `--help` print the help on stdout, and exit 0**: the
+/// usage, what ozd is, each flag, the file of flags and where
 /// it is looked for, and the default endpoint --- wherever the flag is on
 /// the command line and whatever else is there, even a flag that is not
 /// one or a file of flags that is not there, and before anything else is

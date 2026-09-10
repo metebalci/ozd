@@ -17,11 +17,11 @@
 //! the one the environment variable `OZD_RC` names; else `.ozdrc`
 //! in the directory ozd is run from; else `.ozdrc` in `$HOME` ---
 //! the first of those, not all of them, and one looked for need not be
-//! there, as with muir's `.muirrc` (muir's `config_path`, `src/main.rs`). A
-//! flag the command line gives leaves that flag's lines out of the file.
+//! there. A flag the command line gives leaves that flag's lines out of
+//! the file.
 //!
 //! `-h` or `--help`, anywhere on the line, prints the usage and what each
-//! flag is on stdout, and exits 0, as muir's does, before anything else is
+//! flag is on stdout, and exits 0, before anything else is
 //! looked at. `--trace` prints every packet, every packet passed on, and
 //! every drop with why. `--check` reads the flags and runs the startup
 //! checks, binds nothing, and exits 0 if all is well and 1 if not.
@@ -45,12 +45,11 @@ use std::process::exit;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// What a file of flags is called where ozd looks for one, as muir's
-/// is `.muirrc`.
+/// What a file of flags is called where ozd looks for one.
 const RC: &str = ".ozdrc";
 
 /// The environment variable that names a file of flags in place of the two
-/// looked for, as muir's `MUIR_RC` does.
+/// looked for.
 const RC_NAMED: &str = "OZD_RC";
 
 const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,system=<TYPE>]]
@@ -61,7 +60,7 @@ const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,s
 
 /// What `-h` and `--help` print after the usage: what this is, then each
 /// flag in the order the usage gives them, then the file of flags and how
-/// it runs --- as muir's help is laid out.
+/// it runs.
 const HELP: &str = "\
 The associated machine for a site of MIT CADR Lisp Machines: one host on
 one Chaosnet subnet, over UDP, serving the machines their files, their
@@ -103,11 +102,10 @@ time and their host table, and passing packets between them.
                                can come more than once, a host a flag, and
                                never at this host's address.
   --peer <addr>@<ip>[:<port>]  a host whose endpoint is fixed, so that a
-                               packet does not move it, as muir's
-                               --chaos-udp-peer names one but with an IP
-                               address: 3040@192.0.2.5, at 42042 unless a
-                               port is given. The flag can come more than
-                               once, a peer an address; every other
+                               packet does not move it: its address and an
+                               IP address, 3040@192.0.2.5, at 42042 unless
+                               a port is given. The flag can come more
+                               than once, a peer an address; every other
                                endpoint is learned from the packets a host
                                sends.
   --trace                      print every packet, every packet passed on to
@@ -219,13 +217,11 @@ fn main() {
 /// The one `-c` names, `named`, which must be there: one that cannot be
 /// read is a usage error. Else the one [`RC_NAMED`] names, else [`RC`] in
 /// the directory ozd was run from if it is there, else [`RC`] in
-/// `$HOME`: **the first of those, not all of them**, as muir's
-/// `config_path` (muir's `src/main.rs`). One looked for that is not there
-/// is none, as most of muir's runs have. **One that is there and cannot be
-/// read is refused**, exit 1 --- a directory, a file this user may not
-/// read, one not in UTF-8 --- where muir takes it for none: a daemon run
-/// without the flags it was meant to have would look as though it had
-/// them. A file's shape is refused as the command line's is, a usage
+/// `$HOME`: **the first of those, not all of them**. One looked for that
+/// is not there is none. **One that is there and cannot be read is
+/// refused**, exit 1 --- a directory, a file this user may not read, one
+/// not in UTF-8 --- rather than taken for none: a daemon run without the
+/// flags it was meant to have would look as though it had them. A file's shape is refused as the command line's is, a usage
 /// error, with its line.
 fn file_of_flags(named: Option<&Path>) -> (Flags, Option<PathBuf>) {
     let (path, named) = match named {
@@ -277,8 +273,7 @@ fn running_as_root() -> bool {
     unsafe { geteuid() == 0 }
 }
 
-/// `-h` or `--help`: the usage and the help, on stdout; exit code 0, as
-/// muir's.
+/// `-h` or `--help`: the usage and the help, on stdout; exit code 0.
 fn help() -> ! {
     println!("{USAGE}\n\n{HELP}");
     exit(0);

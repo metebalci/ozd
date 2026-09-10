@@ -9,13 +9,11 @@
 //! `sys/network/chaos/qfile.lisp` does. The test carries every packet
 //! between them at a clock it sets, as `tests/ncp.rs` drives two NCPs.
 //!
-//! First muir's FILE tests, from muir's `tests/chaos.rs`, ported from its
-//! hand-made user end to an NCP and from muir's one root to the tree
-//! (`src/roots.rs`), with no allowlist, since FILE serves whoever reaches it
-//! (`CLAUDE.md` §2). muir's `tests/file_write.rs` needs a band and does not
-//! come; its exchange --- the SYNC mark on the data connection and the
-//! CLOSE on the control, the rename waiting for the mark --- is
-//! `a_read_and_a_write_in_the_base`. Then what the tree changes
+//! First the protocol's ordinary exchanges, against the tree
+//! (`src/roots.rs`), with no allowlist, since FILE serves whoever reaches
+//! it (`CLAUDE.md` §2). A write as a band makes it --- the SYNC mark on the
+//! data connection and the CLOSE on the control, the rename waiting for the
+//! mark --- is `a_read_and_a_write_in_the_base`. Then what the tree changes
 //! (`DESIGN.md` §6): a read-only mount, listings that never describe a file
 //! outside a root, DELETE and RENAME of a link itself, a write cut off, two
 //! machines at once, and the containment table through FILE's own commands.
@@ -89,9 +87,9 @@ impl Session for ControlEnd {
     }
 }
 
-/// The user end listening for a data connection: "The output file handle
-/// name is the contact name the user end is listening for" (muir's
-/// `src/chaos/file.rs`, `DATA-CONNECTION`).
+/// The user end listening for a data connection, at the contact name its
+/// output file handle names: "Hence, you should listen for such a
+/// connection" (`sys/doc/chfile.text:148`, `DATA-CONNECTION`).
 struct Listener {
     contact: String,
     wire: Arc<Mutex<Wire>>,
@@ -526,9 +524,8 @@ fn the_file_service_serves_files_and_directories() {
 }
 
 /// **A date is the calendar's, in UTC**: `civil`, Howard Hinnant's
-/// days-to-civil, which dates everything FILE describes. The second half of
-/// muir's `unix_text_becomes_lisp_machine_text`; the first half, the
-/// character set, is in `tests/services.rs` with `src/lispm.rs`.
+/// days-to-civil, which dates everything FILE describes. The character set
+/// is tested in `tests/services.rs`, with `src/lispm.rs`.
 #[test]
 fn a_date_is_the_calendars_in_utc() {
     assert_eq!(file::civil(0), (1970, 1, 1, 0, 0, 0));
@@ -757,16 +754,13 @@ fn the_file_service_manages_a_directory() {
     );
 }
 
-/// **The FILE service never writes outside the tree it serves**, muir's
-/// test of that name with its last part turned round. A pathname is taken
-/// component by component with `..` and `.` refused; a root itself is no
-/// file to open for writing, delete, rename or create; a link deeper in
-/// that points out of the tree leads nowhere, for reading as for writing.
-/// muir read and wrote through a link in its root's top level, the tree
-/// being the root and what the root's own links lead to (muir's
-/// `src/chaos/file.rs:375`); here that link is refused like any other that
-/// leaves its root (`CLAUDE.md` §3), and the same directory is served by
-/// mounting it, under the mount's own rules. Every refusal is `ATD`, and
+/// **The FILE service never writes outside the tree it serves.** A
+/// pathname is taken component by component with `..` and `.` refused; a
+/// root itself is no file to open for writing, delete, rename or create; a
+/// link deeper in that points out of the tree leads nowhere, for reading as
+/// for writing. A link in the root's top level is refused like any other
+/// that leaves its root (`CLAUDE.md` §3), and the same directory is served
+/// by mounting it, under the mount's own rules. Every refusal is `ATD`, and
 /// afterwards nothing has appeared beside the root or where either link
 /// points.
 #[cfg(unix)]
@@ -781,7 +775,7 @@ fn the_file_service_never_writes_outside_its_root() {
     std::fs::write(sys.join("in.text"), "in\n").unwrap();
     std::fs::write(release.join("hello.text"), "hello\n").unwrap();
     // A link deeper in the tree that leads out of it, and one in the root's
-    // top level, which muir took for the operator's own mount.
+    // top level, which is no mount.
     s.link("root/tree/sys/out", &elsewhere);
     s.link("root/mount", &release);
 
@@ -862,11 +856,8 @@ fn the_file_service_never_writes_outside_its_root() {
     assert_eq!(names(&release), ["hello.text"]);
 }
 
-/// **A write goes into the temporary it made, and nowhere else.** muir
-/// reopened the temporary by name for every packet (`append`, muir's
-/// `src/chaos/file.rs:1390`), and its `a_stalled_write_is_marked_and_continued`
-/// took the temporary away between two packets to make the next append
-/// fail. Here the temporary is made once, new, and written through the
+/// **A write goes into the temporary it made, and nowhere else.** The
+/// temporary is made once, new, and written through the
 /// handle it was made with (`DESIGN.md` §6, "FILE's rules"), so taking it
 /// away fails nothing and makes nothing again by name: the data goes on into
 /// the file that was taken away, and the CLOSE, whose rename finds nothing
@@ -1094,8 +1085,8 @@ fn a_wildcard_is_matched_in_linear_time() {
 /// anything else is refused: on `OPEN READ`, on `PROBE`, and on an `OPEN
 /// WRITE` over it, before a temporary is made.
 ///
-/// **The code is `WKF`, as muir's**, not the `ATD` that `DESIGN.md` §6
-/// names. The band makes a condition of both --- `open.lisp` puts each code
+/// **The code is `WKF`**, not the `ATD` the tree gives for it. The band
+/// makes a condition of both --- `open.lisp` puts each code
 /// on `FILE-ERROR` (`sys/io/file/open.lisp:231`, `:260`) and `qfile.lisp`
 /// signals what it finds there (`QFILE-PROCESS-ERROR-NEW`) --- so the
 /// choice is what each says: `ATD` is `INCORRECT-ACCESS-TO-DIRECTORY`, an
@@ -1351,7 +1342,7 @@ fn a_close_waiting_for_its_mark_is_answered_if_the_transfer_goes_away() {
 ///
 /// **The handles are named so that the input one sorts first, and that is
 /// what makes this test bite**: the poll walks the handles in order, and
-/// the drain that lost the bytes in muir was the input handle's. Named the
+/// the drain that would lose the bytes is the input handle's. Named the
 /// other way, the test would pass against a service with the bug back.
 #[test]
 fn a_read_and_a_write_on_one_data_connection_keep_their_own_bytes() {
@@ -1382,9 +1373,8 @@ fn a_read_and_a_write_on_one_data_connection_keep_their_own_bytes() {
     assert_eq!(characters(&n.down(c)), "(DEFUN F (X) X)", "and the read delivered its own file");
 }
 
-/// **A file is written in the base and read back**, in the exchange of
-/// muir's `tests/file_write.rs`, which needs a band and does not come:
-/// `OPEN WRITE`, the data, and then the CLOSE on the control connection and
+/// **A file is written in the base and read back**, in the exchange a
+/// band makes: `OPEN WRITE`, the data, and then the CLOSE on the control connection and
 /// the SYNC mark on the data connection sent together, as `qfile.lisp`'s
 /// `:COMMAND` sends them without waiting between; the rename waits for the
 /// mark, the file is in place, no temporary is left beside it, and the
@@ -1492,9 +1482,9 @@ fn a_readonly_mount_is_read_and_every_write_there_is_refused_with_atf() {
 
 /// **A listing never describes a file outside a root** (`DESIGN.md` §6,
 /// "FILE's rules"). DIRECTORY describes each entry through the tree, never
-/// with `metadata`, which follows a link: muir's did, and gave the size and
-/// date of a file outside its root to anyone who listed the link's
-/// directory. So a link that leads somewhere in its own root is described
+/// with `metadata`, which follows a link and would give the size and date
+/// of a file outside its root to anyone who listed the link's directory.
+/// So a link that leads somewhere in its own root is described
 /// as what it leads to --- a directory as a directory --- and one the tree
 /// will not follow, out of its root, into another root, or nowhere, as the
 /// link itself: listed, so that it can be deleted, with its own length and
@@ -1591,7 +1581,7 @@ fn a_listing_never_describes_a_file_outside_a_root() {
 }
 
 /// **DELETE removes a link, never what it leads to** (`DESIGN.md` §6,
-/// "FILE's rules"), as Unix does and as muir did: its directory is
+/// "FILE's rules"), as Unix does: its directory is
 /// resolved, and its own name is not followed. So a link that leads nowhere
 /// or round in a circle --- which no read or write will touch --- is got rid
 /// of the way any other is, and so is one out of its root or into another;

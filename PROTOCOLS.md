@@ -1,7 +1,7 @@
 # Chaosnet protocols
 
-Every contact name a Lisp Machine serves or calls, as the vendored
-System 100 and System 304 sources have them: what each one is, what goes
+Every contact name a Lisp Machine serves or calls, as the System 100
+and System 304 releases have them: what each one is, what goes
 over the wire, and where that was read. What ozd does about each is
 `CLAUDE.md` §4; this file records only what they are, and grows as each
 is read more closely.
@@ -11,10 +11,9 @@ is what a band sends and what it expects back. One case so far: UPTIME.
 
 ## Sources
 
-All in muir's `vendor/`, where its fetch scripts put the releases. Paths
-below are under
-`system-100-0/sys/`, with System 100's line numbers, unless marked
-**(304)**, which is `system-304-0/sys-304-0/`.
+Paths below are under System 100's `system-100-0/sys/`, with its line
+numbers, unless marked **(304)**, which is System 304's
+`system-304-0/sys-304-0/`.
 
 - `man/chaos.text`, chapter *The Chaosnet*, section *Higher-Level
   Protocols* --- the manual, cited below as §*Name*.
@@ -90,8 +89,6 @@ Every item past the count is optional by the count, and extra items are
 to be ignored. An identification of `0`--`377` is an obsolete block with
 16-bit counts, no longer to be sent; `1000` and up are reserved.
 
-muir: `src/chaos/status.rs`.
-
 ### TIME
 
 Simple transaction. The ANS is four bytes: the universal time ---
@@ -102,8 +99,6 @@ The machine serves it (`TIME-SERVER`, registered `chsaux.lisp:879`) only
 once it knows the time, and otherwise refuses with "I don't know what
 time it is." Its user end, `HOST-TIME` (`chuse.lisp`), asks the site's
 time servers and takes the first answer.
-
-muir: `src/chaos/time.rs`.
 
 ### UPTIME
 
@@ -118,10 +113,9 @@ sends `(* 60. (- (TIME:GET-UNIVERSAL-TIME) TIME:*UT-AT-BOOT-TIME*))`
 by 60 before printing it. `DECODE-CANONICAL-TIME-PACKET`'s own
 documentation says "an integral number of 60ths of a second".
 
-muir's `time.rs` followed the manual and answers seconds, so a band
-asking muir's server prints a sixtieth of the real uptime; no muir test
-pins the unit. ozd answers sixtieths. At that unit, four bytes wrap
-after about 828 days.
+A server that follows the manual and answers seconds has a band print a
+sixtieth of the real uptime. At sixtieths, four bytes wrap after about
+828 days.
 
 ### FILE
 
@@ -134,14 +128,15 @@ calls it at the file host its site file names.
 **Errors.** `doc/chfile.text`'s table (line 728) has no code for a
 refused write. Past the table a server's codes are its own system's ---
 ITS's table, or on TOPS-20 the initials of the error message's first
-three words. muir answers `ATD`, "Access to directory denied", which is
-`FILE.c`'s, for a pathname outside the tree. The machine turns `FNF`,
+three words (`:787`). `ATD` is one of those: "Incorrect access to
+directory" in `FILE.c` (`FILE.h:78`). ozd gives it for a pathname outside
+the tree. The machine turns `FNF`,
 `ATF` and `ATD` into `FILE-NOT-FOUND`, `INCORRECT-ACCESS-TO-FILE` and
 `INCORRECT-ACCESS-TO-DIRECTORY` (`io/file/open.lisp:180`, `:224`,
 `:231`); and `WKF` into `WRONG-KIND-OF-FILE` (`:260`), each through
 `QFILE-PROCESS-ERROR-NEW` (`network/chaos/qfile.lisp:300`).
 
-muir: `src/chaos/file.rs`. Containment: `CLAUDE.md` §3.
+Containment: `CLAUDE.md` §3.
 
 ## Stage 2
 
@@ -236,8 +231,7 @@ whether a Lisp Machine "has telnet" is a question about the other end:
 
 - **Into the machine**: a Chaosnet TELNET user end on Unix, or a gateway
   from TCP telnet to Chaosnet TELNET. It can be a CHUDP peer of the
-  machine directly --- muir takes more than one `--chaos-udp-peer` ---
-  or reach it through ozd, the subnet's hub.
+  machine directly, or reach it through ozd, the subnet's hub.
 - **Out of the machine, to Unix**: a Chaosnet TELNET server on Unix,
   which is a login shell for a client that does not authenticate.
   `CLAUDE.md` §3.

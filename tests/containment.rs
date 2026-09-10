@@ -27,8 +27,7 @@ use ozd::roots::{Place, Resolved, Root, Tree, is_temporary, temporary_name};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-/// A refusal as FILE answers it: the error code and its message, as muir's
-/// `denied()` (`src/chaos/file.rs:93`).
+/// A refusal as FILE answers it: the error code and its message.
 type Refusal = (&'static str, String);
 
 /// Names that look like a temporary's and are not one.
@@ -234,8 +233,7 @@ fn readonly(root: Root) -> Root {
 }
 
 /// **`.` and `..` are refused at every depth, in every root**, with `ATD`,
-/// and are never normalised away, as muir's `resolve` refuses them
-/// (`src/chaos/file.rs:375`). So no pathname climbs out of a root, or from
+/// and are never normalised away. So no pathname climbs out of a root, or from
 /// the base into a mount or back. They are refused before the disk is
 /// looked at, so a climb through a directory that does not exist is
 /// refused the same way.
@@ -351,13 +349,11 @@ fn a_symlink_under_a_root_pointing_outside_is_refused() {
     assert!(!outside.join("new.text").exists() && !outside.join("new-dir").exists());
 }
 
-/// **A link at the top of the base is not a second tree.** muir admits the
-/// target of every link in its root's top level as part of the tree it
-/// serves, so that its fetch scripts can link a release in
-/// (`src/chaos/file.rs:375`). That is a file outside the root served to
-/// anyone who can name the link, and it does not come across (`CLAUDE.md`
-/// §3). The same directory is served by mounting it, and then by the
-/// mount's own rules --- here, read-only.
+/// **A link at the top of the base is not a second tree.** Its target is
+/// not taken into the tree, which would serve a file outside the root to
+/// anyone who can name the link (`CLAUDE.md` §3). The same directory is
+/// served by mounting it, and then by the mount's own rules --- here,
+/// read-only.
 #[cfg(unix)]
 #[test]
 fn a_top_level_symlink_is_not_a_second_tree() {
@@ -504,8 +500,8 @@ fn a_rename_across_roots_is_refused() {
 /// directory, is refused before it is opened**, with `ATD` (`DESIGN.md`
 /// §6). The loop is one thread, and opening a FIFO that has no writer
 /// blocks it, and every client with it (`CLAUDE.md` §8d); the kind is read
-/// with `symlink_metadata`, which opens nothing. muir answers the same
-/// case with `WKF` (`src/chaos/file.rs`, `open`). A socket stands for a
+/// with `symlink_metadata`, which opens nothing. FILE answers the same
+/// case with `WKF` (`tests/file.rs`). A socket stands for a
 /// device node, which a test cannot make. If this test hangs, something
 /// opened the FIFO.
 #[cfg(unix)]
@@ -819,7 +815,7 @@ fn a_mount_covers_a_base_directory_of_its_name_and_startup_warns() {
 }
 
 /// **Names match exactly**, case and all, as every directory name does:
-/// muir's FILE folds no case in a pathname (`DESIGN.md` §6). Only a first
+/// FILE folds no case in a pathname (`DESIGN.md` §6). Only a first
 /// component that is a mount's name, exactly, is the mount; anything else
 /// is the base's, and with no base it names nothing.
 #[test]
@@ -882,10 +878,9 @@ fn the_listing_of_the_top_names_each_entry_once() {
 }
 
 /// **A root itself is no file to write**, however it is named: FILE may not
-/// delete, rename, replace or make it, as muir's `resolve_for_writing`
-/// refuses it (`src/chaos/file.rs:405`), and so nothing can be made at `/`
-/// under a mount's name. Refused with `ATD`, as muir refuses it. Read, it
-/// is a directory like any other.
+/// delete, rename, replace or make it, and so nothing can be made at `/`
+/// under a mount's name. Refused with `ATD`. Read, it is a directory like
+/// any other.
 #[cfg(unix)]
 #[test]
 fn a_root_itself_is_not_written() {
@@ -1004,7 +999,7 @@ fn entry_refused_everywhere(s: &Scratch, t: &Tree, code: &str, pathname: &str) {
 }
 
 /// **DELETE and RENAME act on a name itself, not on what it leads to**
-/// (`DESIGN.md` §6, "FILE's rules"), as Unix does and as muir did: the
+/// (`DESIGN.md` §6, "FILE's rules"), as Unix does: the
 /// pathname's directory is resolved as any place is --- canonical, in its
 /// root, every link on the way followed and held to that root --- and its
 /// last component is joined on as the directory holds it, a link or not,

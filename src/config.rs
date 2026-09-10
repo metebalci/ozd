@@ -5,22 +5,21 @@
 //! address and names, the UDP endpoint it binds, the roots FILE serves,
 //! the site's host table for HOSTAB, and the few peers whose endpoints are
 //! fixed --- given on the command line, or in a **file of flags**,
-//! `.ozdrc`, as muir takes its own flags and its `.muirrc` (muir's
-//! `muirrc`, `src/main.rs`).
+//! `.ozdrc`.
 //!
 //! ```text
 //! --address 3060
 //! --name    MIT-OZ,OZ
 //! --listen  192.0.2.10
 //! --root    /srv/lispm
-//! --root    tree=/path/to/muir/vendor/system-100-0/sys,ro
+//! --root    tree=/path/to/system-100-0/sys,ro
 //! --host    3050,MIT-LISPM-1,LM1,system=LISPM
 //! --host    3051,MIT-LISPM-2,LM2,system=LISPM
 //! --peer    3040@192.0.2.5
 //! ```
 //!
-//! **A value is one word**, its parts separated by commas, as muir's flags
-//! are (`--disk-pack <image>,ro`). On the command line it is the word
+//! **A value is one word**, its parts separated by commas, as in
+//! `--root /srv/lispm,ro`. On the command line it is the word
 //! after its flag, unless that word is itself a flag. In a file a line is a
 //! flag and, after a blank, the rest of the line is its value, less the
 //! blanks at either end --- so a path in a file may hold a blank without
@@ -33,16 +32,16 @@
 //! run's, [`Run`].
 //!
 //! **The command line has the last word.** A flag it gives leaves every
-//! line of that flag out of the file, as with muir's `.muirrc`; the file's
+//! line of that flag out of the file; the file's
 //! other lines are read first and the command line after, so where one
 //! flag refuses another across the two, the command line's is the one
 //! refused. **A file cannot hold `-c` or `--config`** --- which file is
 //! read is the command line's to say, and one that could name another could
-//! name itself, muir's rule --- **nor `--check`, `-h` or `--help`**: each is
+//! name itself --- **nor `--check`, `-h` or `--help`**: each is
 //! what one run is asked to do, and in a file every run would do it and
 //! exit 0, the daemon never serving and a service manager seeing a clean
-//! exit. `--trace` may be in one: how much is printed is a standing choice,
-//! as muir's `--chaos-trace` in a `.muirrc` is.
+//! exit. `--trace` may be in one: how much is printed is a standing
+//! choice.
 //!
 //! **Two kinds of refusal**, told apart by [`Error::usage`]. A *usage
 //! error* is the shape of what was given, found by [`Flags::command_line`]
@@ -70,9 +69,8 @@
 //! `--peer`s, for where its packets go. So this host's own address has no
 //! `--host` --- its names are `--name`'s --- and no `--peer`, this host not
 //! being its own peer; two `--host`s at one address are two answers to what
-//! it is called, and two `--peer`s two answers to where it is, which muir
-//! refuses for `--chaos-udp-peer` for the same reason (muir's
-//! `src/main.rs`). A `--host` and a `--peer` at one address are not
+//! it is called, and two `--peer`s two answers to where it is. A `--host`
+//! and a `--peer` at one address are not
 //! ambiguous: they answer different questions about one host, and are how
 //! a host is both named and fixed. Whichever is read later is refused,
 //! naming the earlier.
@@ -140,8 +138,7 @@ pub struct Config {
     /// module documentation), and otherwise as given.
     pub system: Option<String>,
     /// `--listen <endpoint>`, at most once: the UDP endpoint the socket
-    /// binds, in the forms muir's `--chaos-udp` takes (muir's
-    /// `endpoint_at`, `src/main.rs`), against the loopback at 42042:
+    /// binds, against the loopback at 42042:
     ///
     /// - no `--listen`: `127.0.0.1:42042`;
     /// - a bare port, `42043`: on the loopback, `127.0.0.1:42043`;
@@ -152,11 +149,10 @@ pub struct Config {
     ///
     /// IPv6 is written bare, or in brackets before a port. **IP literals
     /// only**: a name would be resolved once at startup and not followed
-    /// afterwards, which is what muir does for `--chaos-udp-peer` and what
-    /// nothing here does (`DESIGN.md` §8). Port 0 is a port the system
-    /// picks, which a test on the loopback wants and a site does not.
-    /// muir's `--chaos-udp` may be given with no endpoint; `--listen`
-    /// always takes one, and the default is no `--listen` at all.
+    /// afterwards, which nothing here does (`DESIGN.md` §8). Port 0 is a
+    /// port the system picks, which a test on the loopback wants and a site
+    /// does not. `--listen` always takes an endpoint, and the default is no
+    /// `--listen` at all.
     pub listen: SocketAddr,
     /// `--root <path>[,ro]` and `--root <name>=<path>[,ro]`, once a root:
     /// the tree FILE serves (`DESIGN.md` §6), in the order given. A value
@@ -177,8 +173,8 @@ pub struct Config {
     ///   first component of a pathname under `/`, so it is not empty, holds
     ///   no `/`, and is neither `.` nor `..`; and names match exactly while
     ///   a band sends its pathnames in lower case (`DESIGN.md` §6;
-    ///   `/tree/sys/...` in muir's `--chaos-file-root` help), so a mount
-    ///   named in capitals is one no band would reach.
+    ///   `/tree/...` in System 100's `sys/site/sys.translations`), so a
+    ///   mount named in capitals is one no band would reach.
     pub roots: Vec<Root>,
     /// `--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]`, once a host: the
     /// site's host table, which HOSTAB answers from beside this host's own
@@ -189,9 +185,8 @@ pub struct Config {
     pub hosts: Vec<Host>,
     /// `--peer <addr>@<ip>[:<port>]`, once a peer: a host whose endpoint is
     /// fixed, so that a packet does not move it; every other endpoint is
-    /// learned from the packets a host sends (`DESIGN.md` §5). muir's
-    /// `--chaos-udp-peer` form, with an IP literal after the `@` as
-    /// `--listen` takes one, where muir takes a name too; at 42042 unless a
+    /// learned from the packets a host sends (`DESIGN.md` §5). An IP
+    /// literal after the `@`, as `--listen` takes one; at 42042 unless a
     /// port is given. Not a bare port, since a peer is a host to send to
     /// and not a socket to bind; not `0.0.0.0` or `::`, which are every
     /// interface and no host; and not port 0, which nothing can be sent to.
@@ -361,7 +356,7 @@ pub struct Flags {
 impl Flags {
     /// The command line's `words`, the program's name not among them, as
     /// flags; or the first usage error. A flag's value is the word after
-    /// it, whatever it is, as muir's are --- unless that word is one of the
+    /// it, whatever it is --- unless that word is one of the
     /// flags, when the flag has no value: `--address --name OZ` is
     /// `--address` missing its value, not an address named `--name`.
     pub fn command_line<S: AsRef<str>>(words: &[S]) -> Result<Flags, Error> {
@@ -395,9 +390,8 @@ impl Flags {
     /// The text of a file of flags as flags, each with its line; or the
     /// first usage error, with its line. A line is a flag and, after a
     /// blank, the rest of the line is its value, less the blanks at either
-    /// end; a blank line, or one beginning with `#`, is a comment --- muir's
-    /// `.muirrc` (muir's `muirrc`, `src/main.rs`). `-c`, `--config`,
-    /// `--check`, `-h` and `--help` are refused (the module
+    /// end; a blank line, or one beginning with `#`, is a comment. `-c`,
+    /// `--config`, `--check`, `-h` and `--help` are refused (the module
     /// documentation).
     pub fn file(text: &str) -> Result<Flags, Error> {
         let mut given = Vec::new();
@@ -479,7 +473,7 @@ impl Run {
     ///
     /// **A flag `typed` gives leaves every line of that flag out of
     /// `file`**, and `file`'s other lines are read first and `typed` after:
-    /// the command line has the last word, as with muir's `.muirrc`.
+    /// the command line has the last word.
     pub fn new(typed: &Flags, file: &Flags) -> Result<Run, Error> {
         let read = file.given.iter().filter(|g| !typed.gives(g.flag)).chain(&typed.given);
         let mut reading = Reading::default();
@@ -866,9 +860,8 @@ fn address_of(word: &str) -> Result<u16, String> {
     })
 }
 
-/// `--listen`'s endpoint as muir's `--chaos-udp` reads its own (muir's
-/// `endpoint_at`, `src/main.rs`): address and port are themselves, a bare
-/// port is that port on the loopback, and a bare address is at 42042.
+/// `--listen`'s endpoint: address and port are themselves, a bare port is
+/// that port on the loopback, and a bare address is at 42042.
 fn listen_at(word: &str) -> Option<SocketAddr> {
     if let Ok(at) = word.parse::<SocketAddr>() {
         return Some(at);

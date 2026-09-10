@@ -1,10 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A Chaosnet address, as the config writes it. From muir's
-//! `src/chaos/mod.rs`, `parse_address`.
+//! A Chaosnet address, as the config writes it.
 
-/// Reads an address as the config takes it, and as muir's flags do: the
+/// Reads an address as the config takes it: the
 /// sixteen bits in octal, `3050`, or as `subnet:host` with each half in
 /// octal, `6:50`. The two are one number --- the subnet is the high byte
 /// and the host the low (AIM-628) --- which octal digits do not show,
@@ -12,9 +11,9 @@
 /// as "subnet 6, host 50" only once split. Each half must fit its byte.
 ///
 /// **Neither half may be zero, because a zero host is not a host.** MIT's
-/// own description of the interface, quoted in muir's
-/// `src/chaos/interface.rs`: the destination word is "the cable address of
-/// the destination of the packet, or 0 to broadcast it", and a receiver
+/// own description of the interface, AIM-628 §7: the destination word is
+/// "the cable address of the destination of the packet, or 0 to broadcast
+/// it", and a receiver
 /// stores the next packet "addressed to this node, or is broadcast". So
 /// `6:0` names every host on subnet 6 rather than one of them, and a host
 /// configured as it would take the whole subnet's traffic for its own. A

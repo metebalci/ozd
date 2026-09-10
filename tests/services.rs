@@ -5,9 +5,6 @@
 //! asks it --- STATUS as `HOSTAT` reads it, TIME against the system clock,
 //! UPTIME in the sixtieths the band divides by --- and the Lisp Machine
 //! character set that FILE, HOSTAB and NAME speak.
-//!
-//! From muir's `tests/chaos.rs` where muir has the test. STATUS's meters
-//! and UPTIME's unit are this host's own (`DESIGN.md` §7).
 
 mod support;
 
@@ -160,10 +157,10 @@ fn time_is_the_system_clock_in_universal_time() {
 /// it.** The band's own server sends `(* 60. (- (TIME:GET-UNIVERSAL-TIME)
 /// TIME:*UT-AT-BOOT-TIME*))`, and both its user ends, `HOST-UPTIME` and
 /// `UPTIME`, divide what comes back by 60 (`UPTIME-SERVER` and the two
-/// after it, `sys/network/chaos/chsaux.lisp`). The manual's "an interval
-/// (in seconds)" is what muir's server answers, and a band asking it prints
-/// a sixtieth of the real uptime. Ten seconds up is 600, exactly, at ten
-/// seconds of the test's clock (`DESIGN.md` §11); muir's answers 10.
+/// after it, `sys/network/chaos/chsaux.lisp`). A server that answers in
+/// the manual's "an interval (in seconds)" has a band print a sixtieth of
+/// the real uptime. Ten seconds up is 600, exactly, at ten seconds of the
+/// test's clock (`DESIGN.md` §11), and not 10.
 #[test]
 fn uptime_is_in_sixtieths_of_a_second() {
     let second = 1_000_000_000;
@@ -219,9 +216,8 @@ fn lisp_machine_text_becomes_unix_text() {
 
 /// **Protocol text is a byte a character, not UTF-8.** The Lisp Machine's
 /// newline is 0o215, a continuation byte in UTF-8: read as UTF-8 it is
-/// replaced, and every line after the first is lost --- muir's FILE lost
-/// an OPEN's pathname so (muir's `tests/chaos.rs`,
-/// `the_file_service_serves_files_and_directories`). [`lispm::from_bytes`]
+/// replaced, and every line after the first is lost, an OPEN's pathname
+/// among them. [`lispm::from_bytes`]
 /// and [`lispm::lispm_text`] keep it, each the other's inverse; a
 /// character past a byte goes out as `?`.
 #[test]

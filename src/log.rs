@@ -6,7 +6,7 @@
 //! rest §10 lists as they are written.
 //!
 //! What `--trace` prints is not the log: every packet, every packet passed
-//! on and every drop, as muir's `--chaos-trace` prints them, each at the
+//! on and every drop, each at the
 //! daemon's clock rather than the calendar's (`crate::chudp`,
 //! `crate::ncp`).
 //!
@@ -45,8 +45,7 @@ pub fn stamp(secs: u64) -> String {
 /// Calendar date and time from seconds since 1970, UTC: Howard Hinnant's
 /// days-to-civil.
 ///
-/// From muir's `src/chaos/file.rs`, `civil`, verbatim: year, month, day,
-/// hour, minute, second.
+/// Year, month, day, hour, minute, second.
 pub fn civil(secs: u64) -> (u64, u64, u64, u64, u64, u64) {
     let days = secs / 86_400;
     let rem = secs % 86_400;

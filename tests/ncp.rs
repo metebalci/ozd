@@ -5,8 +5,7 @@
 //! handed to [`Ncp::receive`] as the link would hand it, what the NCP sends
 //! taken off [`Ncp::transmit`], and the clock set by the test.
 //!
-//! The transport tests of muir's `tests/chaos.rs`, ported from its `Server`
-//! to this `Ncp`; then what they did not cover --- a duplicate RFC, one
+//! The transport as a band uses it; then its corners --- a duplicate RFC, one
 //! packet in flight, a connection opened from this end, a bad check word,
 //! what is not this host's, and a packet for no connection. Last, the log:
 //! the line [`Ncp::log`] is given for each connection opened, refused and
@@ -368,7 +367,7 @@ impl Session for BurstSession {
 }
 
 /// **One packet is in flight at a time, whatever window the other end
-/// offers** (muir's `src/chaos/server.rs`, `pump`): the far end is a CADR
+/// offers**: the far end is a CADR
 /// whose interface holds one packet, and a burst up to the window was lost
 /// into it. A session with three packets and an EOF to send at once, on a
 /// connection whose far end offers a window of five, gets the first out;
@@ -509,8 +508,7 @@ fn a_connection_is_opened_from_this_end() {
 
 /// **A connection asked for from this end can be refused, or answered.**
 /// The far end's CLS ends it with the far end's reason; an ANS, the answer
-/// of a simple transaction, ends it too (muir's `src/chaos/server.rs`,
-/// `on_connection`). Either way the session hears why.
+/// of a simple transaction, ends it too. Either way the session hears why.
 #[test]
 fn a_connection_from_this_end_is_refused_or_answered() {
     let mut far = Ncp::new(0o3060);
@@ -528,10 +526,9 @@ fn a_connection_from_this_end_is_refused_or_answered() {
 }
 
 /// **A bad check word does not lose the packet.** What a CHUDP peer puts in
-/// the trailer's third word is unverified (muir's `src/chaos/udp.rs`,
-/// `unwrap`), and UDP carries a checksum of its own, so a mismatch is traced
-/// and the packet handled (`DESIGN.md` §5). muir's server drops it, which is
-/// safe only on muir's modelled cable.
+/// the trailer's third word is unverified (`chudp::unwrap`), and UDP
+/// carries a checksum of its own, so a mismatch is traced and the packet
+/// handled (`DESIGN.md` §5).
 #[test]
 fn a_bad_check_word_is_still_handled() {
     let mut h = Ncp::new(0o3060);
@@ -546,8 +543,8 @@ fn a_bad_check_word_is_still_handled() {
     assert_eq!(ans.data, [0x78, 0x56, 0x34, 0x12]);
 }
 
-/// **Only a packet for this host, or a BRD to 0, is taken**, as muir's
-/// server takes them: another host's packet is not this one's, a packet to
+/// **Only a packet for this host, or a BRD to 0, is taken**: another
+/// host's packet is not this one's, a packet to
 /// 0 is a broadcast only if it is a BRD, and a buffer that holds no packet
 /// is dropped without a word.
 #[test]

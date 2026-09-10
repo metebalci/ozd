@@ -13,10 +13,9 @@
 //! ended with EOF and CLS as §4.4 says. Adding a service is one
 //! `impl Service`; the transport does not know what any of them do.
 //!
-//! From muir's `src/chaos/server.rs`, where the host is a node on a
-//! modelled cable and takes its turn on it. Here there is no cable: the
-//! NCP and the socket are wired to each other directly, through
-//! [`Ncp::receive`] and [`Ncp::transmit`] (`DESIGN.md` §3, §4).
+//! There is no cable: the NCP and the socket are wired to each other
+//! directly, through [`Ncp::receive`] and [`Ncp::transmit`] (`DESIGN.md`
+//! §4).
 //!
 //! What becomes of each connection --- opened, refused, closed --- it tells
 //! the log, [`Ncp::log`], when it has one (`DESIGN.md` §10). Every packet is
@@ -755,12 +754,9 @@ impl Ncp {
     /// **A bad check word is not a reason to drop it.** One that is not
     /// what the CADR's hardware would have made is printed under `trace`
     /// and the packet handled all the same: what a CHUDP peer puts in the
-    /// trailer's third word is unverified (muir's `src/chaos/udp.rs`,
-    /// `unwrap`), and UDP carries a checksum of its own ---
-    /// optional over IPv4, where a sender may leave it zero. muir's server
-    /// drops on it, which is safe there only because the frame on its
-    /// modelled cable carries a check word muir computed itself
-    /// (`DESIGN.md` §5).
+    /// trailer's third word is unverified (`chudp::unwrap`), and UDP
+    /// carries a checksum of its own --- optional over IPv4, where a sender
+    /// may leave it zero (`DESIGN.md` §5).
     pub fn receive(&mut self, now: u64, packet: &Framed) {
         let Ok((p, _)) = Packet::from_buffer(&packet.buffer) else { return };
         if p.dest != self.address && !(p.dest == 0 && p.opcode == op::BRD) {

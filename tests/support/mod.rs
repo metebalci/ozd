@@ -10,8 +10,8 @@
 //!   [`ozd`].
 //! - **Test hosts**: each an [`Ncp`] at an address of its own on a
 //!   loopback socket of its own, speaking CHUDP through [`chudp::wrap`] and
-//!   [`chudp::unwrap`], with the daemon as its one peer --- as a muir with
-//!   a default peer would (`DESIGN.md` §13). The NCP is symmetric, so a
+//!   [`chudp::unwrap`], with the daemon as its one peer. The NCP is
+//!   symmetric, so a
 //!   test host opens its connections with [`Ncp::connect`] and serves what
 //!   it is given to serve.
 //! - **One clock**, set by the test: [`settle`] turns the daemon and the

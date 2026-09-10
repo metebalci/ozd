@@ -11,9 +11,6 @@
 //! hardware adding the source and the check word itself. A CHUDP datagram
 //! carries exactly that, the hardware's three words as its trailer
 //! ([`crate::chudp`]).
-//!
-//! From muir's `src/chaos/packet.rs`, without its cable: the bits a packet
-//! occupies on the ether, and their decoding, are muir's alone.
 
 /// The most data a packet carries, AIM-628 §3.5: "the maximum value is
 /// 488".
@@ -115,11 +112,11 @@ impl Packet {
 /// hardware adds --- each word most-significant bit first, which is the
 /// order the two 74165s at B12 and B13 shift a word out.
 ///
-/// That is not read off a document; it is the one arrangement that
-/// reproduces the word muir's netlist board itself produced (muir's
-/// `tests/chaos.rs`, `the_check_word_is_the_boards`, copied here into
-/// `tests/frame.rs`). It is what muir puts in a CHUDP trailer, and so what
-/// this host puts there too.
+/// That is not read off a document: it is the one arrangement that
+/// reproduces the word a simulation of the board's netlist produced for a
+/// packet it looped back (`tests/frame.rs`, `the_check_word_is_the_boards`),
+/// and is **unverified** against a board. It is what this host puts in a
+/// CHUDP trailer.
 pub fn check_word(words: &[u16]) -> u16 {
     let mut r = 0u32; // stage k in bit k
     for &w in words {

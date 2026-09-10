@@ -1,15 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A Chaosnet address, as the config writes it: muir's test of
-//! `parse_address`, from its `tests/chaos.rs`.
+//! A Chaosnet address, as the config writes it: `parse_address`.
 
 /// **An address is read either way it is written.** A Chaosnet address is
 /// sixteen bits, the subnet in the high byte and the host in the low, and
 /// the memo and the host tables write the whole number in octal --- where
 /// the byte boundary falls inside a digit, so `3050` hides "subnet 6, host
-/// 50". The config takes both spellings, as muir's flags do, each half in
-/// octal too.
+/// 50". The config takes both spellings, each half in octal too.
 #[test]
 fn an_address_is_read_either_way_it_is_written() {
     use ozd::address::parse_address;

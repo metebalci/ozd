@@ -9,7 +9,7 @@
 # The numbers are the band's own, and a host answering at any others is one
 # it never calls. Its host table, sys/site/hosts.text in the release, has
 # the band as MIT-LISPM-1 at 3050 and its file and time host as MIT-OZ at
-# 3060 (muir's src/chaos/mod.rs). This host is MIT-OZ.
+# 3060. This host is MIT-OZ.
 
 --address 3060
 
@@ -22,19 +22,18 @@
 --name    MIT-OZ,OZ,system=UNIX
 
 # Where the socket is bound. Without this line, 127.0.0.1:42042: this host
-# and nothing else, which is enough for muir runs beside it. To be reached
+# and nothing else, which is enough for machines run beside it. To be reached
 # from other hosts, an address on the segment, or 0.0.0.0 for every
 # interface (DESIGN.md §5):
 #--listen 192.0.2.10
 
 # The files. The base root holds the homes --- LOGIN gives a user /<user>/
 # --- and is written to. The release's sources are mounted at /tree,
-# read-only, because the band asks for them as /tree/sys/... (muir's
-# --chaos-file-root help); muir's own vendor/run/file-root links tree to the
-# same directory. Each must be a directory when ozd starts, and the
-# base one it can write (DESIGN.md §6).
+# read-only, because the band asks for them as /tree/... (its
+# sys/site/sys.translations). Each must be a directory when ozd starts,
+# and the base one it can write (DESIGN.md §6).
 --root    /srv/lispm
---root    tree=/path/to/muir/vendor/system-100-0/sys,ro
+--root    tree=/path/to/system-100-0/sys,ro
 
 # The host table HOSTAB answers from, for a name a band's own table lacks.
 # The band's machine, as its table has it:
@@ -48,16 +47,10 @@
 # fixes one that must not move, cbridge's for one:
 #--peer   3040@192.0.2.5
 
-# A muir run for this band, on this host (DESIGN.md §9):
+# A muir run for this band, on this host, for one (DESIGN.md §9):
 #
-#   muir --disk-pack /path/to/muir/vendor/run/disk-sys-100-0.img \
+#   muir --disk-pack /path/to/disk-sys-100-0.img \
 #        --chaos-address 3050 --chaos-udp 42043 \
 #        --chaos-udp-peer 3060@127.0.0.1:42042
 #
-# --chaos-address 3050 without its ,<server> half leaves muir's own server
-# at its default, 177002, out of the band's way, so the band's calls to
-# 3060 come here. A second machine is 3051 on 42044, and so on. Until muir
-# has a default peer, each run also names every other machine's address at
-# this host's endpoint --- the first --chaos-udp-peer 3051@127.0.0.1:42042,
-# the second --chaos-udp-peer 3050@127.0.0.1:42042 --- so that their
-# packets to each other come through here (DESIGN.md §5, §9).
+# A second machine is 3051 on 42044, and so on.

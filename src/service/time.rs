@@ -24,8 +24,6 @@
 //! number of 60ths of a second" --- all in `sys/network/chaos/chsaux.lisp`.
 //! Where the manual and the machine's code disagree, the code is what a
 //! band does, so [`Uptime`] answers sixtieths (`PROTOCOLS.md`, UPTIME).
-//! muir's answers seconds, and a band asking it prints a sixtieth of the
-//! real uptime.
 
 use crate::ncp::{Response, Service};
 

@@ -118,7 +118,7 @@ fn the_modules_example_is_read_whole() {
 --name    MIT-OZ,OZ
 --listen  192.0.2.10
 --root    /srv/lispm
---root    tree=/path/to/muir/vendor/system-100-0/sys,ro
+--root    tree=/path/to/system-100-0/sys,ro
 --host    3050,MIT-LISPM-1,LM1,system=LISPM
 --host    3051,MIT-LISPM-2,LM2,system=LISPM
 --peer    3040@192.0.2.5
@@ -133,7 +133,7 @@ fn the_modules_example_is_read_whole() {
             listen: at("192.0.2.10:42042"),
             roots: vec![
                 root(None, "/srv/lispm", false),
-                root(Some("tree"), "/path/to/muir/vendor/system-100-0/sys", true),
+                root(Some("tree"), "/path/to/system-100-0/sys", true),
             ],
             hosts: vec![
                 host(0o3050, &["MIT-LISPM-1", "LM1"], Some("LISPM")),
@@ -156,9 +156,9 @@ fn comments_and_blank_lines_are_nothing() {
 }
 
 /// **A value is the rest of its line**, blanks and `#` and all, less the
-/// blanks at either end, as in muir's `.muirrc` (muir's `muirrc`,
-/// `src/main.rs`): a `#` after a flag is no comment, and a path in a file
-/// may hold a blank, as one on the command line may in a shell's quotes.
+/// blanks at either end: a `#` after a flag is no comment, and a path in a
+/// file may hold a blank, as one on the command line may in a shell's
+/// quotes.
 #[test]
 fn a_value_is_the_rest_of_its_line() {
     let text = "--address 3060\n--name OZ\n--root   /srv/lisp machines # the base  \n";
@@ -211,7 +211,7 @@ fn without_listen_it_is_the_loopback_at_42042() {
     assert_eq!(Config::parse(LEAST).unwrap().listen, at("127.0.0.1:42042"));
 }
 
-/// **`--listen` takes muir's `--chaos-udp` forms**: a port on the
+/// **`--listen` takes an endpoint in three forms**: a port on the
 /// loopback, an address at 42042, or both; `0.0.0.0` and `::` every
 /// interface; IPv6 bare, or in brackets before a port. Port 0 is one the
 /// system picks. It always takes one of them: the default is no
@@ -242,14 +242,14 @@ fn listen_takes_the_forms_of_chaos_udp() {
 fn a_root_is_a_base_or_a_mount() {
     let config = Config::parse(
         "--address 3060\n--name OZ\n--root /srv/lispm,ro\n\
-         --root tree=/path/to/muir/vendor/system-100-0/sys,ro\n--root doc=/srv/doc\n",
+         --root tree=/path/to/system-100-0/sys,ro\n--root doc=/srv/doc\n",
     )
     .unwrap();
     assert_eq!(
         config.roots,
         [
             root(None, "/srv/lispm", true),
-            root(Some("tree"), "/path/to/muir/vendor/system-100-0/sys", true),
+            root(Some("tree"), "/path/to/system-100-0/sys", true),
             root(Some("doc"), "/srv/doc", false),
         ]
     );
@@ -288,7 +288,7 @@ fn a_host_is_an_address_and_names() {
     );
 }
 
-/// **`--peer` fixes an endpoint**, in muir's `--chaos-udp-peer` form: an
+/// **`--peer` fixes an endpoint**, `<addr>@<ip>[:<port>]`: an
 /// IP literal after the `@`, at 42042 unless a port is given, IPv6 as
 /// `--listen` takes it.
 #[test]
@@ -605,7 +605,7 @@ fn every_flag_can_be_given_on_the_command_line() {
         "--root",
         "/srv/lispm",
         "--root",
-        "tree=/path/to/muir/vendor/system-100-0/sys,ro",
+        "tree=/path/to/system-100-0/sys,ro",
         "--host",
         "3050,MIT-LISPM-1,LM1,system=LISPM",
         "--peer",
@@ -614,7 +614,7 @@ fn every_flag_can_be_given_on_the_command_line() {
         "--check",
     ];
     let file = "--address 3060\n--name MIT-OZ,OZ,system=UNIX\n--listen 192.0.2.10\n\
-                --root /srv/lispm\n--root tree=/path/to/muir/vendor/system-100-0/sys,ro\n\
+                --root /srv/lispm\n--root tree=/path/to/system-100-0/sys,ro\n\
                 --host 3050,MIT-LISPM-1,LM1,system=LISPM\n--peer 3040@192.0.2.5\n";
     let r = run(&typed, "").unwrap();
     assert_eq!(r.config, Config::parse(file).unwrap());
@@ -632,8 +632,8 @@ fn the_command_line_and_the_file_together_are_the_site() {
 }
 
 /// **A flag the command line gives leaves that flag's lines out of the
-/// file**, every one of them: the command line has the last word, as with
-/// muir's `.muirrc` (muir's `muirrc`, `src/main.rs`). So a file whose
+/// file**, every one of them: the command line has the last word. So a
+/// file whose
 /// `--address` lines would be refused is not refused for them, the file's
 /// mounts go with its base when the command line gives a root, and the
 /// file's other flags stay.
@@ -707,8 +707,7 @@ fn config_names_the_file_of_flags() {
 }
 
 /// **`--trace` may be in a file**: how much the daemon prints is a
-/// standing choice, as muir's `--chaos-trace` in a `.muirrc` is, and
-/// changes nothing it does.
+/// standing choice, and changes nothing it does.
 #[test]
 fn trace_may_be_in_a_file() {
     let r = run(&[], &format!("{LEAST}--trace\n")).unwrap();
@@ -728,8 +727,7 @@ fn check_and_help_are_the_command_lines() {
 
 /// **A file of flags cannot name another**, with `-c` or `--config`: a
 /// usage error with its line. Which file to read is the command line's to
-/// say, and a file that could name another could name itself (muir's
-/// `muirrc`).
+/// say, and a file that could name another could name itself.
 #[test]
 fn a_file_cannot_name_another() {
     misused_after("--config /somewhere/else\n", 4, "cannot name another");
@@ -784,9 +782,8 @@ fn reads(c: &mut Command) -> Option<&'static str> {
     read_from(&out)
 }
 
-/// **The file read is the first of those there, not all of them**, as with
-/// muir's `.muirrc` (muir's `config_path`, `src/main.rs`): the one `-c`
-/// names; else the one `OZD_RC` names; else `.ozdrc` in the
+/// **The file read is the first of those there, not all of them**: the
+/// one `-c` names; else the one `OZD_RC` names; else `.ozdrc` in the
 /// directory ozd is run from; else `.ozdrc` in `$HOME`. `HOME` is
 /// a directory of the test's own, so the user's own file is never read.
 /// Each file here is a usage error, found before who is running it is, so
@@ -920,10 +917,7 @@ fn the_system_100_example_is_a_site() {
     assert_eq!(config.listen, at("127.0.0.1:42042"));
     assert_eq!(
         config.roots,
-        [
-            root(None, "/srv/lispm", false),
-            root(Some("tree"), "/path/to/muir/vendor/system-100-0/sys", true),
-        ]
+        [root(None, "/srv/lispm", false), root(Some("tree"), "/path/to/system-100-0/sys", true),]
     );
     let lm1 = host(0o3050, &["MIT-LISPM-1", "CADR-1", "CADR1", "LM1"], Some("LISPM"));
     assert_eq!(config.hosts, [lm1]);
@@ -945,7 +939,7 @@ fn the_system_304_example_is_a_site() {
         config.roots,
         [
             root(None, "/srv/lispm", false),
-            root(Some("sys"), "/path/to/muir/vendor/system-304-0/sys-304-0", true),
+            root(Some("sys"), "/path/to/system-304-0/sys-304-0", true),
         ]
     );
     assert_eq!(config.hosts, [host(0o4401, &["AMS-LISPM-1"], Some("LISPM"))]);

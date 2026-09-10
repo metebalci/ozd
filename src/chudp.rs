@@ -9,14 +9,11 @@
 //! it crosses a NAT --- which IP protocol 16, the assigned number for
 //! Chaosnet, does not.
 //!
-//! The frame half of muir's `src/chaos/udp.rs` is copied here with its
-//! documentation and every **unverified** mark: the constants, [`Order`],
-//! [`PACKET_ORDER`], [`TRAILER_ORDER`], [`wrap`] and [`unwrap`]. Where
-//! that documentation spoke of muir's modelled cable or its flags, it
-//! speaks of this host's. muir's link is a node on that cable and does
-//! not come. The link and the hub --- the socket, the table of endpoints,
-//! and a packet for another host of the subnet passed on untouched ---
-//! are [`Link`], below the frame (`DESIGN.md` §5).
+//! Two halves. The frame: the constants, [`Order`], [`PACKET_ORDER`],
+//! [`TRAILER_ORDER`], [`wrap`] and [`unwrap`], with an **unverified** mark
+//! wherever the reading is not settled. Then [`Link`], the link and the
+//! hub: the socket, the table of endpoints, and a packet for another host
+//! of the subnet passed on untouched (`DESIGN.md` §5).
 //!
 //! ## The frame
 //!
@@ -181,9 +178,8 @@ pub const PACKET_ORDER: Order = Order::Little;
 /// assembled there was not traced, so this is belief and not knowledge.
 ///
 /// What would settle it: the same capture or interoperation. One whole
-/// packet's bytes are pinned in `tests/frame.rs`, as in muir's
-/// `tests/chudp.rs`, so a correction is a change to these two constants
-/// and to that one test, in both.
+/// packet's bytes are pinned in `tests/frame.rs`, so a correction is a
+/// change to these two constants and to that one test.
 pub const TRAILER_ORDER: Order = Order::Big;
 
 /// A frame as it would stand on a cable, as a CHUDP datagram.
@@ -215,8 +211,8 @@ pub fn wrap(buffer: &[u16], source: u16, check: u16) -> Option<Vec<u8>> {
 /// word is unverified --- the hardware trailer's is the 9401's CRC-16,
 /// and the trailer has also been described as carrying an Internet
 /// checksum --- so this reports the answer and leaves the packet alone.
-/// A trace of a run against a real peer settles it --- muir's
-/// `--chaos-trace`, or `--trace` here (`DESIGN.md` §10) --- and until
+/// A trace of a run against a real peer settles it --- `--trace`
+/// (`DESIGN.md` §10) --- and until
 /// then a mismatch on a packet for this host is traced and not dropped
 /// (`DESIGN.md` §5).
 ///
@@ -273,8 +269,7 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
 /// The link, and the hub of this host's subnet (`DESIGN.md` §5): the one
 /// socket, the table of endpoints, and what becomes of each datagram.
 ///
-/// **Endpoints are learned**, as muir's `--chaos-udp-dynamic` learns them
-/// (muir's `src/chaos/udp.rs`, `arrived`): a packet's source --- the
+/// **Endpoints are learned**: a packet's source --- the
 /// header's, since that is where an answer is addressed --- is recorded at
 /// the UDP address its datagram came from. A host behind `cbridge` is
 /// learned at `cbridge`'s endpoint, which is where its packets go. A
@@ -288,8 +283,8 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
 /// 1. [`unwrap`], verbatim: length, version, function. A datagram it
 ///    refuses for its length is meter 7, `bad_bit_count`; for anything
 ///    else, meter 8, `other_discarded` (`DESIGN.md` §7).
-/// 2. The trailer's source is this host's address, or 0: dropped, muir's
-///    rule for a frame claiming to be from its own station.
+/// 2. The trailer's source is this host's address, or 0: dropped, as a
+///    frame claiming to be from this station.
 /// 3. The header's source is learned, before anything else is done with
 ///    the packet, so that an answer to it can be passed on at once.
 /// 4. By the trailer's destination, the cable's, which is what a cable
@@ -493,7 +488,7 @@ impl Link {
 
     /// One of this host's own packets out: the NCP's buffer, cable
     /// destination last, as `wrap(buffer, own address, check_word(buffer +
-    /// own address))` --- the 9401's CRC-16, which is what muir sends ---
+    /// own address))` --- the 9401's CRC-16 (`packet::check_word`) ---
     /// to the destination's endpoint, or once to every distinct endpoint
     /// for 0. A destination with no endpoint is dropped, and counted.
     pub fn send(&self, now: u64, buffer: &[u16]) {
@@ -552,8 +547,7 @@ impl Link {
         self.traced(now, format_args!("dropped: {why}"));
     }
 
-    /// A line of the trace, at `now` on the daemon's clock, as muir's
-    /// `--chaos-trace` prints its own.
+    /// A line of the trace, at `now` on the daemon's clock.
     fn traced(&self, now: u64, what: fmt::Arguments) {
         if self.trace {
             eprintln!("chudp {now:>6}: {what}");
