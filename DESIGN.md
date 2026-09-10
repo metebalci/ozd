@@ -322,9 +322,12 @@ file is ever half one and half the other.
   `SYSTEM-TYPE` if the line gives one, then an EOF; or `ERROR No such
   host`, then an EOF. Never `MACHINE-TYPE` (`PROTOCOLS.md`, HOSTAB). The
   connection stays open for the next name until the client closes it.
-- **NAME**: one line saying that nobody is logged in, then an EOF; its
-  text is display, not protocol. A band's `(finger)` asks here when
-  given no host (`PROTOCOLS.md`, NAME).
+  A line longer than any name matches nothing, and no more of it than
+  that is kept.
+- **NAME**: one line, `Nobody is logged in.`, ended in the Lisp
+  Machine's newline; then an EOF, and a CLS once the EOF is receipted, as
+  the machine's own server ends (`FORMAT-AND-EOF`, `chuse.lisp:550`). A
+  band's `(finger)` asks here when given no host (`PROTOCOLS.md`, NAME).
 
 ## 8. The config
 

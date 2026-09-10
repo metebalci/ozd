@@ -41,7 +41,7 @@ left out.
 | `FILE` | stream | ✓ | ✓ | stage 1 |
 | `HOSTAB` | stream | **no** | ✓ | stage 2 |
 | `DUMP-ROUTING-TABLE` | RFC/ANS | ✓ | ✓ | not needed |
-| `NAME` | stream | ✓ | ✓ | stage 2, proposed |
+| `NAME` | stream | ✓ | ✓ | stage 2 |
 | `FINGER` | RFC/ANS | ✓ | ✓ | between machines, none here |
 | `TELNET` | stream | ✓ | ✓ | wanted, not this project |
 | `SUPDUP` | stream | **no** | ✓ | not this project |
@@ -178,6 +178,21 @@ while the attribute's name is interned as a keyword, so it would not
 match and would be parsed as a Chaosnet address. Unverified against a
 running band; until it is, an answer from here leaves `MACHINE-TYPE`
 out.
+
+**Lines, as that user end sends and reads them** (read for muir-ah's
+HOSTAB). The stream carries the Lisp Machine character set untranslated,
+`OPEN-STREAM`'s default (`chuse.lisp:782`, `:787`). The user end sends
+each name with `:LINE-OUT`, which ends it with `#\CR`, `215` octal
+(`io/stream.lisp:473`, `io/rddefs.lisp:172`), then `:FORCE-OUTPUT`
+(`chuse.lisp:956`). It reads the answer with `:LINE-IN`, which ends a
+line at `215` and hands back an unfinished last line flagged as at EOF,
+which the user end ignores (`io/stream.lisp:552`, `:554`;
+`chuse.lisp:963`). So every line of an answer ends in `215`, the last
+included. Each needs its space (`chuse.lisp:973`); the attribute's name
+is interned as sent, so it is upper case (`:974`), and so is a
+`SYSTEM-TYPE`'s value, to name a flavour (`:983`); `NAME` comes first,
+the official name first of all, since the first becomes the host's name
+(`:978`); and `CHAOS` is octal (`chsaux.lisp:1617`).
 
 ### NAME
 
