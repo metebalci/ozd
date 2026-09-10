@@ -55,7 +55,9 @@ optimisation.
   `[lints]`, tests included, and that one function allows it.
 - **Library and binary**, as muir: `src/lib.rs` is the daemon, so tests
   drive it in-process; `src/main.rs` is arguments and the loop.
-- **Lints**: `cargo clippy --all-targets -- -D warnings` clean.
+- **Lints**: `cargo clippy --all-targets -- -D warnings` clean, and
+  `cargo doc --no-deps` with `RUSTDOCFLAGS="-D warnings"`, so that a doc
+  link that leads nowhere, or to a private item, is caught.
 - **rustfmt**: `use_small_heuristics = "Max"`, muir's.
 - **Licence**: AGPL-3.0-or-later with SPDX headers, as muir.
 - **Git**, as muir. `.gitignore`: `/target`, and `CLAUDE.md`, which is
