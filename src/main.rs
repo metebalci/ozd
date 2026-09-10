@@ -18,6 +18,7 @@
 use muir_ah::config::Config;
 use muir_ah::daemon::Daemon;
 use muir_ah::log;
+use muir_ah::roots::Tree;
 use std::path::PathBuf;
 use std::process::exit;
 use std::time::{Duration, Instant};
@@ -56,12 +57,24 @@ fn main() {
         eprintln!("{}: {e}", path.display());
         exit(1);
     });
-    // The roots are checked here, with `src/roots.rs`: each canonicalised,
-    // a directory, not `/`, and writable unless `readonly`; then a base
-    // directory a mount covers warned of, and stale FILE temporaries
-    // removed (`DESIGN.md` §6, §12 step 6). `--check` runs them too.
+    // The roots: each canonicalised, a directory, not `/`, writable unless
+    // `readonly`, and inside no other; a base directory a mount covers is
+    // warned of (`DESIGN.md` §6). `--check` runs these and stops there,
+    // having changed nothing.
+    let tree = Tree::new(config.roots.clone()).unwrap_or_else(|e| fail(&e));
+    for warning in tree.warnings() {
+        log::event(format_args!("warning: {warning}"));
+    }
     if check {
         exit(0);
+    }
+    // A daemon killed mid-write leaves a FILE temporary: each is removed
+    // before FILE can make another, and nothing else is touched.
+    for removed in tree.remove_temporaries() {
+        match removed {
+            Ok(path) => log::event(format_args!("removed a stale temporary, {}", path.display())),
+            Err(why) => log::event(format_args!("a stale temporary is not removed: {why}")),
+        }
     }
 
     let mut daemon = Daemon::new(&config, trace)

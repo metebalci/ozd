@@ -271,3 +271,81 @@ fn hostab_and_name_are_served() {
     assert!(name.iter().any(|e| e == "eof"), "and an EOF: {name:?}");
     assert_eq!(hostab.events(), ["opened"], "HOSTAB opens and waits for a name");
 }
+
+/// **The roots are checked before anything is bound**, by a run and by
+/// `--check` alike (`DESIGN.md` §6): a root that is not there, or `/`, is
+/// a refusal to start, naming it, exit 1. A base directory a mount covers
+/// is warned of, and the check still passes. Each case has a directory of
+/// its own, since a daemon started by another test cleans its base.
+#[test]
+fn the_roots_are_checked_at_startup() {
+    if support::running_as_root() {
+        return;
+    }
+    let dir = support::scratch().join("roots-checked");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("base/tree")).unwrap();
+    std::fs::create_dir_all(dir.join("mount")).unwrap();
+    let head = format!("address {OZ:o}\nname MIT-OZ OZ\nlisten 127.0.0.1:0\n");
+    let text = format!("{head}root {}\n", dir.join("no-such").display());
+    let out = muir_ah().arg("--check").arg(config_file("roots-missing.conf", &text)).output();
+    let out = out.expect("it runs");
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(said(&out).contains("no-such"), "naming it: {}", said(&out));
+    let text = format!("{head}root /\n");
+    let out = muir_ah().arg("--check").arg(config_file("roots-slash.conf", &text)).output();
+    let out = out.expect("it runs");
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    let text = format!(
+        "{head}root {}\nroot tree {} readonly\n",
+        dir.join("base").display(),
+        dir.join("mount").display()
+    );
+    let out = muir_ah().arg("--check").arg(config_file("roots-covered.conf", &text)).output();
+    let out = out.expect("it runs");
+    assert!(out.status.success(), "{}", said(&out));
+    assert!(said(&out).contains("tree"), "the covered directory warned of: {}", said(&out));
+}
+
+/// **A run removes stale FILE temporaries, and `--check` does not**: a
+/// daemon killed mid-write leaves one, and a check changes nothing
+/// (`DESIGN.md` §6). The removal is logged before the daemon says where it
+/// listens, and nothing else in the root is touched.
+#[test]
+fn a_run_removes_stale_temporaries_and_check_does_not() {
+    if support::running_as_root() {
+        return;
+    }
+    let dir = support::scratch().join("stale");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let stale = dir.join(muir_ah::roots::temporary_name(LM1));
+    std::fs::write(&stale, b"half a file").unwrap();
+    let kept = dir.join("kept.lisp");
+    std::fs::write(&kept, b"a file").unwrap();
+    let text =
+        format!("address {OZ:o}\nname MIT-OZ OZ\nlisten 127.0.0.1:0\nroot {}\n", dir.display());
+    let path = config_file("stale.conf", &text);
+    let out = muir_ah().arg("--check").arg(&path).output().expect("it runs");
+    assert!(out.status.success(), "{}", said(&out));
+    assert!(stale.exists(), "--check changes nothing");
+    let mut child = muir_ah()
+        .arg(&path)
+        .stdin(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("it starts");
+    let stderr = child.stderr.take().expect("its stderr");
+    let _running = Running(child);
+    let mut said_removed = false;
+    for line in BufReader::new(stderr).lines() {
+        let line = line.expect("a line");
+        if line.contains("listening at") {
+            break;
+        }
+        said_removed |= line.contains("stale");
+    }
+    assert!(said_removed, "the removal is logged");
+    assert!(!stale.exists(), "the stale temporary is gone");
+    assert!(kept.exists(), "and nothing else");
+}
