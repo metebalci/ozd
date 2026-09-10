@@ -1,9 +1,11 @@
 # muir-ah: design
 
-The detailed design, agreed on 2026-09-10, before any code is written.
-`CLAUDE.md` holds the decisions and rules this follows, and
-`PROTOCOLS.md` what each protocol is. §13 lists what is left, all of it
-outside this repository.
+The detailed design, agreed on 2026-09-10 before any code was written,
+and built to since: where the code and this differ, one of them is
+wrong. `CLAUDE.md` holds the decisions and rules this follows, and
+`PROTOCOLS.md` what each protocol is. What is left is the acceptance
+test with a band, by hand (§11), and §13's notes, all of them outside
+this repository.
 
 ## 1. The shape of it
 
