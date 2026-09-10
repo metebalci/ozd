@@ -756,11 +756,13 @@ impl Control {
     /// protocol version is above zero and one with a leading `-1` for an
     /// older client.
     fn close(&mut self, tid: &str, handle: &str) {
-        // Any data that arrived on the data connection but has not yet
-        // been moved into the write goes in before the temporary is
-        // renamed: a CLOSE can follow the last data packet with no turn
-        // of the server between them.
-        self.drain_incoming(handle);
+        // Any data that arrived on a data connection but has not yet been
+        // moved into its write goes in first: a CLOSE can follow the last
+        // data packet with no turn of the server between them. It goes to
+        // the **write**, whichever handle this CLOSE names: drained for
+        // its own handle, a read's CLOSE would take its sibling write's
+        // bytes and drop them.
+        self.drain_writes();
         // A write's CLOSE comes up the control connection and its mark
         // up the data connection, and the two can overtake each other:
         // `sys/doc/chfile.text`'s worked example for writing a file
@@ -994,6 +996,23 @@ impl Control {
         );
     }
 
+    /// What has come up the data connections, taken in by the write in
+    /// progress on each: `drain_incoming` for every handle that is writing,
+    /// and for no other. Both handles of a connection share one channel,
+    /// so draining the handle that is writing takes it all, and a drain for
+    /// the other would take the write's bytes and drop them (`poll`).
+    fn drain_writes(&mut self) {
+        let writing: Vec<String> = self
+            .handles
+            .keys()
+            .filter(|h| matches!(self.transfers.get(*h), Some(Transfer::Write { .. })))
+            .cloned()
+            .collect();
+        for handle in writing {
+            self.drain_incoming(&handle);
+        }
+    }
+
     /// Takes everything waiting on a handle's data connection and gives it
     /// to the write in progress on that handle, in order. A handle with no
     /// transfer has its waiting data discarded --- there is nowhere for it
@@ -1003,7 +1022,7 @@ impl Control {
             return;
         };
         let items: Vec<(u8, Vec<u8>)> = ch.lock().unwrap().incoming.drain(..).collect();
-        let writing = self.transfers.contains_key(handle);
+        let writing = matches!(self.transfers.get(handle), Some(Transfer::Write { .. }));
         for (op, bytes) in items {
             // A synchronous mark says the data is all there; it carries
             // none of its own, and it is what a CLOSE waits for.
@@ -1442,15 +1461,7 @@ impl Session for Control {
         // having nowhere to go, and the clear below finished the job.
         // `a_read_and_a_write_on_one_data_connection_keep_their_own_bytes`
         // in `tests/file.rs`.
-        let writing: Vec<String> = self
-            .handles
-            .keys()
-            .filter(|h| matches!(self.transfers.get(*h), Some(Transfer::Write { .. })))
-            .cloned()
-            .collect();
-        for handle in writing {
-            self.drain_incoming(&handle);
-        }
+        self.drain_writes();
         // A CLOSE that overtook its synchronous mark waits in the
         // transfer; the mark has now come, so it can be answered. A
         // write that has stalled since goes through here too, to the

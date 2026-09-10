@@ -1373,6 +1373,54 @@ fn a_read_and_a_write_on_one_data_connection_keep_their_own_bytes() {
     assert_eq!(characters(&n.down(c)), "(DEFUN F (X) X)", "and the read delivered its own file");
 }
 
+/// **A CLOSE on the read leaves the write beside it whole.** Both handles
+/// of a data connection share what comes up it, and a CLOSE takes in what
+/// has come before it is answered --- for the write on that connection,
+/// whichever handle the CLOSE names. Here the write's data and the read's
+/// CLOSE reach the server back to back, with no turn of the server between
+/// them to take the data in first: the data is still the write's.
+#[test]
+fn a_close_on_the_read_keeps_the_write_beside_it_whole() {
+    let s = Scratch::new("close-beside");
+    let root = s.dir("base");
+    let dir = s.dir("base/tree/sys");
+    std::fs::write(dir.join("source.lisp"), "(DEFUN F (X) X)").unwrap();
+    let mut n = serve(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let r = n.command(c, 30, &format!("T3 I0001 OPEN READ CHARACTER{nl}/tree/sys/source.lisp{nl}"));
+    assert!(r.starts_with("T3 I0001 OPEN "), "{r:?}");
+    let r = n.command(c, 40, &format!("T4 O0001 OPEN WRITE BINARY{nl}/tree/sys/source.qfasl{nl}"));
+    assert!(r.starts_with("T4 O0001 OPEN "), "{r:?}");
+
+    // The data up the data connection and the CLOSE up the control
+    // connection, off the client together, and handed to the server data
+    // first.
+    n.queue_data(c, file::BINARY_OP, &[1, 2, 3]);
+    n.wire(c).control.push(Out::Data(lispm::lispm_text("T5 I0001 CLOSE")));
+    let h = n.clients[c].0;
+    let mut up = Vec::new();
+    while let Some(b) = n.hosts[h].transmit(50) {
+        up.push(Packet::from_buffer(&b).unwrap().0);
+    }
+    up.sort_by_key(|p| p.opcode == op::DAT);
+    for p in &up {
+        n.server.receive(50, &arriving(p));
+    }
+    n.settle(50);
+    let r = n.take_reply(c, "T5").expect("the read's CLOSE is answered");
+    assert!(r.starts_with("T5 I0001 CLOSE "), "{r:?}");
+
+    n.send_data(c, 60, file::SYNC_MARK_OP, &[]);
+    let r = n.command(c, 70, "T6 O0001 CLOSE");
+    assert!(r.starts_with("T6 O0001 CLOSE "), "{r:?}");
+    assert_eq!(
+        std::fs::read(dir.join("source.qfasl")).unwrap(),
+        [1, 2, 3],
+        "the write kept the bytes that came before the read's CLOSE"
+    );
+}
+
 /// **A file is written in the base and read back**, in the exchange a
 /// band makes: `OPEN WRITE`, the data, and then the CLOSE on the control connection and
 /// the SYNC mark on the data connection sent together, as `qfile.lisp`'s
