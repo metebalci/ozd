@@ -118,6 +118,17 @@ fn wrong_kind() -> Refusal {
     ("WKF", "Not a regular file".into())
 }
 
+/// What an asynchronous mark carries: `TIDNO <handle> ERROR <code> R
+/// <message>`, as `FILE.c`'s `fherror` writes it, the literal `TIDNO`
+/// standing where a transaction id would be --- cut to what a packet
+/// carries, since a mark is one packet, and the handle is the client's to
+/// make as long as a `DATA-CONNECTION` command holds.
+pub fn async_mark_data(handle: &str, code: &str, message: &str) -> Vec<u8> {
+    let mut data = lispm_text(&format!("TIDNO {handle} ERROR {code} R {message}"));
+    data.truncate(MAX_DATA);
+    data
+}
+
 /// Where the service reports each change it makes to a root: one line,
 /// the client's address in octal, what was done, and its pathname as the
 /// client wrote it --- `3050 write /tmp/x.text`, `3050 rename /a to /b`
@@ -1072,9 +1083,9 @@ impl Control {
     /// first word, shows the error as proceedable, and sends `CONTINUE`
     /// if the user proceeds.
     fn async_mark(&mut self, handle: &str, code: &str, message: &str) {
-        let line = format!("TIDNO {handle} ERROR {code} R {message}");
         if let Some(ch) = self.handles.get(handle) {
-            ch.lock().unwrap().out.push_back(Out::DataOp(ASYNC_MARK_OP, lispm_text(&line)));
+            let data = async_mark_data(handle, code, message);
+            ch.lock().unwrap().out.push_back(Out::DataOp(ASYNC_MARK_OP, data));
         }
     }
 

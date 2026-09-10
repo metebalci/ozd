@@ -1421,6 +1421,20 @@ fn a_close_on_the_read_keeps_the_write_beside_it_whole() {
     );
 }
 
+/// **An asynchronous mark fits in one packet**, however long the handle
+/// the client chose: a mark is one packet and not a stream of them, and a
+/// `DATA-CONNECTION`'s handle can run to hundreds of characters. What is
+/// past the packet is cut, as a CLS's reason is.
+#[test]
+fn an_asynchronous_mark_fits_in_one_packet() {
+    let short = file::async_mark_data("O0001", "NMR", "No space left on device");
+    assert_eq!(text(&short), "TIDNO O0001 ERROR NMR R No space left on device");
+    let handle = "O".repeat(460);
+    let long = file::async_mark_data(&handle, "NMR", "No space left on device (os error 28)");
+    assert_eq!(long.len(), packet::MAX_DATA, "cut to what a packet carries");
+    assert!(text(&long).starts_with(&format!("TIDNO {handle} ERROR NMR R ")));
+}
+
 /// **A file is written in the base and read back**, in the exchange a
 /// band makes: `OPEN WRITE`, the data, and then the CLOSE on the control connection and
 /// the SYNC mark on the data connection sent together, as `qfile.lisp`'s
