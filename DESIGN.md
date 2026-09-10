@@ -321,7 +321,7 @@ file is ever half one and half the other.
 - **HOSTAB**: each line the client sends is looked up, ignoring case,
   among this host's names and every `host` line's. The answer is one
   `NAME` line per name, official first, `CHAOS` in octal, and
-  `SYSTEM-TYPE` if the line gives one, then an EOF; or `ERROR No such
+  `SYSTEM-TYPE` if its line gives one --- for this host, the `name` line, then an EOF; or `ERROR No such
   host`, then an EOF. Never `MACHINE-TYPE` (`PROTOCOLS.md`, HOSTAB). The
   connection stays open for the next name until the client closes it.
   A line longer than any name matches nothing, and no more of it than
@@ -364,10 +364,14 @@ case and names match exactly (§6); every address valid by
   and a fixed endpoint.
 - **Names**: each once across `name` and every `host` line, ignoring
   case, as HOSTAB looks them up.
-- **Two limits, as written**: there is no quoting, so a path with a
-  space or a `#` in it cannot be named; and this host's own
-  `SYSTEM-TYPE`, which HOSTAB would give for its own names, has no line
-  yet --- to be settled with HOSTAB (§12, step 8).
+- **System types**: `system=` on a `host` line, and on the `name` line
+  for this host's own; once a line, with a value, in upper case. The band
+  interns the value as it comes, and a type it has no flavor for gives
+  the host its default flavor (`sys/network/host.lisp:279`), so `lispm`
+  would quietly name the wrong one. System 100's own table gives `MIT-OZ`
+  as `UNIX` (`sys/site/hosts.text:4`), and its example says so.
+- **One limit, as written**: there is no quoting, so a path with a space
+  or a `#` in it cannot be named.
 
 **Two examples ship**, `examples/system-100.conf` and
 `examples/system-304.conf`, with each release's own numbers from muir

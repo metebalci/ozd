@@ -28,12 +28,13 @@
 //! directive; an `address` or `name` line missing or given twice, and a
 //! `listen` line twice; no `root` line; an address [`parse_address`]
 //! refuses; an endpoint that is not an IP literal; a root path that is not
-//! absolute, a second base, and a mount's name twice; an address that
-//! would be two answers, and a host name given twice (below). The first
-//! refusal is the one reported. One that no line is to blame for --- a
-//! required line missing --- has no line. [`Config::parse`] touches no
-//! disk: whether a root exists, is a directory and can be written is the
-//! startup's to check (`DESIGN.md` §6).
+//! absolute, a second base, and a mount's name twice; an attribute on a
+//! `name` or `host` line other than one `system=` with a type; an address
+//! that would be two answers, a host name given twice, and a system type
+//! that is not upper case (below). The first refusal is the one reported.
+//! One that no line is to blame for --- a required line missing --- has no
+//! line. [`Config::parse`] touches no disk: whether a root exists, is a
+//! directory and can be written is the startup's to check (`DESIGN.md` §6).
 //!
 //! **An address is one host, and one endpoint.** The host table and the
 //! endpoints are separate (`DESIGN.md` §8), so an address is looked for in
@@ -53,6 +54,17 @@
 //! and every `host` line's, and two that differ only in case are the same
 //! name: HOSTAB looks a name up ignoring case (`DESIGN.md` §7), and would
 //! otherwise find two hosts for it, or one host twice.
+//!
+//! **A system type is upper case**, on the `name` line and a `host` line
+//! alike: no lower-case letter in it. HOSTAB sends it as written, and the
+//! band's user end interns it as sent (`sys/network/chaos/chuse.lisp:983`)
+//! and picks the host's flavor by that keyword (`COMPUTE-HOST-FLAVOR`,
+//! `sys/network/host.lisp:279-283`): `system=lispm` would be `:|lispm|`,
+//! which no flavor is filed under. Nothing more is asked of it. A type the
+//! band files no flavor under gets its `:DEFAULT` one (`host.lisp:356`), as
+//! a host with no type does --- `WAITS`, which its SUPDUP asks after
+//! (`sys/window/supdup.lisp:968`), is one --- so the types the band knows
+//! are not a list the file keeps to.
 
 use crate::address::parse_address;
 use crate::chudp::PORT;
@@ -72,12 +84,18 @@ pub struct Config {
     /// octal or as `subnet:host`, as [`parse_address`] takes it --- which
     /// refuses a zero half, a zero host being every host of its subnet.
     pub address: u16,
-    /// `name <NAME>...`, exactly one line: this host's names, the official
-    /// first --- the one STATUS answers with, and HOSTAB's first `NAME`
-    /// (`DESIGN.md` §7). At least one. None holds an `=`, which in a
-    /// `host` line is what marks an attribute. As written; HOSTAB compares
-    /// them ignoring case.
+    /// `name <NAME>... [system=<TYPE>]`, exactly one line: this host's
+    /// names, the official first --- the one STATUS answers with, and
+    /// HOSTAB's first `NAME` (`DESIGN.md` §7). At least one. A word with `=`
+    /// in it is an attribute and not a name, anywhere after the directive,
+    /// as on a `host` line, and `system` is the one there is:
+    /// [`Config::system`]. As written; HOSTAB compares them ignoring case.
     pub names: Vec<String>,
+    /// `system=<TYPE>` on the `name` line, if it gives one: this host's
+    /// system type, HOSTAB's `SYSTEM-TYPE` for this host's own names
+    /// (`DESIGN.md` §7), as [`Host::system`] is for a `host` line's. Upper
+    /// case (the module documentation), and otherwise as written.
+    pub system: Option<String>,
     /// `listen [<endpoint>]`, at most one line: the UDP endpoint the
     /// socket binds, in the forms muir's `--chaos-udp` takes (muir's
     /// `endpoint_at`, `src/main.rs`), against the loopback at 42042:
@@ -152,7 +170,8 @@ pub struct Host {
     /// Its names, the official first: HOSTAB's `NAME` lines. At least one.
     pub names: Vec<String>,
     /// `system=<TYPE>`, if the line gives one: HOSTAB's `SYSTEM-TYPE` ---
-    /// `LISPM`, `ITS`, ... --- as written.
+    /// `LISPM`, `ITS`, ... --- upper case (the module documentation), and
+    /// otherwise as written.
     pub system: Option<String>,
 }
 
@@ -217,6 +236,8 @@ impl Config {
 struct Reading {
     address: Option<(u16, usize)>,
     names: Option<(Vec<String>, usize)>,
+    /// This host's system type, from the `name` line.
+    system: Option<String>,
     listen: Option<(SocketAddr, usize)>,
     roots: Vec<(Root, usize)>,
     hosts: Vec<(Host, usize)>,
@@ -267,11 +288,13 @@ impl Reading {
         if let Some((_, m)) = self.names {
             return Err(format!("name: one line only, and line {m} is it"));
         }
-        if args.is_empty() {
+        let (names, system) = names_and_system("name", args)?;
+        if names.is_empty() {
             return Err("name wants at least one name, the official first".to_string());
         }
-        let names = self.host_names(n, args)?;
+        let names = self.host_names(n, &names)?;
         self.names = Some((names, n));
+        self.system = system;
         Ok(())
     }
 
@@ -344,23 +367,7 @@ impl Reading {
         };
         let [word, rest @ ..] = args else { return Err(wants()) };
         let a = address_of("host", word)?;
-        let (mut names, mut system) = (Vec::new(), None);
-        for &w in rest {
-            match w.split_once('=') {
-                None => names.push(w),
-                Some(("system", "")) => {
-                    return Err(format!("host {word} {w}: system= wants a type, as system=LISPM"));
-                }
-                Some(("system", t)) => {
-                    if system.replace(t.to_string()).is_some() {
-                        return Err(format!("host {word}: system= twice"));
-                    }
-                }
-                Some(_) => {
-                    return Err(format!("host {word} {w}: the one attribute is system=<TYPE>"));
-                }
-            }
-        }
+        let (names, system) = names_and_system(&format!("host {word}"), rest)?;
         if names.is_empty() {
             return Err(wants());
         }
@@ -420,14 +427,10 @@ impl Reading {
     }
 
     /// `words` as host names given on line `n`, each recorded so that no
-    /// later name can be it; or the first that is refused.
+    /// later name can be it; or the first that is refused. None has an `=`:
+    /// [`names_and_system`] has taken those as attributes.
     fn host_names(&mut self, n: usize, words: &[&str]) -> Result<Vec<String>, String> {
         for &word in words {
-            if word.contains('=') {
-                return Err(format!(
-                    "{word}: a name has no =, which marks a host line's attribute"
-                ));
-            }
             if let Some((earlier, m)) =
                 self.named.iter().find(|(e, _)| e.eq_ignore_ascii_case(word))
             {
@@ -477,12 +480,48 @@ impl Reading {
         Ok(Config {
             address,
             names,
+            system: self.system,
             listen: self.listen.map_or(LISTEN, |(at, _)| at),
             roots: self.roots.into_iter().map(|(r, _)| r).collect(),
             hosts: self.hosts.into_iter().map(|(h, _)| h).collect(),
             peers: self.peers.into_iter().map(|(p, _)| p).collect(),
         })
     }
+}
+
+/// The words after a `name` line's directive or a `host` line's address, as
+/// names and a system type; or the first that is refused. A word with `=`
+/// in it is an attribute, and `system=<TYPE>` the one there is: once, with
+/// a type, in upper case (the module documentation). `line` is what comes
+/// before the words, for the refusal to begin with.
+fn names_and_system<'a>(
+    line: &str,
+    words: &[&'a str],
+) -> Result<(Vec<&'a str>, Option<String>), String> {
+    let (mut names, mut system) = (Vec::new(), None);
+    for &w in words {
+        match w.split_once('=') {
+            None => names.push(w),
+            Some(("system", "")) => {
+                return Err(format!("{line} {w}: system= wants a type, as system=LISPM"));
+            }
+            Some(("system", t)) if t.chars().any(char::is_lowercase) => {
+                return Err(format!(
+                    "{line} {w}: a system type is upper case, as system={}, since the band takes it as sent",
+                    t.to_uppercase()
+                ));
+            }
+            Some(("system", t)) => {
+                if system.replace(t.to_string()).is_some() {
+                    return Err(format!("{line}: system= twice"));
+                }
+            }
+            Some(_) => {
+                return Err(format!("{line} {w}: the one attribute is system=<TYPE>"));
+            }
+        }
+    }
+    Ok((names, system))
 }
 
 /// `word` as a Chaos address, by [`parse_address`], or why not.

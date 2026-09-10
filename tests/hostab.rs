@@ -178,7 +178,8 @@ impl Asking {
     fn new(site: &str) -> Asking {
         let site = Config::parse(site).expect("the site file");
         let mut server = Ncp::new(site.address);
-        server.serve(Box::new(Hostab::new(site.address, &site.names, &site.hosts)));
+        let hostab = Hostab::new(site.address, &site.names, site.system.as_deref(), &site.hosts);
+        server.serve(Box::new(hostab));
         let mut band = Ncp::new(0o3050);
         let user = UserEnd::default();
         band.connect(0, site.address, "HOSTAB", Box::new(Recorder(user.clone())));
@@ -246,9 +247,12 @@ struct Defined {
 /// - **`ERROR`** ends it, and no host is defined (`:977`).
 /// - **`NAME`**: the first makes the list, and so is the host's name; each
 ///   is pushed onto its `:HOST-NAMES` (`:978-981`).
-/// - **`SYSTEM-TYPE`** is put on the list (`:982-983`), and so is every
-///   other attribute (`:984-988`): none may come before the first `NAME`,
-///   when there is no list to put it on.
+/// - **`SYSTEM-TYPE`** is interned as sent and put on the list
+///   (`:982-983`), so one with a lower-case letter would be a keyword no
+///   flavor is filed under (`COMPUTE-HOST-FLAVOR`,
+///   `sys/network/host.lisp:279`). Every other attribute is put on the list
+///   too (`:984-988`): none may come before the first `NAME`, when there is
+///   no list to put it on.
 /// - **Any other attribute is an address**, by its own
 ///   `HOST-ADDRESS-PARSER` or else the Chaosnet one, which reads octal
 ///   (`ZWEI:PARSE-NUMBER ... 8`, `sys/network/chaos/chsaux.lisp:1618`).
@@ -281,7 +285,13 @@ fn define_host(answer: &[u8]) -> Result<Defined, String> {
         }
         assert!(list.is_some(), "{attribute} before any NAME, with no list to put it on");
         match attribute {
-            "SYSTEM-TYPE" => system_type = Some(value.to_string()),
+            "SYSTEM-TYPE" => {
+                assert!(
+                    !value.chars().any(char::is_lowercase),
+                    "SYSTEM-TYPE {value} is interned as sent, and names no flavor"
+                );
+                system_type = Some(value.to_string());
+            }
             "CHAOS" => chaos.push(
                 u16::from_str_radix(value, 8)
                     .unwrap_or_else(|_| panic!("CHAOS {value} is not an octal address")),
@@ -355,8 +365,8 @@ fn a_nickname_in_any_case_is_the_same_host() {
 }
 
 /// **This host's own names are answered too**, from its `name` and
-/// `address` lines, and without a system type: this host's has no line
-/// yet (`DESIGN.md` §8).
+/// `address` lines, and without a system type when the `name` line gives
+/// none, as [`SITE`]'s does not.
 #[test]
 fn this_hosts_own_names_are_answered() {
     let mut site = Asking::new(SITE);
@@ -375,6 +385,29 @@ fn this_hosts_own_names_are_answered() {
         );
         assert!(finds(asked, &host));
     }
+}
+
+/// **This host's system type is its `name` line's `system=`**, answered for
+/// its own names as a `host` line's is for that host, and for no other
+/// host: one whose line gives none still has none.
+#[test]
+fn this_hosts_system_type_when_the_name_line_gives_one() {
+    let text = SITE.replacen("MIT-OZ OZ\n", "MIT-OZ OZ  system=UNIX\n", 1);
+    assert_ne!(text, SITE, "the name line gains a system=");
+    let mut site = Asking::new(&text);
+    for asked in ["MIT-OZ", "oz"] {
+        let answer = site.ask(asked);
+        assert_eq!(
+            answer,
+            lines(&["NAME MIT-OZ", "NAME OZ", "CHAOS 3060", "SYSTEM-TYPE UNIX"]),
+            "asked {asked}"
+        );
+        let host = define_host(&answer).unwrap();
+        assert_eq!(host.system_type.as_deref(), Some("UNIX"));
+        assert!(finds(asked, &host));
+    }
+    assert_eq!(site.ask("BRIDGE-1"), lines(&["NAME BRIDGE-1", "CHAOS 3040"]));
+    assert_eq!(define_host(&site.ask("LM1")).unwrap().system_type.as_deref(), Some("LISPM"));
 }
 
 /// **`SYSTEM-TYPE` only when the host line gives one**, and then as it is

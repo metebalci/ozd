@@ -75,6 +75,7 @@ peer     3040  192.0.2.5                          # an endpoint that is fixed; t
         Config {
             address: 0o3060,
             names: vec!["MIT-OZ".to_string(), "OZ".to_string()],
+            system: None,
             listen: at("192.0.2.10:42042"),
             roots: vec![
                 root(None, "/srv/lispm", false),
@@ -117,6 +118,21 @@ fn an_address_is_octal_or_subnet_host() {
 fn the_official_name_is_first() {
     let config = Config::parse("address 3060\nname MIT-OZ OZ ZO\nroot /srv/lispm\n").unwrap();
     assert_eq!(config.names, ["MIT-OZ", "OZ", "ZO"]);
+}
+
+/// **The `name` line gives this host's system type**, `system=` as a
+/// `host` line gives one: anywhere after the directive, and the other
+/// words are the names, in their order. Without it, none.
+#[test]
+fn the_name_line_gives_this_hosts_system_type() {
+    for line in
+        ["name MIT-OZ OZ system=UNIX", "name system=UNIX MIT-OZ OZ", "name MIT-OZ system=UNIX OZ"]
+    {
+        let config = Config::parse(&format!("address 3060\n{line}\nroot /srv/lispm\n")).unwrap();
+        assert_eq!(config.names, ["MIT-OZ", "OZ"], "{line}");
+        assert_eq!(config.system.as_deref(), Some("UNIX"), "{line}");
+    }
+    assert_eq!(Config::parse(LEAST).unwrap().system, None);
 }
 
 /// **Without `listen`, the loopback at 42042**: a fresh install answers
@@ -262,12 +278,20 @@ fn an_address_is_refused_by_parse_address() {
     refused("address 3060 3061\nname OZ\nroot /srv/lispm\n", Some(1), "wants one address");
 }
 
-/// **`name` gives at least one name, and a name has no `=`**, which in a
-/// `host` line is what marks an attribute.
+/// **`name` gives at least one name**, and a word with `=` in it is an
+/// attribute, as on a `host` line: `system=`, given a type, once, is the
+/// one there is.
 #[test]
 fn a_name_line_is_names() {
     refused("address 3060\nname\nroot /srv/lispm\n", Some(2), "at least one name");
-    refused("address 3060\nname OZ system=UNIX\nroot /srv/lispm\n", Some(2), "a name has no =");
+    refused("address 3060\nname system=UNIX\nroot /srv/lispm\n", Some(2), "at least one name");
+    refused("address 3060\nname OZ system=\nroot /srv/lispm\n", Some(2), "system= wants a type");
+    refused(
+        "address 3060\nname OZ system=UNIX system=ITS\nroot /srv/lispm\n",
+        Some(2),
+        "system= twice",
+    );
+    refused("address 3060\nname OZ machine=VAX\nroot /srv/lispm\n", Some(2), "the one attribute");
 }
 
 /// **`listen` takes IP literals and never a name**, one endpoint, and a
@@ -332,6 +356,24 @@ fn a_host_line_is_refused_for_what_is_wrong_with_it() {
     refused_after("host 3050 LM1 machine=LISPM\n", 4, "the one attribute");
 }
 
+/// **A system type is upper case**, on the `name` line and a `host` line
+/// alike, and refused with its line otherwise: HOSTAB's user end interns
+/// it as sent (`sys/network/chaos/chuse.lisp:983`), and a flavor is filed
+/// under `:LISPM`, never `:lispm` (`sys/network/host.lisp:279`). Upper case
+/// is all that is asked: a hyphen or a digit is no lower-case letter, and a
+/// type the band files no flavor under, as `WAITS`, is taken --- the band
+/// gives it the default flavor, as it gives a host with no type.
+#[test]
+fn a_system_type_is_upper_case() {
+    refused("address 3060\nroot /srv/lispm\nname OZ system=unix\n", Some(3), "upper case");
+    refused("address 3060\nroot /srv/lispm\nname system=Unix OZ\n", Some(3), "upper case");
+    refused_after("host 3050 LM1 system=lispm\n", 4, "upper case");
+    refused_after("root tree /srv/tree\nhost 3050 LM1 system=LISPm\n", 5, "upper case");
+    let config = with("host 3050 LM1 system=TOPS-20\nhost 3051 LM2 system=WAITS\n");
+    assert_eq!(config.hosts[0].system.as_deref(), Some("TOPS-20"));
+    assert_eq!(config.hosts[1].system.as_deref(), Some("WAITS"));
+}
+
 /// **A `peer` is a good address and an IP literal to send to**: never a
 /// name, never a bare port, never every interface or port 0.
 #[test]
@@ -394,15 +436,17 @@ fn example(name: &str) -> Config {
     Config::load(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-/// **System 100's example is a site**: this host `MIT-OZ` at 3060, the
-/// band's `MIT-LISPM-1` at 3050 in the host table, the homes writable and
-/// the release's sources mounted read-only at `/tree`, where the band asks
-/// for them. On the loopback, at 42042.
+/// **System 100's example is a site**: this host `MIT-OZ` at 3060, of
+/// system type `UNIX` as the band's own table has it
+/// (`sys/site/hosts.text`), the band's `MIT-LISPM-1` at 3050 in the host
+/// table, the homes writable and the release's sources mounted read-only
+/// at `/tree`, where the band asks for them. On the loopback, at 42042.
 #[test]
 fn the_system_100_example_is_a_site() {
     let config = example("system-100.conf");
     assert_eq!(config.address, 0o3060);
     assert_eq!(config.names[0], "MIT-OZ");
+    assert_eq!(config.system.as_deref(), Some("UNIX"));
     assert_eq!(config.listen, at("127.0.0.1:42042"));
     assert_eq!(
         config.roots,
@@ -416,13 +460,15 @@ fn the_system_100_example_is_a_site() {
 }
 
 /// **System 304's example is a site**: this host `OZ` at 4403, also
-/// `AMS-BRIDGE-1`, the band's `AMS-LISPM-1` at 4401, and the sources
-/// mounted read-only at `/sys`.
+/// `AMS-BRIDGE-1`, of no system type, since the host table in the sources
+/// is MIT's and not this band's; the band's `AMS-LISPM-1` at 4401, and the
+/// sources mounted read-only at `/sys`.
 #[test]
 fn the_system_304_example_is_a_site() {
     let config = example("system-304.conf");
     assert_eq!(config.address, 0o4403);
     assert_eq!(config.names, ["OZ", "AMS-BRIDGE-1"]);
+    assert_eq!(config.system, None);
     assert_eq!(config.listen, at("127.0.0.1:42042"));
     assert_eq!(
         config.roots,

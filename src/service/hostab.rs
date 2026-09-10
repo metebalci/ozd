@@ -48,10 +48,13 @@
 //!   read by `ZWEI:PARSE-NUMBER ... 8` (`chuse.lisp:984-988`;
 //!   `sys/network/chaos/chsaux.lisp:1617`); the manual says "an octal
 //!   number".
-//! - **`SYSTEM-TYPE` is answered as the `host` line writes it.** The user
-//!   end interns it as sent (`chuse.lisp:983`), and it picks the host's
-//!   flavor (`COMPUTE-HOST-FLAVOR`, `sys/network/host.lisp:279`); so a type
-//!   written in lower case would be a keyword no flavor is filed under.
+//! - **`SYSTEM-TYPE` is answered as the site file writes it**, from the
+//!   `name` line for this host and from a `host` line for that host, and
+//!   only when the line gives one. The user end interns it as sent
+//!   (`chuse.lisp:983`), and it picks the host's flavor
+//!   (`COMPUTE-HOST-FLAVOR`, `sys/network/host.lisp:279`); so a type
+//!   written in lower case would be a keyword no flavor is filed under, and
+//!   the site file refuses one (`src/config.rs`).
 //! - **Never `MACHINE-TYPE`.** Its clause is written
 //!   `(:SYSTEM-TYPE MACHINE-TYPE)` (`chuse.lisp:982`), the second without
 //!   its colon, so the keyword the user end interns would not match it, and
@@ -68,9 +71,12 @@
 //! file refuses two names that differ only in case (`src/config.rs`), so a
 //! name is at most one host's.
 //!
-//! **This host's own names are answered without a `SYSTEM-TYPE`**: there
-//! is no line for it yet (`DESIGN.md` §8). The band then defines it with
-//! none, and `COMPUTE-HOST-FLAVOR` falls back to the `:DEFAULT` flavor.
+//! **This host's own names are answered with the `name` line's
+//! `system=`**, and without a `SYSTEM-TYPE` when it gives none. The band
+//! then defines this host with none, and `COMPUTE-HOST-FLAVOR` falls back
+//! to the `:DEFAULT` flavor, `DEFAULT-HOST` (`sys/network/host.lisp:282-283`,
+//! `:353-356`), where a type with a flavor of its own gets that one ---
+//! `UNIX-HOST` for `UNIX` (`sys/io/file/access.lisp:876-877`).
 //!
 //! **The connection stays open** for the next name until the client closes
 //! it. The user end closes on the way out of `WITH-OPEN-STREAM`: an EOF,
@@ -104,10 +110,12 @@ pub struct Hostab {
 
 impl Hostab {
     /// Answering for this host, at `address` under `names`, the official
-    /// first, and for every host of the site's table, `hosts`: the site
-    /// file's `Config::address`, `Config::names` and `Config::hosts`.
-    pub fn new(address: u16, names: &[String], hosts: &[Host]) -> Hostab {
-        let own = Host { address, names: names.to_vec(), system: None };
+    /// first, and of system type `system` if the site file gives it one; and
+    /// for every host of the site's table, `hosts`: the site file's
+    /// `Config::address`, `Config::names`, `Config::system` and
+    /// `Config::hosts`.
+    pub fn new(address: u16, names: &[String], system: Option<&str>, hosts: &[Host]) -> Hostab {
+        let own = Host { address, names: names.to_vec(), system: system.map(str::to_string) };
         let hosts: Arc<[Host]> = std::iter::once(own).chain(hosts.iter().cloned()).collect();
         let longest =
             hosts.iter().flat_map(|h| &h.names).map(|n| n.chars().count()).max().unwrap_or(0);
