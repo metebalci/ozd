@@ -135,6 +135,36 @@ pub struct Place {
     pub readonly: bool,
 }
 
+/// A name in a directory of one root, for what acts on the name itself and
+/// not on what it leads to (`DESIGN.md` §6, "FILE's rules"): DELETE and
+/// RENAME, which remove and move a link and never its target, as Unix does
+/// and as muir did; and DIRECTORY, which describes by it a name that the
+/// tree will not follow, so that a link that leads nowhere is still listed,
+/// and can be deleted.
+///
+/// **Never opened.** Its directory is a [`Place`] --- canonical, in its
+/// root, no link in it when resolved --- and its name is the last component
+/// as that directory holds it, which may be a link to anywhere, or to
+/// nothing. What uses an entry acts on the name itself: `symlink_metadata`,
+/// `remove_file`, `remove_dir` and `rename`, none of which follows a link
+/// that is a path's last component. Good for the command that resolved it,
+/// and no longer, as a place is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Entry {
+    /// The directory the name is in, resolved as [`Tree::resolve`] resolves
+    /// a pathname: what exists of it canonical, the rest joined on.
+    pub directory: Place,
+    /// The name: one component, not `.`, `..` or a temporary's.
+    pub name: String,
+}
+
+impl Entry {
+    /// The entry's path: its directory's, with its name joined on.
+    pub fn path(&self) -> PathBuf {
+        self.directory.path.join(&self.name)
+    }
+}
+
 /// What [`Tree::find`] found, before reading or writing decides what it
 /// means.
 enum Found<'a> {
@@ -142,6 +172,16 @@ enum Found<'a> {
     /// In a tree with no base, a name at `/` that is no mount's.
     Nowhere,
     In(&'a Root, Place),
+}
+
+/// What [`Tree::pick`] found: steps 1 and 2 of a resolution, before the
+/// disk is looked at.
+enum Picked<'a, 'p> {
+    Top,
+    /// In a tree with no base, a name at `/` that is no mount's.
+    Nowhere,
+    /// A root, and the components under it.
+    In(&'a Root, Vec<&'p str>),
 }
 
 impl Tree {
@@ -237,8 +277,10 @@ impl Tree {
     ///    out of its own root comes to. Since roots do not overlap, "under
     ///    the root" is "in no other root" as well.
     /// 4. The [`Place`] is that canonical path with the rest joined on. So a
-    ///    link is resolved wherever it is, the last component included: a
-    ///    DELETE or RENAME of a link acts on what the link leads to.
+    ///    link is resolved wherever it is, the last component included.
+    ///    DELETE and RENAME act on a link itself, not on what it leads to,
+    ///    and resolve their pathnames as entries instead
+    ///    ([`Tree::resolve_entry_for_writing`]).
     ///
     /// **FILE opens the path returned, and that is safe only because nothing
     /// runs between this check and the open**: one thread, this process the
@@ -255,9 +297,11 @@ impl Tree {
     /// What a pathname names, for writing: what [`Tree::resolve`] allows,
     /// less a root itself --- FILE may not delete, rename, replace or make
     /// one --- and less everything in a `readonly` root. Every command
-    /// that writes resolves its pathnames here: OPEN for output, DELETE,
-    /// RENAME (through [`Tree::resolve_for_renaming`]), CREATE-DIRECTORY,
-    /// CREATE-LINK's link, CHANGE-PROPERTIES (`DESIGN.md` §6, `readonly`).
+    /// that writes resolves its pathnames here, or as an entry with the
+    /// same refusals: OPEN for output, CREATE-DIRECTORY, CREATE-LINK's link
+    /// and CHANGE-PROPERTIES here; DELETE and RENAME, which act on a link
+    /// itself, through [`Tree::resolve_entry_for_writing`] (`DESIGN.md` §6,
+    /// `readonly` and "FILE's rules").
     ///
     /// Containment is decided first, so a pathname that leaves its root is
     /// `ATD` whatever root it starts in. Then a `readonly` root refuses with
@@ -272,10 +316,7 @@ impl Tree {
     /// is in the root too (see [`temporary_name`]).
     pub fn resolve_for_writing(&self, pathname: &str) -> Result<Place, Refusal> {
         match self.find(pathname)? {
-            Found::Top => match self.base() {
-                Some(b) if !b.readonly => Err(denied()),
-                _ => Err(refused()),
-            },
+            Found::Top => Err(self.top_for_writing()),
             Found::Nowhere => Err(refused()),
             Found::In(_, place) if place.readonly => Err(refused()),
             Found::In(root, place) if place.path == root.path => Err(denied()),
@@ -286,7 +327,9 @@ impl Tree {
     /// Both ends of a RENAME, each resolved for writing, the old first. Two
     /// ends in different roots are refused with `ATF`: that would be a copy
     /// and not a rename, carrying a file across the line between two roots'
-    /// rules (`DESIGN.md` §6).
+    /// rules (`DESIGN.md` §6). FILE's RENAME, which moves a link itself,
+    /// resolves its ends as entries, by the same rule
+    /// ([`Tree::resolve_entries_for_renaming`]).
     pub fn resolve_for_renaming(&self, from: &str, to: &str) -> Result<(Place, Place), Refusal> {
         let from = self.resolve_for_writing(from)?;
         let to = self.resolve_for_writing(to)?;
@@ -296,23 +339,120 @@ impl Tree {
         Ok((from, to))
     }
 
-    /// Steps 1 to 3 of [`Tree::resolve`].
-    fn find(&self, pathname: &str) -> Result<Found<'_>, Refusal> {
+    /// What a pathname names as an entry, for reading: its directory
+    /// resolved as [`Tree::resolve`] resolves a pathname, and its last
+    /// component joined on as the directory holds it, not followed
+    /// ([`Entry`]). DIRECTORY describes by it a name that the tree will not
+    /// follow --- a link out of its root, into another, or nowhere --- as
+    /// the link itself, never as what it leads to.
+    ///
+    /// Refused as `resolve` refuses: a `.`, a `..` or a temporary's name
+    /// anywhere, `ATD`; a directory on the way that leaves its root, leads
+    /// nowhere or loops, `ATD`; in a tree with no base, a name at `/` that
+    /// is no mount's, `FNF`. `/` and a root itself are no name in a
+    /// directory, `ATD`. The last component is refused for nothing it
+    /// leads to, since nothing is followed there.
+    pub fn resolve_entry(&self, pathname: &str) -> Result<Entry, Refusal> {
+        match self.pick(pathname)? {
+            Picked::Top => Err(denied()),
+            Picked::Nowhere => Err(not_found()),
+            Picked::In(root, rest) => {
+                let Some((name, above)) = rest.split_last() else {
+                    return Err(denied());
+                };
+                Ok(Entry { directory: root.locate(above)?, name: (*name).to_string() })
+            }
+        }
+    }
+
+    /// What a pathname names as an entry, for writing:
+    /// [`Tree::resolve_entry`], refused as [`Tree::resolve_for_writing`]
+    /// refuses and in the same order. Containment first, `ATD`; then a
+    /// `readonly` root, and `/` with no base or a read-only one, `ATF`,
+    /// before anything is touched; then `/` and a root itself, `ATD`.
+    ///
+    /// DELETE resolves its pathname here, and RENAME both of its (through
+    /// [`Tree::resolve_entries_for_renaming`]): both act on a link itself,
+    /// its directory resolved and its own name not followed, as Unix does
+    /// and as muir did (`DESIGN.md` §6, "FILE's rules"). So a link that
+    /// leads nowhere, which no read or write will touch, can still be
+    /// deleted. The entry's directory is the root or lies in it, and its
+    /// name, a link or not, is a name in that directory: removing or
+    /// renaming it changes that directory, and nothing a link leads to.
+    pub fn resolve_entry_for_writing(&self, pathname: &str) -> Result<Entry, Refusal> {
+        match self.pick(pathname)? {
+            Picked::Top => Err(self.top_for_writing()),
+            Picked::Nowhere => Err(refused()),
+            Picked::In(root, rest) => {
+                let Some((name, above)) = rest.split_last() else {
+                    // The root itself, refused as `resolve_for_writing`
+                    // refuses it once it has found it.
+                    root.locate(&[])?;
+                    return Err(if root.readonly { refused() } else { denied() });
+                };
+                let directory = root.locate(above)?;
+                if directory.readonly {
+                    return Err(refused());
+                }
+                Ok(Entry { directory, name: (*name).to_string() })
+            }
+        }
+    }
+
+    /// Both ends of a RENAME, each resolved as an entry for writing, the
+    /// old first; two ends in different roots are refused with `ATF`, as
+    /// [`Tree::resolve_for_renaming`] refuses them. A link at either end is
+    /// the link itself: the old one is moved, whatever it leads to, and a
+    /// new name that is a link is there already, whether or not it leads
+    /// anywhere (`DESIGN.md` §6, "FILE's rules").
+    pub fn resolve_entries_for_renaming(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<(Entry, Entry), Refusal> {
+        let from = self.resolve_entry_for_writing(from)?;
+        let to = self.resolve_entry_for_writing(to)?;
+        if from.directory.root != to.directory.root {
+            return Err(refused());
+        }
+        Ok((from, to))
+    }
+
+    /// `/` for writing: `ATD` over a writable base, as a root itself is;
+    /// `ATF` with no base or a read-only one, since `/` is then read-only.
+    fn top_for_writing(&self) -> Refusal {
+        match self.base() {
+            Some(b) if !b.readonly => denied(),
+            _ => refused(),
+        }
+    }
+
+    /// Steps 1 and 2 of [`Tree::resolve`]: the components, checked, and
+    /// the root they are in, with the components under it.
+    fn pick<'p>(&self, pathname: &'p str) -> Result<Picked<'_, 'p>, Refusal> {
         let parts: Vec<&str> = pathname.split('/').filter(|c| !c.is_empty()).collect();
         if parts.iter().any(|c| *c == "." || *c == ".." || is_temporary(c)) {
             return Err(denied());
         }
-        let Some(first) = parts.first() else {
-            return Ok(Found::Top);
+        let Some(&first) = parts.first() else {
+            return Ok(Picked::Top);
         };
-        let (root, rest) = match self.roots.iter().find(|r| r.name.as_deref() == Some(*first)) {
-            Some(mount) => (mount, &parts[1..]),
+        Ok(match self.roots.iter().find(|r| r.name.as_deref() == Some(first)) {
+            Some(mount) => Picked::In(mount, parts[1..].to_vec()),
             None => match self.base() {
-                Some(base) => (base, &parts[..]),
-                None => return Ok(Found::Nowhere),
+                Some(base) => Picked::In(base, parts),
+                None => Picked::Nowhere,
             },
-        };
-        Ok(Found::In(root, root.locate(rest)?))
+        })
+    }
+
+    /// Steps 1 to 3 of [`Tree::resolve`].
+    fn find(&self, pathname: &str) -> Result<Found<'_>, Refusal> {
+        Ok(match self.pick(pathname)? {
+            Picked::Top => Found::Top,
+            Picked::Nowhere => Found::Nowhere,
+            Picked::In(root, rest) => Found::In(root, root.locate(&rest)?),
+        })
     }
 
     /// The names at `/`: the base's entries and the mounts' names, each

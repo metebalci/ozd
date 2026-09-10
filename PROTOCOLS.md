@@ -138,7 +138,8 @@ three words. muir answers `ATD`, "Access to directory denied", which is
 `FILE.c`'s, for a pathname outside the tree. The machine turns `FNF`,
 `ATF` and `ATD` into `FILE-NOT-FOUND`, `INCORRECT-ACCESS-TO-FILE` and
 `INCORRECT-ACCESS-TO-DIRECTORY` (`io/file/open.lisp:180`, `:224`,
-`:231`).
+`:231`); and `WKF` into `WRONG-KIND-OF-FILE` (`:260`), each through
+`QFILE-PROCESS-ERROR-NEW` (`network/chaos/qfile.lisp:300`).
 
 muir: `src/chaos/file.rs`. Containment: `CLAUDE.md` §3.
 

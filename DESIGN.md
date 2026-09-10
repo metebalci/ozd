@@ -251,7 +251,9 @@ written by nobody. Both conditions are written down in the code where
 they are relied on.
 
 **Opening**: `symlink_metadata` first; anything but a regular file or a
-directory is refused with `ATD`. A FIFO would block the loop at `open`.
+directory is refused with `WKF`, "wrong kind of file", which the band
+turns into its `WRONG-KIND-OF-FILE` condition (`sys/io/file/open.lisp:260`),
+as muir answered. A FIFO would block the loop at `open`.
 
 **`readonly`**: in a read-only root, OPEN for output, DELETE, RENAME,
 CREATE-DIRECTORY, CREATE-LINK and CHANGE-PROPERTIES are refused with
@@ -298,6 +300,12 @@ file is ever half one and half the other.
   packet (`file.rs:1390`).
 - `/` itself resolves to the top, not to a path: PROBE and PROPERTIES of
   it, and DIRECTORY, read it through `Tree::list_top`.
+- **A listing** describes a link inside its own root as what it leads
+  to, and a link the tree refuses --- out of its root, into another, or
+  leading nowhere --- by its own size and date, so that it can be seen
+  and deleted. A temporary is listed nowhere: no pathname can name one.
+- **`/`** answers PROBE and PROPERTIES as a directory of length 0, dated
+  now; OPEN of it for reading is `FNF`, and a link to it is refused.
 
 ## 7. Services
 

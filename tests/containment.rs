@@ -979,3 +979,196 @@ fn a_temporary_is_named_as_muirs_are() {
         assert!(!is_temporary(name), "{name:?}");
     }
 }
+
+/// An entry's resolution for writing, or the test fails.
+#[track_caller]
+fn entry(t: &Tree, pathname: &str) -> muir_ah::roots::Entry {
+    t.resolve_entry_for_writing(pathname).unwrap_or_else(|e| panic!("{pathname:?}: {e:?}"))
+}
+
+/// Every use FILE makes of a pathname as an entry, refused with `code`:
+/// read, as DIRECTORY describes a name the tree will not follow; written, as
+/// DELETE removes one; and either end of a RENAME whose other end is
+/// `/ok.text` in the base.
+#[track_caller]
+fn entry_refused_everywhere(s: &Scratch, t: &Tree, code: &str, pathname: &str) {
+    refused(s, code, &format!("entry {pathname:?}"), || t.resolve_entry(pathname));
+    refused(s, code, &format!("entry to write {pathname:?}"), || {
+        t.resolve_entry_for_writing(pathname)
+    });
+    refused(s, code, &format!("rename the entry {pathname:?}"), || {
+        t.resolve_entries_for_renaming(pathname, "/ok.text")
+    });
+    refused(s, code, &format!("rename to the entry {pathname:?}"), || {
+        t.resolve_entries_for_renaming("/ok.text", pathname)
+    });
+}
+
+/// **DELETE and RENAME act on a name itself, not on what it leads to**
+/// (`DESIGN.md` §6, "FILE's rules"), as Unix does and as muir did: the
+/// pathname's directory is resolved as any place is --- canonical, in its
+/// root, every link on the way followed and held to that root --- and its
+/// last component is joined on as the directory holds it, a link or not,
+/// and not followed. So a link at the end is the link itself, wherever it
+/// leads: into its own root, into another, out of the tree, to nothing, or
+/// round in a circle. Removing one removes the link and never its target,
+/// which is how a link that leads nowhere is got rid of; renaming one moves
+/// the link. Resolving touches nothing.
+#[cfg(unix)]
+#[test]
+fn an_entry_is_its_directory_resolved_and_its_own_name_not_followed() {
+    let s = Scratch::new("entries");
+    let b = s.dir("base");
+    let real = s.dir("base/real");
+    s.file("base/real/file.text", "real\n");
+    let tree = s.dir("tree-src");
+    s.file("tree-src/x.text", "x\n");
+    let outside = s.dir("outside");
+    let victim = s.file("outside/victim.text", "keep\n");
+    s.link("base/in", "real/file.text");
+    s.link("base/dir-link", &real);
+    s.link("base/out", &outside);
+    s.link("base/out-file", &victim);
+    s.link("base/dangling", outside.join("new.text"));
+    s.link("base/loop", "loop");
+    s.link("base/to-tree", tree.join("x.text"));
+    s.link("base/real/deep-out", &outside);
+    s.link("tree-src/l", "x.text");
+    let t = Tree::new(vec![base(&b), mount("tree", &tree)]).unwrap();
+
+    for (pathname, directory, name) in [
+        ("/in", &b, "in"),
+        ("/dir-link", &b, "dir-link"),
+        ("/out", &b, "out"),
+        ("/out-file", &b, "out-file"),
+        ("/dangling", &b, "dangling"),
+        ("/loop", &b, "loop"),
+        ("/to-tree", &b, "to-tree"),
+        ("//real//deep-out", &real, "deep-out"),
+        ("/dir-link/deep-out", &real, "deep-out"),
+        ("/dir-link/file.text", &real, "file.text"),
+        ("/real/new.text", &real, "new.text"),
+        ("/tree/l", &tree, "l"),
+        ("/tree/x.text", &tree, "x.text"),
+    ] {
+        let before = snapshot(&s.dir);
+        let e = entry(&t, pathname);
+        assert_eq!((&e.directory.path, e.name.as_str()), (directory, name), "{pathname:?}");
+        assert_eq!(e.path(), directory.join(name), "{pathname:?}");
+        let root = if directory.starts_with(&tree) { &tree } else { &b };
+        assert_inside(&e.directory, root);
+        assert_eq!(e.directory.root.as_deref(), (root == &tree).then_some("tree"));
+        assert_eq!(t.resolve_entry(pathname).as_ref(), Ok(&e), "{pathname:?}: read as written");
+        assert_eq!(snapshot(&s.dir), before, "{pathname:?}: something on disk changed");
+    }
+    // The same names followed, as a read or a write follows them, are
+    // refused wherever the link leads out of its root or nowhere.
+    for pathname in ["/out", "/out-file", "/dangling", "/loop", "/to-tree", "/real/deep-out"] {
+        refused(&s, "ATD", &format!("follow {pathname:?}"), || t.resolve(pathname));
+    }
+
+    // Removed, a link is gone and what it led to is not.
+    let mut expected = snapshot(&s.dir);
+    for pathname in ["/dangling", "/loop", "/out-file", "/out", "/in"] {
+        std::fs::remove_file(entry(&t, pathname).path()).unwrap();
+        expected.remove(Path::new("base").join(&pathname[1..]).as_path()).unwrap();
+    }
+    // Renamed, the link moves, and leads where it did.
+    let (from, to) = t.resolve_entries_for_renaming("/to-tree", "/dir-link/moved").unwrap();
+    assert_eq!((from.path(), to.path()), (b.join("to-tree"), real.join("moved")));
+    std::fs::rename(from.path(), to.path()).unwrap();
+    let moved = expected.remove(Path::new("base/to-tree")).unwrap();
+    expected.insert(PathBuf::from("base/real/moved"), moved);
+    assert_eq!(snapshot(&s.dir), expected);
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep\n");
+    assert_eq!(std::fs::read_to_string(real.join("file.text")).unwrap(), "real\n");
+}
+
+/// **An entry is refused as a place is, except for where its own name
+/// leads.** A climb, a temporary's name, or a directory on the way that
+/// leaves its root, leads nowhere or loops is `ATD`, for reading, writing
+/// and either end of a rename. A read-only root refuses every entry in it
+/// for writing with `ATF`, and reads it; so is a rename from one root into
+/// another, and with no base `/` itself. `/` and a root itself are no name
+/// in a directory, and are refused as [`Tree::resolve_for_writing`] refuses
+/// them. Nothing on disk changes in any of it.
+#[cfg(unix)]
+#[test]
+fn an_entry_is_refused_as_a_place_is_but_for_its_own_name() {
+    let s = Scratch::new("entries-refused");
+    let b = s.dir("base");
+    s.dir("base/a");
+    s.file("base/ok.text", "ok\n");
+    let sys = s.dir("sys-src");
+    s.file("sys-src/file.text", "sys\n");
+    s.link("sys-src/dangling", "nowhere");
+    let tree = s.dir("tree-src");
+    s.file("tree-src/x", "x\n");
+    let outside = s.dir("outside");
+    s.file("outside/victim.text", "keep\n");
+    s.link("base/out", &outside);
+    s.link("base/dangling-dir", outside.join("new-dir"));
+    s.link("base/loop", "loop");
+    s.link("base/to-tree", &tree);
+    let temp = temporary_name(0o3050);
+    std::fs::write(b.join("a").join(&temp), "half a file\n").unwrap();
+    let t = Tree::new(vec![base(&b), mount("tree", &tree), readonly(mount("sys", &sys))]).unwrap();
+
+    for pathname in [
+        "..",
+        "/..",
+        "/a/..",
+        "/a/../ok.text",
+        "/./ok.text",
+        "/a/.",
+        "/tree/../ok.text",
+        "/tree/../../outside/victim.text",
+        "/out/victim.text",
+        "/out/new.text",
+        "/out/a/b",
+        "/dangling-dir/new.text",
+        "/loop/x",
+        "/to-tree/x",
+    ] {
+        entry_refused_everywhere(&s, &t, "ATD", pathname);
+    }
+    for pathname in [format!("/a/{temp}"), format!("/{temp}"), format!("/{temp}/x")] {
+        entry_refused_everywhere(&s, &t, "ATD", &pathname);
+    }
+
+    // A read-only root: every entry in it, and the root itself, refused for
+    // writing; and read, a link in it that leads nowhere included.
+    for pathname in ["/sys", "/sys/file.text", "/sys/new.text", "/sys/dangling", "/sys/dir/x"] {
+        refused(&s, "ATF", &format!("write {pathname:?}"), || {
+            t.resolve_entry_for_writing(pathname)
+        });
+    }
+    for (from, to) in [
+        ("/sys/file.text", "/sys/moved.text"),
+        ("/ok.text", "/sys/ok.text"),
+        ("/sys/file.text", "/stolen.text"),
+        ("/ok.text", "/tree/ok.text"),
+        ("/tree/x", "/x"),
+    ] {
+        refused(&s, "ATF", &format!("{from} to {to}"), || t.resolve_entries_for_renaming(from, to));
+    }
+    let e = t.resolve_entry("/sys/dangling").unwrap();
+    assert_eq!((e.path(), e.directory.readonly), (sys.join("dangling"), true));
+    let (from, to) = t.resolve_entries_for_renaming("/ok.text", "/a/moved.text").unwrap();
+    assert_eq!((from.path(), to.path()), (b.join("ok.text"), b.join("a/moved.text")));
+
+    // `/` and a root itself.
+    for pathname in ["", "/", "//", "/tree", "/tree/", "//tree//"] {
+        entry_refused_everywhere(&s, &t, "ATD", pathname);
+    }
+
+    // With no base, `/` is read-only and names only the mounts.
+    let t = Tree::new(vec![mount("tree", &tree), readonly(mount("sys", &sys))]).unwrap();
+    refused(&s, "FNF", "read a name that is no mount's", || t.resolve_entry("/elsewhere"));
+    for pathname in ["", "/", "/elsewhere", "/elsewhere/x"] {
+        refused(&s, "ATF", &format!("write {pathname:?}"), || {
+            t.resolve_entry_for_writing(pathname)
+        });
+    }
+    assert_eq!(entry(&t, "/tree/new.text").path(), tree.join("new.text"));
+}
