@@ -185,18 +185,21 @@ fn main() {
     if let Some(path) = &read {
         log::event(format_args!("flags from {}", path.display()));
     }
+    // Bound before anything in a root is touched: a second daemon given
+    // the first's endpoint stops here, and the temporaries of the writes
+    // the first is making stay where they are.
+    let tree = Arc::new(tree);
+    let mut daemon = Daemon::new(&config, tree.clone(), trace)
+        .unwrap_or_else(|e| fail(&format!("--listen {}: {e}", config.listen)));
     // A daemon killed mid-write leaves a FILE temporary: each is removed
-    // before FILE can make another, and nothing else is touched.
+    // before FILE can make another, the loop not having turned, and
+    // nothing else is touched.
     for removed in tree.remove_temporaries() {
         match removed {
             Ok(path) => log::event(format_args!("removed a stale temporary, {}", path.display())),
             Err(why) => log::event(format_args!("a stale temporary is not removed: {why}")),
         }
     }
-
-    let tree = Arc::new(tree);
-    let mut daemon = Daemon::new(&config, tree, trace)
-        .unwrap_or_else(|e| fail(&format!("--listen {}: {e}", config.listen)));
     log::event(format_args!(
         "ozd {}: {} at {:o}, listening at {}",
         env!("CARGO_PKG_VERSION"),

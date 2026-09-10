@@ -93,6 +93,7 @@ broadcast on the subnet (`tests/ncp.rs`).
 ## 4. The loop
 
     start   config → startup checks (§6) → bind → Ncp with its services
+            → stale temporaries removed (§6)
     loop    now ← nanoseconds since start, from Instant
             wait for one datagram, at most 100 ms → the link (§5)
             while Ncp::transmit(now) gives a buffer → Link::send(buffer)
@@ -184,8 +185,10 @@ start, with its reason:
 
 Then two things that are not refusals. The base's entries that a mount
 covers are **warned about**, by name: they exist and cannot be reached.
-And in each writable root, stale FILE temporaries are removed: a daemon
-killed mid-write leaves one. Their name comes from one constant, so the
+And once the socket is bound, stale FILE temporaries are removed from
+each writable root: a daemon killed mid-write leaves one, and binding
+first stops a second daemon given the same endpoint before it touches a
+root. Their name comes from one constant, so the
 cleanup matches what FILE makes (`roots.rs`, `temporary_name`) and
 nothing else.
 

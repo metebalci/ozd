@@ -417,6 +417,30 @@ fn a_run_removes_stale_temporaries_and_check_does_not() {
     assert!(kept.exists(), "and nothing else");
 }
 
+/// **A second daemon on the first's endpoint touches nothing**: it binds
+/// before it removes a stale temporary, so it stops at the bind, and the
+/// temporary of a write the first is making stays where it is
+/// (`DESIGN.md` §6).
+#[test]
+fn a_second_daemon_on_the_same_endpoint_removes_nothing() {
+    if support::running_as_root() {
+        return;
+    }
+    let root = support::own_root();
+    let text = format!(
+        "--address {OZ:o}\n--name MIT-OZ,OZ\n--listen 127.0.0.1:0\n--root {}\n",
+        root.display()
+    );
+    let first = support::daemon(&text);
+    let writing = root.join(ozd::roots::temporary_name(LM1));
+    std::fs::write(&writing, b"a write in progress").unwrap();
+    let second = text.replace("127.0.0.1:0", &first.at().to_string());
+    let out = ozd().arg("-c").arg(flags_file("second.ozdrc", &second)).output().expect("it runs");
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(said(&out).contains("--listen"), "refused at the bind: {}", said(&out));
+    assert!(writing.exists(), "the first daemon's temporary is where it was");
+}
+
 /// **A connection is logged**, by the daemon run from its command line and
 /// a file of flags: a test host opens NAME, and the log says `NAME from
 /// 3050 opened`, the NCP's line (`DESIGN.md` §10) with the log's UTC time
