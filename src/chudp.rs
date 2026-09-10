@@ -171,11 +171,10 @@ pub const PACKET_ORDER: Order = Order::Little;
 /// How the hardware trailer's three words are laid out: network order.
 ///
 /// **Unverified.** The reading is that CHUDP is a mixed frame: the
-/// reference implementation was read by a person as taking the trailer
-/// through `ntohs` --- `srctrailer = ntohs(tr->ch_hw_srcaddr)` --- and
-/// not the packet's own words, which is what makes the mixture the
-/// likely reading rather than a guess. How the packet's bytes are
-/// assembled there was not traced, so this is belief and not knowledge.
+/// packet's own words least significant byte first, and the trailer in
+/// network order. That is what reconciles the protocol's own
+/// documentation with the Wireshark dissector ([`PACKET_ORDER`]), and it
+/// is belief and not knowledge.
 ///
 /// What would settle it: the same capture or interoperation. One whole
 /// packet's bytes are pinned in `tests/frame.rs`, so a correction is a
