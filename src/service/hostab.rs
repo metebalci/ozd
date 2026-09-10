@@ -48,13 +48,13 @@
 //!   read by `ZWEI:PARSE-NUMBER ... 8` (`chuse.lisp:984-988`;
 //!   `sys/network/chaos/chsaux.lisp:1617`); the manual says "an octal
 //!   number".
-//! - **`SYSTEM-TYPE` is answered as the site file writes it**, from the
-//!   `name` line for this host and from a `host` line for that host, and
-//!   only when the line gives one. The user end interns it as sent
+//! - **`SYSTEM-TYPE` is answered as the flags write it**, from the
+//!   `--name` for this host and from a `--host` for that host, and only
+//!   when the flag gives one. The user end interns it as sent
 //!   (`chuse.lisp:983`), and it picks the host's flavor
 //!   (`COMPUTE-HOST-FLAVOR`, `sys/network/host.lisp:279`); so a type
 //!   written in lower case would be a keyword no flavor is filed under, and
-//!   the site file refuses one (`src/config.rs`).
+//!   the flags refuse one (`src/config.rs`).
 //! - **Never `MACHINE-TYPE`.** Its clause is written
 //!   `(:SYSTEM-TYPE MACHINE-TYPE)` (`chuse.lisp:982`), the second without
 //!   its colon, so the keyword the user end interns would not match it, and
@@ -67,11 +67,11 @@
 //!
 //! **Names are looked up ignoring case**, as the band's own `PARSE-HOST`
 //! compares them (`STRING-EQUAL`, `sys/network/host.lisp:310`), among this
-//! host's names and every `host` line's; a line is matched whole. The site
+//! host's names and every `--host`'s; a line is matched whole. The site
 //! file refuses two names that differ only in case (`src/config.rs`), so a
 //! name is at most one host's.
 //!
-//! **This host's own names are answered with the `name` line's
+//! **This host's own names are answered with `--name`'s
 //! `system=`**, and without a `SYSTEM-TYPE` when it gives none. The band
 //! then defines this host with none, and `COMPUTE-HOST-FLAVOR` falls back
 //! to the `:DEFAULT` flavor, `DEFAULT-HOST` (`sys/network/host.lisp:282-283`,
@@ -110,8 +110,8 @@ pub struct Hostab {
 
 impl Hostab {
     /// Answering for this host, at `address` under `names`, the official
-    /// first, and of system type `system` if the site file gives it one; and
-    /// for every host of the site's table, `hosts`: the site file's
+    /// first, and of system type `system` if `--name` gives it one; and
+    /// for every host of the site's table, `hosts`: the flags'
     /// `Config::address`, `Config::names`, `Config::system` and
     /// `Config::hosts`.
     pub fn new(address: u16, names: &[String], system: Option<&str>, hosts: &[Host]) -> Hostab {

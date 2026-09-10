@@ -278,7 +278,7 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
 /// header's, since that is where an answer is addressed --- is recorded at
 /// the UDP address its datagram came from. A host behind `cbridge` is
 /// learned at `cbridge`'s endpoint, which is where its packets go. A
-/// `peer` line fixes an endpoint, and a packet does not move a fixed one.
+/// `--peer` fixes an endpoint, and a packet does not move a fixed one.
 /// This host's own address is never learned, and neither is 0, which is
 /// no host's. The table is not expired, and holds one endpoint an address.
 ///
@@ -336,7 +336,7 @@ pub struct Link {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Endpoint {
     at: SocketAddr,
-    /// Given by a `peer` line, so that no packet moves it.
+    /// Given by a `--peer`, so that no packet moves it.
     fixed: bool,
 }
 
@@ -473,7 +473,7 @@ impl Link {
     }
 
     /// The header's source learned at `from`, unless it is 0, this host,
-    /// or fixed by a `peer` line.
+    /// or fixed by a `--peer`.
     fn learn(&mut self, now: u64, source: u16, from: SocketAddr) {
         if source == 0 || source == self.address {
             return;

@@ -5,7 +5,7 @@
 //! which roots are read-only (`DESIGN.md` §6; `CLAUDE.md` §3).
 //!
 //! **A tree is a base root and named roots mounted at its top level**, each
-//! with its own `readonly` (`CLAUDE.md` §8c, decided 2026-09-10). A
+//! read-only or not, `,ro` (`CLAUDE.md` §8c, decided 2026-09-10). A
 //! pathname whose first component is exactly a mount's name is in that
 //! mount, the rest of it under the mount's directory; any other pathname is
 //! in the base. With mounts and no base, `/` names the mounts and nothing
@@ -49,7 +49,7 @@
 //! does not was just found absent. Nothing can change that before FILE
 //! opens it, because nothing else runs --- the daemon is one thread, its
 //! loop the only thing in it (`DESIGN.md` §1), and it is the only writer of
-//! a writable root, while a `readonly` root is written by nobody
+//! a writable root, while a read-only root is written by nobody
 //! (`CLAUDE.md` §3, `DESIGN.md` §6). **Both are conditions, not checks**:
 //! a second thread, or another writer in a writable root, makes the gap
 //! between check and open real, and the answer then is `openat` with
@@ -200,7 +200,7 @@ impl Tree {
     /// - each writable root can be written: a probe file is made in it and
     ///   removed. It is named as a temporary, of client 0, which is no
     ///   host's address, so one a crash leaves is removed at the next start
-    ///   like any other. A `readonly` root is never written, so never
+    ///   like any other. A read-only root is never written, so never
     ///   probed.
     ///
     /// Nothing is written until every other check has passed, so a tree
@@ -284,7 +284,7 @@ impl Tree {
     ///
     /// **FILE opens the path returned, and that is safe only because nothing
     /// runs between this check and the open**: one thread, this process the
-    /// only writer of a writable root, and a `readonly` root written by
+    /// only writer of a writable root, and a read-only root written by
     /// nobody (`CLAUDE.md` §3, `DESIGN.md` §6; the module documentation).
     pub fn resolve(&self, pathname: &str) -> Result<Resolved, Refusal> {
         match self.find(pathname)? {
@@ -296,15 +296,15 @@ impl Tree {
 
     /// What a pathname names, for writing: what [`Tree::resolve`] allows,
     /// less a root itself --- FILE may not delete, rename, replace or make
-    /// one --- and less everything in a `readonly` root. Every command
+    /// one --- and less everything in a read-only root. Every command
     /// that writes resolves its pathnames here, or as an entry with the
     /// same refusals: OPEN for output, CREATE-DIRECTORY, CREATE-LINK's link
     /// and CHANGE-PROPERTIES here; DELETE and RENAME, which act on a link
     /// itself, through [`Tree::resolve_entry_for_writing`] (`DESIGN.md` §6,
-    /// `readonly` and "FILE's rules").
+    /// "A read-only root" and "FILE's rules").
     ///
     /// Containment is decided first, so a pathname that leaves its root is
-    /// `ATD` whatever root it starts in. Then a `readonly` root refuses with
+    /// `ATD` whatever root it starts in. Then a read-only root refuses with
     /// `ATF`, "Access to file denied", before anything is touched; so does
     /// `/` with no base, which is read-only. Then a root itself is refused
     /// with `ATD`, as muir's `resolve_for_writing` refuses it
@@ -368,7 +368,7 @@ impl Tree {
     /// What a pathname names as an entry, for writing:
     /// [`Tree::resolve_entry`], refused as [`Tree::resolve_for_writing`]
     /// refuses and in the same order. Containment first, `ATD`; then a
-    /// `readonly` root, and `/` with no base or a read-only one, `ATF`,
+    /// read-only root, and `/` with no base or a read-only one, `ATF`,
     /// before anything is touched; then `/` and a root itself, `ATD`.
     ///
     /// DELETE resolves its pathname here, and RENAME both of its (through
@@ -681,7 +681,7 @@ fn probe(r: &Root) -> Result<(), String> {
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
             Err(e) => {
                 return Err(format!(
-                    "{what}: not writable ({e}); if it is not meant to be, say so with readonly"
+                    "{what}: not writable ({e}); if it is not meant to be, mark it read-only with ,ro"
                 ));
             }
         }

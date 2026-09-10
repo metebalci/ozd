@@ -13,11 +13,11 @@ use muir_ah::ncp::{self, op};
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Child, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use support::{
-    LM1, OZ, Recorder, SECOND, TestHost, ask, daemon, datagram, hear, meters, packet, rfc, settle,
-    site,
+    LM1, OZ, Recorder, SECOND, TestHost, ask, daemon, datagram, hear, meters, muir_ah, packet, rfc,
+    settle, site,
 };
 
 /// **STATUS over loopback, its meters counting what the test sent.** The
@@ -92,7 +92,7 @@ fn uptime_is_600_at_ten_seconds_of_the_daemons_clock() {
 #[test]
 fn a_retransmission_happens_on_a_turn_with_no_packet_arriving() {
     let (lm1, lm1_at) = support::socket();
-    let mut d = daemon(&site(&format!("peer {LM1:o} {lm1_at}\n")));
+    let mut d = daemon(&site(&format!("--peer {LM1:o}@{lm1_at}\n")));
     d.ncp().connect(0, LM1, "STATUS", Box::new(Recorder::default()));
     d.turn(0, Duration::ZERO);
     let first = hear(&lm1);
@@ -126,15 +126,11 @@ fn a_log_lines_time_is_utc() {
 
 // --- the command line ------------------------------------------------------
 
-/// The daemon's binary.
-fn muir_ah() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_muir-ah"))
-}
-
-/// A config file holding `text`, in this test binary's scratch directory.
-fn config_file(name: &str, text: &str) -> PathBuf {
+/// A file of flags holding `text`, in this test binary's scratch
+/// directory.
+fn flags_file(name: &str, text: &str) -> PathBuf {
     let path = support::scratch().join(name);
-    std::fs::write(&path, text).expect("a config file");
+    std::fs::write(&path, text).expect("a file of flags");
     path
 }
 
@@ -143,55 +139,113 @@ fn said(out: &Output) -> String {
 }
 
 /// Whether a run was refused for being root, which is all a run as root
-/// can be (`DESIGN.md` §6).
+/// can be once what it was given is flags (`DESIGN.md` §6).
 fn refused_as_root(out: &Output) -> bool {
     out.status.code() == Some(1) && said(out).contains("root")
 }
 
-/// **A command line that is not one config file is refused with the
-/// usage**, on stderr, with exit code 2, and nothing on stdout.
+/// How the usage begins: every usage error prints it on stderr, and the
+/// help, first, on stdout.
+const USAGE: &str = "usage: muir-ah [--address <addr>] [--name ";
+
+/// **A command line that is not flags is refused with the usage**, on
+/// stderr, with exit code 2, and nothing on stdout: a word that is not a
+/// flag, an argument that is no flag's value, a flag missing its value,
+/// and a file `-c` names that is not there --- each before who is running
+/// it is looked at, so as root too. An argument that is no flag's value
+/// says that the config is flags, on the command line or in `.muir-ahrc`,
+/// or in the file `-c` names.
 #[test]
-fn a_command_line_that_is_not_one_config_is_refused_with_the_usage() {
-    let lines: [&[&str]; 4] =
-        [&[], &["--trace"], &["--frobnicate", "a.conf"], &["a.conf", "b.conf"]];
+fn a_command_line_that_is_not_flags_is_refused_with_the_usage() {
+    let missing = support::scratch().join("no-such.muir-ahrc");
+    let missing = missing.to_str().expect("a path in UTF-8");
+    let lines: [&[&str]; 8] = [
+        &["--frobnicate"],
+        &["--frobnicate", "a.conf"],
+        &["a.conf"],
+        &["a.conf", "b.conf"],
+        &["--check", "--address"],
+        &["--address", "--name", "MIT-OZ"],
+        &["-c"],
+        &["-c", missing],
+    ];
     for args in lines {
         let out = muir_ah().args(args).output().expect("it runs");
         assert_eq!(out.status.code(), Some(2), "{args:?}: {}", said(&out));
-        assert!(said(&out).contains("usage: muir-ah [--trace] [--check] <config>"), "{args:?}");
+        assert!(said(&out).contains(USAGE), "{args:?}: {}", said(&out));
+        assert!(out.stdout.is_empty(), "{args:?}");
+    }
+    let out = muir_ah().arg("examples/system-100.conf").output().expect("it runs");
+    let told = said(&out);
+    for words in ["examples/system-100.conf", "the config is flags", ".muir-ahrc", "-c <file>"] {
+        assert!(told.contains(words), "{words} in {told}");
+    }
+}
+
+/// **With nothing given, a required flag is missing**, exit 1. An empty
+/// command line is no usage error, since a run whose flags are all in a
+/// file has one; with no file of flags where the run looks, `--address` is
+/// missing, said with where it may be given and that this run read no
+/// file. As root, it is refused for that instead.
+#[test]
+fn with_nothing_given_a_required_flag_is_missing() {
+    let lines: [&[&str]; 3] = [&[], &["--trace"], &["--check"]];
+    for args in lines {
+        let out = muir_ah().args(args).output().expect("it runs");
+        if support::running_as_root() {
+            assert!(refused_as_root(&out), "as root: {}", said(&out));
+            continue;
+        }
+        assert_eq!(out.status.code(), Some(1), "{args:?}: {}", said(&out));
+        let told = said(&out);
+        assert!(told.starts_with("muir-ah: no --address"), "{args:?}: {told}");
+        assert!(told.contains("on the command line or in a file of flags"), "{told}");
+        assert!(told.contains("read none"), "{told}");
         assert!(out.stdout.is_empty(), "{args:?}");
     }
 }
 
-/// **`--check` reads the config, binds nothing, and says what is wrong.**
-/// A good config exits 0, silent, even at a `listen` whose port is taken
-/// --- which a run that binds refuses, exit 1, naming it. A config refused
-/// is `<path>: line N: ...` and exit 1, and so is one that is not there.
-/// As root, every one of them is refused for that instead.
+/// **`--check` reads the flags, binds nothing, and says what is wrong.** A
+/// line of the file of flags that is not a flag is a usage error, exit 2,
+/// with its file and line, before who is running it is looked at. A good
+/// site exits 0, silent, even at a `--listen` whose port is taken --- which
+/// a run that binds refuses, exit 1, naming it. A value refused is
+/// `<file>: line N: <flag> <value>: ...` for a line of the file, and
+/// `<flag> <value>: ...` for the command line, exit 1. As root, each of
+/// those is refused for that instead.
 #[test]
-fn check_reads_the_config_binds_nothing_and_says_what_is_wrong() {
+fn check_reads_the_flags_binds_nothing_and_says_what_is_wrong() {
+    let misused = flags_file("check-misused.muir-ahrc", &site("--bogus\n"));
+    let out = muir_ah().arg("--check").arg("-c").arg(&misused).output().expect("it runs");
+    assert_eq!(out.status.code(), Some(2), "{}", said(&out));
+    let want = format!("muir-ah: {}: line 5: --bogus: not a flag", misused.display());
+    assert!(said(&out).starts_with(&want), "{}", said(&out));
+    assert!(said(&out).contains(USAGE), "{}", said(&out));
+
     let (_taken, taken_at) = support::socket();
-    let text = site("").replace("listen 127.0.0.1:0", &format!("listen {taken_at}"));
-    assert!(text.contains(&format!("listen {taken_at}")));
-    let good = config_file("check-good.conf", &text);
-    let out = muir_ah().arg("--check").arg(&good).output().expect("it runs");
+    let text = site("").replace("--listen 127.0.0.1:0", &format!("--listen {taken_at}"));
+    assert!(text.contains(&format!("--listen {taken_at}")));
+    let good = flags_file("check-good.muir-ahrc", &text);
+    let out = muir_ah().arg("--check").arg("-c").arg(&good).output().expect("it runs");
     if support::running_as_root() {
         assert!(refused_as_root(&out), "as root: {}", said(&out));
         return;
     }
     assert!(out.status.success(), "{}", said(&out));
     assert!(out.stderr.is_empty() && out.stdout.is_empty(), "silent: {}", said(&out));
-    let run = muir_ah().arg(&good).output().expect("it runs");
+    let run = muir_ah().arg("-c").arg(&good).output().expect("it runs");
     assert_eq!(run.status.code(), Some(1), "{}", said(&run));
-    assert!(said(&run).contains(&format!("listen {taken_at}")), "{}", said(&run));
-    let bad = config_file("check-bad.conf", &site("bogus\n"));
-    let out = muir_ah().arg("--check").arg(&bad).output().expect("it runs");
-    assert_eq!(out.status.code(), Some(1));
-    let want = format!("{}: line 5: bogus: not a directive", bad.display());
+    assert!(said(&run).contains(&format!("--listen {taken_at}")), "{}", said(&run));
+
+    let bad = flags_file("check-bad.muir-ahrc", &site("--host 6:0,LM1\n"));
+    let out = muir_ah().arg("--check").arg("-c").arg(&bad).output().expect("it runs");
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    let want = format!("{}: line 5: --host 6:0,LM1: ", bad.display());
     assert!(said(&out).starts_with(&want), "{}", said(&out));
-    let missing = support::scratch().join("no-such.conf");
-    let out = muir_ah().arg("--check").arg(&missing).output().expect("it runs");
-    assert_eq!(out.status.code(), Some(1));
-    assert!(said(&out).starts_with(&format!("{}: ", missing.display())), "{}", said(&out));
+    let out = muir_ah().args(["--check", "-c"]).arg(&good).args(["--address", "6:0"]).output();
+    let out = out.expect("it runs");
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(said(&out).starts_with("--address 6:0: not an address"), "{}", said(&out));
 }
 
 /// A daemon run as a process, killed when the test is done with it.
@@ -205,16 +259,18 @@ impl Drop for Running {
 }
 
 /// **The daemon runs from its command line, and answers STATUS.** The
-/// whole of `main`: the config read, the socket bound at a port the
-/// system picks, a first log line with its UTC time saying where, and the
-/// loop turning with the real clock --- a test host at LM1 asks STATUS,
-/// its own NCP sending the RFC again on its own clock should one be lost,
-/// and has the answer.
+/// whole of `main`: the site given by flags on the command line alone,
+/// with no file of flags; the socket bound at a port the system picks; a
+/// first log line with its UTC time saying where; and the loop turning
+/// with the real clock --- a test host at LM1 asks STATUS, its own NCP
+/// sending the RFC again on its own clock should one be lost, and has the
+/// answer.
 #[test]
 fn the_daemon_runs_from_its_command_line_and_answers_status() {
-    let path = config_file("run.conf", &site(""));
+    let oz = format!("{OZ:o}");
     let mut child = muir_ah()
-        .arg(&path)
+        .args(["--address", &oz, "--name", "MIT-OZ,OZ", "--listen", "127.0.0.1:0", "--root"])
+        .arg(support::own_root())
         .stdin(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
@@ -295,23 +351,22 @@ fn the_roots_are_checked_at_startup() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("base/tree")).unwrap();
     std::fs::create_dir_all(dir.join("mount")).unwrap();
-    let head = format!("address {OZ:o}\nname MIT-OZ OZ\nlisten 127.0.0.1:0\n");
-    let text = format!("{head}root {}\n", dir.join("no-such").display());
-    let out = muir_ah().arg("--check").arg(config_file("roots-missing.conf", &text)).output();
-    let out = out.expect("it runs");
+    let head = format!("--address {OZ:o}\n--name MIT-OZ,OZ\n--listen 127.0.0.1:0\n");
+    let check = |name: &str, text: &str| {
+        muir_ah().args(["--check", "-c"]).arg(flags_file(name, text)).output().expect("it runs")
+    };
+    let text = format!("{head}--root {}\n", dir.join("no-such").display());
+    let out = check("roots-missing.muir-ahrc", &text);
     assert_eq!(out.status.code(), Some(1), "{}", said(&out));
     assert!(said(&out).contains("no-such"), "naming it: {}", said(&out));
-    let text = format!("{head}root /\n");
-    let out = muir_ah().arg("--check").arg(config_file("roots-slash.conf", &text)).output();
-    let out = out.expect("it runs");
+    let out = check("roots-slash.muir-ahrc", &format!("{head}--root /\n"));
     assert_eq!(out.status.code(), Some(1), "{}", said(&out));
     let text = format!(
-        "{head}root {}\nroot tree {} readonly\n",
+        "{head}--root {}\n--root tree={},ro\n",
         dir.join("base").display(),
         dir.join("mount").display()
     );
-    let out = muir_ah().arg("--check").arg(config_file("roots-covered.conf", &text)).output();
-    let out = out.expect("it runs");
+    let out = check("roots-covered.muir-ahrc", &text);
     assert!(out.status.success(), "{}", said(&out));
     assert!(said(&out).contains("tree"), "the covered directory warned of: {}", said(&out));
 }
@@ -332,13 +387,16 @@ fn a_run_removes_stale_temporaries_and_check_does_not() {
     std::fs::write(&stale, b"half a file").unwrap();
     let kept = dir.join("kept.lisp");
     std::fs::write(&kept, b"a file").unwrap();
-    let text =
-        format!("address {OZ:o}\nname MIT-OZ OZ\nlisten 127.0.0.1:0\nroot {}\n", dir.display());
-    let path = config_file("stale.conf", &text);
-    let out = muir_ah().arg("--check").arg(&path).output().expect("it runs");
+    let text = format!(
+        "--address {OZ:o}\n--name MIT-OZ,OZ\n--listen 127.0.0.1:0\n--root {}\n",
+        dir.display()
+    );
+    let path = flags_file("temporaries.muir-ahrc", &text);
+    let out = muir_ah().args(["--check", "-c"]).arg(&path).output().expect("it runs");
     assert!(out.status.success(), "{}", said(&out));
     assert!(stale.exists(), "--check changes nothing");
     let mut child = muir_ah()
+        .arg("-c")
         .arg(&path)
         .stdin(Stdio::null())
         .stderr(Stdio::piped())
@@ -352,22 +410,23 @@ fn a_run_removes_stale_temporaries_and_check_does_not() {
         if line.contains("listening at") {
             break;
         }
-        said_removed |= line.contains("stale");
+        said_removed |= line.contains("removed a stale temporary");
     }
     assert!(said_removed, "the removal is logged");
     assert!(!stale.exists(), "the stale temporary is gone");
     assert!(kept.exists(), "and nothing else");
 }
 
-/// **A connection is logged**, by the daemon run from its command line:
-/// a test host opens NAME, and the log says `NAME from 3050 opened`, the
-/// NCP's line (`DESIGN.md` §10) with the log's UTC time before it. The
-/// daemon turns on its own clock and the test host on the test's, until
-/// the line comes or five seconds pass.
+/// **A connection is logged**, by the daemon run from its command line and
+/// a file of flags: a test host opens NAME, and the log says `NAME from
+/// 3050 opened`, the NCP's line (`DESIGN.md` §10) with the log's UTC time
+/// before it. The daemon turns on its own clock and the test host on the
+/// test's, until the line comes or five seconds pass.
 #[test]
 fn a_connection_is_logged() {
-    let path = config_file("logged.conf", &site(""));
+    let path = flags_file("logged.muir-ahrc", &site(""));
     let mut child = muir_ah()
+        .arg("-c")
         .arg(&path)
         .stdin(Stdio::null())
         .stderr(Stdio::piped())
@@ -429,24 +488,42 @@ fn file_is_served_from_the_roots() {
 }
 
 /// **`-h` and `--help` print the help on stdout, and exit 0**, as muir's
-/// do: the usage, what muir-ah is, and each argument --- wherever the flag
-/// is on the command line and whatever else is there, even a flag that is
-/// not one, and before anything else is checked, so as root too.
+/// do: the usage, what muir-ah is, each flag, the file of flags and where
+/// it is looked for, and the default endpoint --- wherever the flag is on
+/// the command line and whatever else is there, even a flag that is not
+/// one or a file of flags that is not there, and before anything else is
+/// looked at, so as root too.
 #[test]
 fn help_is_printed_on_stdout_and_exits_0() {
-    let lines: [&[&str]; 5] = [
+    let lines: [&[&str]; 6] = [
         &["--help"],
         &["-h"],
         &["--check", "--help"],
-        &["--help", "no-such.conf"],
+        &["--help", "site.conf"],
         &["--frobnicate", "--help"],
+        &["-c", "/no/such.muir-ahrc", "-h"],
     ];
     for args in lines {
         let out = muir_ah().args(args).output().expect("it runs");
         assert_eq!(out.status.code(), Some(0), "{args:?}: {}", said(&out));
         let text = String::from_utf8_lossy(&out.stdout);
-        assert!(text.starts_with("usage: muir-ah [--trace] [--check] <config>\n"), "{args:?}");
-        for word in ["--trace", "--check", "<config>", "--help", "root"] {
+        assert!(text.starts_with(USAGE), "{args:?}: {text}");
+        for word in [
+            "--address",
+            "--name",
+            "--listen",
+            "--root",
+            "--host",
+            "--peer",
+            "--trace",
+            "--check",
+            "-c, --config",
+            "-h, --help",
+            ".muir-ahrc",
+            "MUIR_AH_RC",
+            "127.0.0.1:42042",
+            ",ro",
+        ] {
             assert!(text.contains(word), "{args:?}: {word} in {text}");
         }
         assert!(out.stderr.is_empty(), "{args:?}: nothing on stderr: {}", said(&out));

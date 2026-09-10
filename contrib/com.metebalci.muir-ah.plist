@@ -5,8 +5,8 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 
   muir-ah as a launchd daemon (DESIGN.md §10), for /Library/LaunchDaemons.
-  Install the binary at /usr/local/bin/muir-ah and the config at
-  /usr/local/etc/muir-ah.conf, and make a user _muir-ah that owns the
+  Install the binary at /usr/local/bin/muir-ah and its flags in
+  /usr/local/etc/muir-ahrc, and make a user _muir-ah that owns the
   writable root and nothing else. Not yet tried on a system.
 -->
 <plist version="1.0">
@@ -16,7 +16,8 @@
   <key>ProgramArguments</key>
   <array>
     <string>/usr/local/bin/muir-ah</string>
-    <string>/usr/local/etc/muir-ah.conf</string>
+    <string>-c</string>
+    <string>/usr/local/etc/muir-ahrc</string>
   </array>
   <key>UserName</key>
   <string>_muir-ah</string>

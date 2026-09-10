@@ -2,14 +2,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # muir-ah as the associated machine of a System 304 band (DESIGN.md §8).
-# system-100.conf says more of what each line is for.
+# A file of flags, as system-100.muir-ahrc is, which says more of what
+# each line is for.
 #
 # The numbers are the band's own, asked at its listener, since its host
 # table is in the pack and not in the sources: the band is AMS-LISPM-1 at
 # 4401, and looks for its files and its time at 4403, OZ --- AMS-BRIDGE-1
 # under its other name (muir's src/chaos/mod.rs). This host is that one.
 
-address  4403
+--address 4403
 
 # OZ first, the name muir's own server answers STATUS with for this band.
 # Unverified: whether OZ is that host's own name in the band's table or a
@@ -23,21 +24,21 @@ address  4403
 # nothing at 4403. The same host sent :system-type at the listener would
 # give it. Without one, HOSTAB answers this host's names with no
 # SYSTEM-TYPE.
-name     OZ AMS-BRIDGE-1
+--name    OZ,AMS-BRIDGE-1
 
-# Without a listen line, 127.0.0.1:42042 (DESIGN.md §5):
-#listen  192.0.2.10
+# Without a --listen line, 127.0.0.1:42042 (DESIGN.md §5):
+#--listen 192.0.2.10
 
 # The homes in the base, writable; the release's sources mounted at /sys,
 # read-only, because the band asks for them as /sys/... (muir's
 # --chaos-file-root help), and where muir's own vendor/run/file-root links
 # sys.
-root     /srv/lispm
-root     sys  /path/to/muir/vendor/system-304-0/sys-304-0  readonly
+--root    /srv/lispm
+--root    sys=/path/to/muir/vendor/system-304-0/sys-304-0,ro
 
 # The band's machine. Its system type is not read from the band: LISPM is
 # what System 100's table gives its Lisp Machine, taken as this one's.
-host     4401  AMS-LISPM-1  system=LISPM
+--host    4401,AMS-LISPM-1,system=LISPM
 
 # A muir run for this band, on this host (DESIGN.md §9):
 #

@@ -66,16 +66,16 @@ fn an_unknown_hosts_endpoint_is_learned_and_answered() {
     assert!(lm1.heard.is_empty(), "nothing more to where it was");
 }
 
-/// **A fixed endpoint is not moved by a packet.** A `peer` line is a
+/// **A fixed endpoint is not moved by a packet.** A `--peer` is a
 /// statement about where a host is; a packet claiming that host's address
-/// from somewhere else is answered at the endpoint the line gave, and does
+/// from somewhere else is answered at the endpoint it gave, and does
 /// not move it --- as muir keeps an endpoint a flag named (`CLAUDE.md` §3;
 /// muir's `a_packet_does_not_move_an_endpoint_a_flag_named`).
 #[test]
 fn a_fixed_endpoint_is_not_moved_by_a_packet() {
     let (named, named_at) = support::socket();
-    let mut d = daemon(&site(&format!("peer 3040 {named_at}\n")));
-    assert_eq!(d.link().endpoint(0o3040), Some(named_at), "where the peer line put it");
+    let mut d = daemon(&site(&format!("--peer 3040@{named_at}\n")));
+    assert_eq!(d.link().endpoint(0o3040), Some(named_at), "where --peer put it");
     let mut impostor = TestHost::new(0o3040, d.at());
     let asked = Recorder::default();
     impostor.ncp.connect(0, OZ, "STATUS", Box::new(asked.clone()));

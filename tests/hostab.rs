@@ -27,15 +27,15 @@ use muir_ah::service::hostab::Hostab;
 use std::sync::{Arc, Mutex};
 
 /// The site the tests ask about: System 100's own names for its file host
-/// and its machine (`examples/system-100.conf`), a second machine, and a
+/// and its machine (`examples/system-100.muir-ahrc`), a second machine, and a
 /// host whose line gives no system type.
 const SITE: &str = "
-address  3060
-name     MIT-OZ OZ
-root     /srv/lispm
-host     3050  MIT-LISPM-1 CADR-1 CADR1 LM1  system=LISPM
-host     3051  MIT-LISPM-2 LM2  system=LISPM
-host     3040  BRIDGE-1
+--address 3060
+--name    MIT-OZ,OZ
+--root    /srv/lispm
+--host    3050,MIT-LISPM-1,CADR-1,CADR1,LM1,system=LISPM
+--host    3051,MIT-LISPM-2,LM2,system=LISPM
+--host    3040,BRIDGE-1
 ";
 
 /// A packet as the link would hand it to the NCP, with the check word the
@@ -165,7 +165,7 @@ impl Session for Recorder {
     }
 }
 
-/// This host's NCP holding HOSTAB, made from a site file as the daemon
+/// This host's NCP holding HOSTAB, made from a file of flags as the daemon
 /// makes it, and a band's NCP at 3050 with a HOSTAB connection open to it.
 struct Asking {
     band: Ncp,
@@ -176,7 +176,7 @@ struct Asking {
 
 impl Asking {
     fn new(site: &str) -> Asking {
-        let site = Config::parse(site).expect("the site file");
+        let site = Config::parse(site).expect("the site's flags");
         let mut server = Ncp::new(site.address);
         let hostab = Hostab::new(site.address, &site.names, site.system.as_deref(), &site.hosts);
         server.serve(Box::new(hostab));
@@ -364,9 +364,9 @@ fn a_nickname_in_any_case_is_the_same_host() {
     }
 }
 
-/// **This host's own names are answered too**, from its `name` and
-/// `address` lines, and without a system type when the `name` line gives
-/// none, as [`SITE`]'s does not.
+/// **This host's own names are answered too**, from its `--name` and
+/// `--address`, and without a system type when `--name` gives none, as
+/// [`SITE`]'s does not.
 #[test]
 fn this_hosts_own_names_are_answered() {
     let mut site = Asking::new(SITE);
@@ -387,13 +387,13 @@ fn this_hosts_own_names_are_answered() {
     }
 }
 
-/// **This host's system type is its `name` line's `system=`**, answered for
-/// its own names as a `host` line's is for that host, and for no other
-/// host: one whose line gives none still has none.
+/// **This host's system type is its `--name`'s `system=`**, answered for
+/// its own names as a `--host`'s is for that host, and for no other host:
+/// one whose `--host` gives none still has none.
 #[test]
 fn this_hosts_system_type_when_the_name_line_gives_one() {
-    let text = SITE.replacen("MIT-OZ OZ\n", "MIT-OZ OZ  system=UNIX\n", 1);
-    assert_ne!(text, SITE, "the name line gains a system=");
+    let text = SITE.replacen("MIT-OZ,OZ\n", "MIT-OZ,OZ,system=UNIX\n", 1);
+    assert_ne!(text, SITE, "--name gains a system=");
     let mut site = Asking::new(&text);
     for asked in ["MIT-OZ", "oz"] {
         let answer = site.ask(asked);
@@ -410,7 +410,7 @@ fn this_hosts_system_type_when_the_name_line_gives_one() {
     assert_eq!(define_host(&site.ask("LM1")).unwrap().system_type.as_deref(), Some("LISPM"));
 }
 
-/// **`SYSTEM-TYPE` only when the host line gives one**, and then as it is
+/// **`SYSTEM-TYPE` only when the `--host` gives one**, and then as it is
 /// written there.
 #[test]
 fn a_system_type_only_when_the_line_gives_one() {
@@ -509,7 +509,7 @@ fn a_line_longer_than_any_name_is_no_hosts() {
 #[test]
 fn a_long_answer_is_cut_into_packets() {
     let names: Vec<String> = (0..30).map(|i| format!("A-HOST-WITH-A-LONG-NAME-{i:02}")).collect();
-    let text = format!("{SITE}host 3052 {} system=LISPM\n", names.join(" "));
+    let text = format!("{SITE}--host 3052,{},system=LISPM\n", names.join(","));
     let mut site = Asking::new(&text);
     site.user.line_out("a-host-with-a-long-name-17");
     site.shuttle();

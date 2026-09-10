@@ -111,14 +111,14 @@ impl Daemon {
 /// What this host serves, and **the one place a service is added**
 /// (`DESIGN.md` §7); the NCP and the link know nothing of any of them.
 ///
-/// - STATUS, with the official name --- the first of the `name` line's ---
+/// - STATUS, with the official name --- the first of `--name`'s ---
 ///   this host's subnet, the high byte of its address, and the meters the
 ///   link counts into;
 /// - TIME, from the system clock;
 /// - UPTIME, from 0 on the daemon's clock, which is when it started
 ///   ([`Daemon::turn`]);
-/// - HOSTAB, from the `name` line --- its `system=` too, if it has one ---
-///   and the `host` lines;
+/// - HOSTAB, from `--name` --- its `system=` too, if it has one --- and
+///   every `--host`;
 /// - NAME, saying that nobody is logged in;
 /// - FILE, from the roots the startup checked (`DESIGN.md` §6), each of
 ///   its changes to a root a line of the log (§10).

@@ -39,7 +39,8 @@ optimisation.
   ships, the pin moves.
 - **No dependencies.** `[dependencies]` stays empty. std has the socket,
   both clocks, the filesystem, the test harness and the arguments; the
-  config is parsed by hand, as muir parses its flags. Two places where a
+  flags and the file of them are parsed by hand, as muir's are. Two
+  places where a
   crate would be the honest answer, and neither is taken:
   - **`openat` with `O_NOFOLLOW`**, for containment that holds against a
     concurrent writer. std has it only as a private helper
@@ -68,7 +69,7 @@ optimisation.
     src/
       lib.rs            the modules
       main.rs           arguments, startup, the loop
-      config.rs         the site file, parsed and checked (§8)
+      config.rs         the flags and the file of them, checked (§8)
       daemon.rs         the daemon: the link, the NCP, the services, turn (§4)
       log.rs            one line an event on stderr, stamped in UTC (§10)
       address.rs        parse_address
@@ -90,7 +91,7 @@ optimisation.
 | `roots.rs` | `chaos/file.rs`: `resolve`, `resolve_for_writing` | rewritten (§6), apart from FILE, so that the containment tests come first and alone |
 | `service/status.rs` | `chaos/status.rs`, 118 lines | real meters (§7) |
 | `service/time.rs` | `chaos/time.rs`, 106 lines | UPTIME in sixtieths, not seconds (`PROTOCOLS.md`, UPTIME) |
-| `service/file.rs` | `chaos/file.rs`, 1491 lines | containment, roots and `readonly` (§6); no allowlist |
+| `service/file.rs` | `chaos/file.rs`, 1491 lines | containment, roots, and read-only roots (§6); no allowlist |
 | the rest | --- | new |
 
 Copied, never moved: muir is read from here, and not written.
@@ -135,16 +136,16 @@ most 100 ms late against its 500 ms interval.
 
 `chudp::Link` owns the socket and the table of endpoints, and is the hub.
 
-- **It binds what `listen` says**, in muir's `--chaos-udp` forms: none,
-  a port, an address, or an address and a port. A bare port is on the
-  loopback, and no `listen` at all is `127.0.0.1:42042` --- a fresh
+- **It binds what `--listen` says**, in muir's `--chaos-udp` forms: a port,
+  an address, or an address and a port. A bare port is on the
+  loopback, and no `--listen` at all is `127.0.0.1:42042` --- a fresh
   install answers its own host and nothing else. An address without a
   port takes 42042. `0.0.0.0`, or `::`, is every interface.
 - **Endpoints are learned**, as muir's `--chaos-udp-dynamic` learns them
   (`udp.rs`, `arrived`): a packet's source address --- the header's ---
   is recorded at the UDP address the datagram came from. A host behind
   `cbridge` is learned at `cbridge`'s endpoint, which is right: that is
-  where its packets go. A `peer` line fixes an endpoint, and a packet
+  where its packets go. A `--peer` fixes an endpoint, and a packet
   does not move a fixed one. The table is not expired; it holds at most
   one entry per address.
 - **Receiving**, in order; each drop is counted for STATUS and printed
@@ -197,7 +198,7 @@ start, with its reason:
 - `geteuid()` is 0.
 - A root is not an absolute path, does not canonicalise, is not a
   directory, or is `/`.
-- A root without `readonly` is not writable --- a probe file created in
+- A root without `,ro` is not writable --- a probe file created in
   it and removed.
 
 Then two things that are not refusals. The base's entries that a mount
@@ -207,10 +208,10 @@ killed mid-write leaves one. Their name comes from one constant, so the
 cleanup matches what `file.rs` makes (`file.rs:868`) and nothing else.
 
 **Roots.** FILE serves one tree: a **base root**, and optionally **named
-roots mounted at its top level**, each with its own `readonly`.
+roots mounted at its top level**, each read-only or not (`,ro`).
 
-    root        /srv/lispm                                        # the base: homes, and the rest
-    root  tree  /path/to/muir/vendor/system-100-0/sys  readonly
+    --root /srv/lispm                                      # the base: homes, and the rest
+    --root tree=/path/to/muir/vendor/system-100-0/sys,ro   # mounted at /tree, read-only
 
 `/tree/...` is the second directory, read-only; everything else under
 `/` --- `/<user>/`, the home muir's LOGIN gives a user (`file.rs:426`) ---
@@ -226,7 +227,7 @@ is the base.
   band sends its pathnames in lower case (`/tree/sys/...`, muir's
   `--chaos-file-root` help). So mounts are named in lower case.
 - **With mounts and no base**, `/` itself is read-only and names only
-  the mounts. One `root` without a name is a single root, as muir's.
+  the mounts. One `--root` without a name is a single root, as muir's.
 
 **`resolve(pathname)`**, rewritten from muir's (`file.rs:375`):
 
@@ -245,12 +246,12 @@ is the base.
    joined back on. That is what is opened, never the client's string.
 
 `resolve_for_writing` also refuses a root itself, as muir's does, and
-anything in a `readonly` root (below).
+anything in a read-only root (below).
 
 **Why a check and then an open are safe here**: the path checked is the
 path opened, it contains no symlink when checked, and nothing else runs
 between the two --- the loop is the only thread, and this process is a
-writable root's only writer (`CLAUDE.md` §3); a `readonly` root is
+writable root's only writer (`CLAUDE.md` §3); a read-only root is
 written by nobody. Both conditions are written down in the code where
 they are relied on.
 
@@ -259,7 +260,7 @@ directory is refused with `WKF`, "wrong kind of file", which the band
 turns into its `WRONG-KIND-OF-FILE` condition (`sys/io/file/open.lisp:260`),
 as muir answered. A FIFO would block the loop at `open`.
 
-**`readonly`**: in a read-only root, OPEN for output, DELETE, RENAME,
+**A read-only root**, `,ro`: in one, OPEN for output, DELETE, RENAME,
 CREATE-DIRECTORY, CREATE-LINK and CHANGE-PROPERTIES are refused with
 `ATF`, "Access to file denied", before anything is touched. The band
 turns `ATF` into `INCORRECT-ACCESS-TO-FILE` (`io/file/open.lisp:224`),
@@ -331,10 +332,11 @@ file is ever half one and half the other.
 **Stage 2.**
 
 - **HOSTAB**: each line the client sends is looked up, ignoring case,
-  among this host's names and every `host` line's. The answer is one
+  among this host's names and every `--host`'s. The answer is one
   `NAME` line per name, official first, `CHAOS` in octal, and
-  `SYSTEM-TYPE` if its line gives one --- for this host, the `name` line, then an EOF; or `ERROR No such
-  host`, then an EOF. Never `MACHINE-TYPE` (`PROTOCOLS.md`, HOSTAB). The
+  `SYSTEM-TYPE` if its flag gives one --- `--name`'s, for
+  this host --- then an EOF; or `ERROR No such host`, then an EOF. Never
+  `MACHINE-TYPE` (`PROTOCOLS.md`, HOSTAB). The
   connection stays open for the next name until the client closes it.
   A line longer than any name matches nothing, and no more of it than
   that is kept.
@@ -343,58 +345,97 @@ file is ever half one and half the other.
   the machine's own server ends (`FORMAT-AND-EOF`, `chuse.lisp:550`). A
   band's `(finger)` asks here when given no host (`PROTOCOLS.md`, NAME).
 
-## 8. The config
+## 8. The flags, and the file of them
 
-One directive a line; `#` starts a comment. Addresses are octal, or
-`subnet:host`, as muir's flags take them. Paths are absolute.
+Everything is a flag, as muir's are, and a file of flags gives the
+defaults. Addresses are octal, or `subnet:host`. A value is one word,
+its parts separated by commas, as muir's flags' values are
+(`--disk-pack <image>,ro`). As a file of them:
 
-    address  3060                          # this host's Chaos address; required
-    name     MIT-OZ OZ                     # its names, the official first; required
-    listen   192.0.2.10                    # optional; see §5
-    root     /srv/lispm                    # the base root; see §6
-    root     tree  /path/to/muir/vendor/system-100-0/sys  readonly
-    host     3050  MIT-LISPM-1 LM1   system=LISPM     # the site's host table, for HOSTAB
-    host     3051  MIT-LISPM-2 LM2   system=LISPM
-    peer     3040  192.0.2.5                          # an endpoint that is fixed; the rest are learned
+    # this host's Chaos address; required
+    --address 3060
+    # its names, the official first, and its own system type; required
+    --name MIT-OZ,OZ,system=UNIX
+    # where it listens; see §5
+    --listen 192.0.2.10
+    # the base root, and a root mounted at /tree, read-only
+    --root /srv/lispm
+    --root tree=/path/to/muir/vendor/system-100-0/sys,ro
+    # the site's host table, for HOSTAB
+    --host 3050,MIT-LISPM-1,LM1,system=LISPM
+    # an endpoint that is fixed; the rest are learned
+    --peer 3040@192.0.2.5
 
-The host table and the endpoints are separate: a `host` line is what
-HOSTAB says, a `peer` line where packets go. A machine needs neither to
-be served; it needs a `host` line to be found by name.
+`--address` and `--name` are required, and given once, as `--listen` is
+if at all; `--root`, `--host` and `--peer` may each be given again. A
+`--root` whose value begins with `/` is the base; any other is
+`<name>=<path>`, mounted at `/<name>`; `,ro` makes either read-only.
+`--peer` is muir's `--chaos-udp-peer`, `<address>@<ip>[:<port>]`, the
+port 42042 unless given. A comma cannot be in a path.
 
-**Checked at load**, the first failure reported with its line
-(`src/config.rs`): exactly one `address` and one `name` line; at least
-one `root`, at most one without a name, no mount name twice, and a
-mount's name one lower-case directory name, since a band asks in lower
-case and names match exactly (§6); every address valid by
-`parse_address`, which refuses a zero half; endpoints IP literals, as
-`listen` takes them, no names to resolve at startup.
+The host table and the endpoints are separate: a `--host` is what HOSTAB
+says, a `--peer` where packets go. A machine needs neither to be served;
+it needs a `--host` to be found by name.
 
-- **Addresses**: this host's may not appear on a `host` or a `peer`
-  line, and no address twice among the `host` lines or among the `peer`
-  lines. A `host` line and a `peer` line may share one: they answer
-  different questions about one host, which is how `cbridge` gets a name
-  and a fixed endpoint.
-- **Names**: each once across `name` and every `host` line, ignoring
-  case, as HOSTAB looks them up. A name, a system type and a mount's
-  name are printable ASCII: HOSTAB and FILE send a character as one
-  byte, and U+008D would be the band's newline in an answer.
-- **System types**: `system=` on a `host` line, and on the `name` line
-  for this host's own; once a line, with a value, in upper case. The band
-  interns the value as it comes, and a type it has no flavor for gives
-  the host its default flavor (`sys/network/host.lisp:279`), so `lispm`
-  would quietly name the wrong one. System 100's own table gives `MIT-OZ`
-  as `UNIX` (`sys/site/hosts.text:4`), and its example says so.
-- **One limit, as written**: there is no quoting, so a path with a space
-  or a `#` in it cannot be named.
+**The file of flags, `.muir-ahrc`**, is muir's `.muirrc` for muir-ah
+(`config_path` and `muirrc`, muir's `src/main.rs`): `-c|--config <file>`
+names one, which must be there; else `MUIR_AH_RC` names one; else
+`.muir-ahrc` in the directory muir-ah is run from; else `.muir-ahrc` in
+the home directory --- the first of those there, not all of them. A line
+is a flag and, after a space, the rest of the line is its value; a blank
+line, or one beginning with `#`, is a comment. A flag the command line
+gives leaves that flag's lines out of the file: the command line has the
+last word. A file cannot name another.
 
-**Two examples ship**, `examples/system-100.conf` and
-`examples/system-304.conf`, with each release's own numbers from muir
-(`chaos/mod.rs`): System 100's file host is `MIT-OZ` at 3060 and its
-band asks for `/tree/...`; System 304's is `OZ`, `AMS-BRIDGE-1`, at 4403,
-and asks for `/sys/...`. Each mounts that release's sources read-only
-from muir's `vendor/` --- `system-100-0/sys` and `system-304-0/sys-304-0`,
-where muir's own `vendor/run/file-root` links point --- over a base for
-homes.
+`#` begins a comment only at the start of a line, so a path in a file
+may hold a blank or a `#`. The file is read first and the command line
+after it. `--trace` may be in a file; `--check`, `--help` and `--config`
+may not: each is what one run is asked to do, and in a file every run
+would do it --- a service would exit at once, cleanly, and never serve.
+A flag's value is the next word unless that word is one of muir-ah's
+flags, so `--address --name OZ` is `--address` without its value. Two
+things muir takes are refused here: `-c` given twice, and a file that is
+there but cannot be read.
+
+**What is refused, and how.** What is not flags --- an unknown flag, a
+word that is none, a flag without its value, `-c` naming a file that is
+not there, a file's line that is not a flag --- is a usage error, with
+the usage, and exits 2. A value refused names its flag and value, and
+its file and line when it came from one, and exits 1.
+
+**Checked at load**, the first failure reported with its flag, and with
+its file and line when it came from one (`src/config.rs`):
+
+- **Addresses**: each valid by `parse_address`, which refuses a zero
+  half. This host's may not be a `--host`'s or a `--peer`'s, and no
+  address comes twice among the `--host`s or among the `--peer`s. A
+  `--host` and a `--peer` may share one: they answer different questions
+  about one host, which is how `cbridge` gets a name and a fixed
+  endpoint.
+- **Names**: each once across `--name` and every `--host`, ignoring case,
+  as HOSTAB looks them up. A name, a system type and a mount's name are
+  printable ASCII: HOSTAB and FILE send a character as one byte, and
+  U+008D would be the band's newline in an answer.
+- **System types**: `system=` on a `--host`, and on `--name` for this
+  host's own; once a flag, with a value, in upper case. The band interns
+  the value as it comes, and a type it has no flavor for gives the host
+  its default flavor (`sys/network/host.lisp:279`), so `lispm` would
+  quietly name the wrong one. System 100's own table gives `MIT-OZ` as
+  `UNIX` (`sys/site/hosts.text:4`), and its example says so.
+- **Roots**: at least one, at most one base, no mount's name twice, and a
+  mount's name one lower-case directory name, since a band asks in lower
+  case and names match exactly (§6); paths absolute.
+- **Endpoints**: IP literals, as `--listen` takes them; no names to
+  resolve at startup.
+
+**Two examples ship**, `examples/system-100.muir-ahrc` and
+`examples/system-304.muir-ahrc`, files of flags with each release's own
+numbers from muir (`chaos/mod.rs`): System 100's file host is `MIT-OZ`
+at 3060 and its band asks for `/tree/...`; System 304's is `OZ`,
+`AMS-BRIDGE-1`, at 4403, and asks for `/sys/...`. Each mounts that
+release's sources read-only from muir's `vendor/` --- `system-100-0/sys`
+and `system-304-0/sys-304-0`, where muir's own `vendor/run/file-root`
+links point --- over a base for homes.
 
 ## 9. A site of several machines
 
@@ -405,7 +446,7 @@ homes.
   (`SETUP-MY-ADDRESS`, `chsncp.lisp:776`), and `CHECK-THIS-SITE-INTEGRITY`
   says to fix the site files (`network/host.lisp:483`). Its own name is
   the band's business, in `SYS: SITE;`. What this host adds is HOSTAB:
-  a `host` line here and every band that asks can find that machine by
+  a `--host` here and every band that asks can find that machine by
   name. That System 100's table knows `OZ`, the name its site option
   gives, as 3060 is not verified here; the first HOSTAB test against a
   band shows it.
@@ -423,7 +464,7 @@ homes.
   calls to 3060 go out to this host. While muir keeps that server
   (`CLAUDE.md` §8a), a band's broadcast for TIME may be answered by
   either; both have the same clock.
-- **On several hosts**, `listen` an address on the segment, or
+- **On several hosts**, `--listen` an address on the segment, or
   `0.0.0.0`, and each muir's `--chaos-udp-peer` names it.
 - **The Global Chaosnet** is not reached through the hub, which passes
   nothing to another subnet. A machine that wants it has `cbridge` as a
@@ -439,7 +480,8 @@ homes.
   errors.
 - **`--trace`**: every packet, every packet passed on, and every drop,
   as muir's `--chaos-trace`.
-- **`--check`**: parse the config, run the startup checks, exit. For an
+- **`--check`**: read the flags and the file of them, run the startup
+  checks, exit. For an
   administrator, and for the tests.
 - **systemd**, `contrib/muir-ah.service`: `User=muir-ah`, `Restart=on-failure`,
   and hardening that costs nothing here --- `NoNewPrivileges=yes`,
@@ -469,7 +511,8 @@ a test host's side. All are turned by the test with one clock it sets.
    `the_frame_is_these_bytes` (line 83), copied with the bytes unchanged,
    and muir's `the_check_word_is_the_boards`, which pins the check word.
    They are the contract between the two repositories (`CLAUDE.md` §8e).
-2. **The config**: each directive; each form of `listen`; each refusal,
+2. **The flags**: each flag; each form of `--listen`; the file of them,
+   its comments, the command line winning, the search order; each refusal,
    with its line.
 3. **The link and the hub**: an unknown host's endpoint learned and
    answered; a fixed endpoint not moved by a packet; this host's own
@@ -485,14 +528,14 @@ a test host's side. All are turned by the test with one clock it sets.
    `file.rs` comes across; with it, a symlink inside a root followed, one
    pointing out of it refused, a mount reached by its name and not by
    `..`, a mount covering a base directory of its name and startup
-   warning of it, every write in a `readonly` root refused with `ATF` and
+   warning of it, every write in a read-only root refused with `ATF` and
    nothing on disk changed.
 7. **FILE**: the scripted client, then two at once.
 8. **HOSTAB** and **NAME**, each with a scripted client taken from the
    machine's own user end.
 
 **The acceptance test** is by hand, and written in the README: two muir
-runs against muir-ah, with `examples/system-100.conf`, boot, know the
+runs against muir-ah, with `examples/system-100.muir-ahrc`, boot, know the
 date, read their sources from the read-only mount and write in the base,
 print the right `(uptime)`; `(hostat)` on each shows muir-ah and the
 other.

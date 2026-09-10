@@ -24,15 +24,21 @@ dependencies: nothing else is downloaded.
 
 ## Run
 
-    target/release/muir-ah examples/system-100.conf
+    target/release/muir-ah -c examples/system-100.muir-ahrc
 
-The one argument is the site's config (`DESIGN.md` §8). `--check` reads
-it and checks its roots, changing nothing, then exits; `--trace` prints
-every packet; `--help` says what each argument is. It will not run as
-root, and it logs to stderr, one line an event.
+Everything is a flag, as muir's are (`DESIGN.md` §8): `--address`,
+`--name`, `--listen`, `--root`, `--host` and `--peer`. Their defaults
+come from a file of flags --- the one `-c` names, else the one `MUIR_AH_RC`
+names, else `.muir-ahrc` in the directory it is run from or in the home
+directory --- and the command line has the last word. `--check` reads them and checks the
+roots, changing nothing, then exits; `--trace` prints every packet;
+`--help` says what each flag is. It will not run as root, and it logs to
+stderr, one line an event.
 
-The two examples are for System 100 and System 304, with each band's own
-numbers; edit their paths before using one. Without a `listen` line it
+The two examples, `examples/system-100.muir-ahrc` and
+`examples/system-304.muir-ahrc`, are for System 100 and System 304, with
+each band's own numbers; edit their paths before using one. Without
+`--listen` it
 answers on `127.0.0.1:42042`, which is enough for muir runs on the same
 host:
 
@@ -48,11 +54,11 @@ muir-ah's endpoint, so that their packets to each other come through it
 ## Trying it with muir
 
 The acceptance test is by hand (`DESIGN.md` §11). With the System 100
-release in muir's `vendor/`, and `examples/system-100.conf` edited so
+release in muir's `vendor/`, and `examples/system-100.muir-ahrc` edited so
 that its `tree` mount is that release's `sys` directory and its base an
 empty directory muir-ah may write:
 
-    target/release/muir-ah examples/system-100.conf
+    target/release/muir-ah -c examples/system-100.muir-ahrc
 
 and beside it two muir runs, each with a pack of its own:
 

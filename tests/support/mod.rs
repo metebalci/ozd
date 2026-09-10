@@ -4,8 +4,10 @@
 //! The harness (`DESIGN.md` §11), shared by the test binaries, each taking
 //! what it needs.
 //!
-//! - **A daemon** built from a config's text, listening on the loopback
-//!   at a port the system picks: [`site`] and [`daemon`].
+//! - **A daemon** built from the text of a file of flags, listening on
+//!   the loopback at a port the system picks: [`site`] and [`daemon`].
+//! - **The binary**, run where no file of flags of the user's is found:
+//!   [`muir_ah`].
 //! - **Test hosts**: each an [`Ncp`] at an address of its own on a
 //!   loopback socket of its own, speaking CHUDP through [`chudp::wrap`] and
 //!   [`chudp::unwrap`], with the daemon as its one peer --- as a muir with
@@ -31,12 +33,13 @@ use muir_ah::roots::Tree;
 use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 /// This host in the tests: System 100's file and time host, `MIT-OZ` at
-/// 3060 (`examples/system-100.conf`).
+/// 3060 (`examples/system-100.muir-ahrc`).
 pub const OZ: u16 = 0o3060;
 
 /// Machines on its subnet: System 100's band, `MIT-LISPM-1` at 3050, and
@@ -118,21 +121,31 @@ pub fn scratch() -> &'static Path {
     })
 }
 
-/// A site's config text: this host at [`OZ`] as `MIT-OZ`, listening on the
-/// loopback at a port the system picks, its base root an empty directory
-/// of its own in [`scratch`], and then the lines in `more`.
+/// An empty directory of its own in [`scratch`], for one daemon's base
+/// root.
 ///
 /// **A root of its own, each time.** The design has one daemon to a root
 /// (`DESIGN.md` §6), and a daemon's startup treats a temporary in its root
 /// as its own to remove --- its writability probe is named as one. Daemons
 /// a test run starts side by side on one root raced: one's cleanup took
 /// another's probe, and logged it as a temporary it could not remove.
-pub fn site(more: &str) -> String {
+pub fn own_root() -> PathBuf {
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let root = scratch().join(format!("root-{n}"));
     std::fs::create_dir_all(&root).expect("a root of its own");
-    format!("address {OZ:o}\nname MIT-OZ OZ\nlisten 127.0.0.1:0\nroot {}\n{more}", root.display())
+    root
+}
+
+/// A site's file of flags: this host at [`OZ`] as `MIT-OZ`, listening on
+/// the loopback at a port the system picks, its base root an [`own_root`],
+/// on lines 1 to 4; and then the lines in `more`, from line 5.
+pub fn site(more: &str) -> String {
+    let root = own_root();
+    format!(
+        "--address {OZ:o}\n--name MIT-OZ,OZ\n--listen 127.0.0.1:0\n--root {}\n{more}",
+        root.display()
+    )
 }
 
 /// The site's roots, checked as the startup checks them (`DESIGN.md` §6).
@@ -142,7 +155,7 @@ pub fn tree(config: &Config) -> Arc<Tree> {
 
 /// A daemon for the site `text` gives, bound and not yet turned.
 pub fn daemon(text: &str) -> Daemon {
-    let config = Config::parse(text).expect("the site's config");
+    let config = Config::parse(text).expect("the site's flags");
     Daemon::new(&config, tree(&config), false).expect("a daemon")
 }
 
@@ -324,4 +337,18 @@ impl Session for Recorder {
 pub fn running_as_root() -> bool {
     let out = std::process::Command::new("id").arg("-u").output().expect("id -u runs");
     String::from_utf8_lossy(&out.stdout).trim() == "0"
+}
+
+/// The daemon's binary, run where nothing of the user's is: no
+/// `MUIR_AH_RC`, and both the directory it is run from and its `HOME` a
+/// directory of this test binary's own with no `.muir-ahrc` in it. So a
+/// run reads no file of flags but one its test gives it --- by `-c`, by
+/// `MUIR_AH_RC`, or by setting `HOME` or the directory again --- and never
+/// the user's own.
+pub fn muir_ah() -> Command {
+    let away = scratch().join("no-file-of-flags");
+    std::fs::create_dir_all(&away).expect("a directory with no file of flags");
+    let mut c = Command::new(env!("CARGO_BIN_EXE_muir-ah"));
+    c.env_remove("MUIR_AH_RC").env("HOME", &away).current_dir(&away);
+    c
 }

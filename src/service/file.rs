@@ -68,7 +68,7 @@
 //!   removed.
 //! - **No allowlist.** muir's `serving`, `--chaos-file-peers`, does not
 //!   come; `LOGIN` records a user name, and is never a credential.
-//! - **A `readonly` root refuses every command that writes**, `ATF`,
+//! - **A read-only root refuses every command that writes**, `ATF`,
 //!   before anything is touched: the tree refuses the pathname first.
 //! - **Only a regular file or a directory is opened**, and anything else
 //!   is refused, `WKF`, before it is (`openable`).
