@@ -34,13 +34,13 @@ left out.
 
 | contact | kind | the machine serves | the machine calls | ozd (`CLAUDE.md` §4) |
 |---|---|---|---|---|
-| `STATUS` | RFC/ANS | ✓ | ✓ | stage 1 |
-| `TIME` | RFC/ANS | ✓ | ✓ | stage 1 |
-| `UPTIME` | RFC/ANS | ✓ | ✓ | stage 1 |
-| `FILE` | stream | ✓ | ✓ | stage 1 |
-| `HOSTAB` | stream | **no** | ✓ | stage 2 |
+| `STATUS` | RFC/ANS | ✓ | ✓ | ✓ |
+| `TIME` | RFC/ANS | ✓ | ✓ | ✓ |
+| `UPTIME` | RFC/ANS | ✓ | ✓ | ✓ |
+| `FILE` | stream | ✓ | ✓ | ✓ |
+| `HOSTAB` | stream | **no** | ✓ | ✓ |
 | `DUMP-ROUTING-TABLE` | RFC/ANS | ✓ | ✓ | not needed |
-| `NAME` | stream | ✓ | ✓ | stage 2 |
+| `NAME` | stream | ✓ | ✓ | ✓ |
 | `FINGER` | RFC/ANS | ✓ | ✓ | between machines, none here |
 | `TELNET` | stream | ✓ | ✓ | wanted, not this project |
 | `SUPDUP` | stream | **no** | ✓ | not this project |
@@ -62,7 +62,7 @@ RFC/ANS is AIM-628's *simple transaction*: one RFC, one ANS, no
 connection. A stream is a connection: RFC then OPN, numbered data both
 ways, closed by EOF and CLS.
 
-## Stage 1
+## Served
 
 ### STATUS
 
@@ -137,8 +137,6 @@ the tree. The machine turns `FNF`,
 `QFILE-PROCESS-ERROR-NEW` (`network/chaos/qfile.lisp:300`).
 
 Containment: `CLAUDE.md` §3.
-
-## Stage 2
 
 ### HOSTAB
 
