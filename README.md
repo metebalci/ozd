@@ -161,19 +161,24 @@ Security section asks. Neither has been tried on its system yet.
 
 On Linux with systemd, `contrib/install-systemd.sh` does the whole
 installation. Build ozd first, and then run the script as root from this
-directory, with your file of flags:
+directory:
 
 ```sh
-sudo contrib/install-systemd.sh ozdrc
+sudo contrib/install-systemd.sh
 ```
 
-The script reads the roots from the file of flags. It creates the `ozd`
-user, creates the writable roots and gives them to that user, and
-installs the binary, the file of flags and the unit. It also writes a
-drop-in that lets the unit write to exactly those roots. It then checks
-the flags and the roots as the `ozd` user, and starts the service. With
-`--dry-run`, it prints what it would do and changes nothing. So far it
-has been checked only with `--dry-run`.
+The script creates the `ozd` user and the base root `/srv/lispm`, which
+that user owns. It installs the binary and the unit, and it writes a
+standard file of flags to `/etc/ozdrc`: the System 100 site of the Run
+section, with `/srv/lispm` as its base root. If `/etc/ozdrc` already
+exists, the script keeps it. It then checks the flags and the roots as
+the `ozd` user, and starts the service. With `--dry-run`, it prints what
+it would do and changes nothing. So far it has been checked only with
+`--dry-run`.
+
+Edit `/etc/ozdrc` to suit your site, for example to mount the release's
+sources at `tree` or to set `--listen`, and then run
+`sudo systemctl restart ozd`.
 
 To install by hand instead, create the user, give it the base root, and
 install the binary, a file of flags and the unit:
@@ -190,8 +195,10 @@ sudo systemctl enable --now ozd
 ```
 
 Here `ozdrc` is your file of flags, one flag per line, such as the flags
-in the Run section. The unit lets ozd write only to `/srv/lispm`, so if
-your writable roots are elsewhere, list them in its `ReadWritePaths=`
+in the Run section.
+
+Either way, the unit lets ozd write only to `/srv/lispm`. If your
+writable roots are elsewhere, list them in the unit's `ReadWritePaths=`
 line. A root under `/home` also needs `ProtectHome=read-only` in place of
 `ProtectHome=yes`. The log goes to the journal: `journalctl -u ozd`.
 

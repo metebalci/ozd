@@ -510,9 +510,9 @@ a System 100 site with them on one command line.
   `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ReadWritePaths=` for
   each writable root, `ProtectHome=yes` and `PrivateTmp=yes`.
 - **Installing**: `contrib/install-systemd.sh` installs the systemd
-  service. It gives the writable roots of the file of flags to the `ozd`
-  user, lists exactly those roots in a drop-in's `ReadWritePaths=`, and
-  runs `--check` as that user before it starts the service.
+  service. It creates the `ozd` user and `/srv/lispm`, which that user
+  owns, writes a standard `/etc/ozdrc` unless one exists, and runs
+  `--check` as that user before it starts the service.
 - **launchd**: `contrib/com.metebalci.ozd.plist` sets `UserName`,
   `ProgramArguments`, `KeepAlive` and `StandardErrorPath`.
 - **Shutdown** is the default action of `SIGTERM`. The only state is the
