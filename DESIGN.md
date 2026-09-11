@@ -1,552 +1,577 @@
 # ozd: design
 
-The detailed design, agreed on 2026-09-10 before any code was written,
-and built to since: where the code and this differ, one of them is
-wrong. `CLAUDE.md` holds the decisions and rules this follows, and
-`PROTOCOLS.md` what each protocol is. What is left is the acceptance
-test with a band, by hand (§11).
+This document describes how ozd works. Where the code and this document
+disagree, one of them is wrong. `PROTOCOLS.md` describes the protocols
+themselves, and the README says how to build, run and secure ozd.
 
 ## 1. The shape of it
 
-One process, one thread, one UDP socket, one loop. ozd is the **hub**
-of one subnet: the hosts on it name it as their CHUDP peer, it passes
-packets between them as the cable would, and it answers its own
-services.
+ozd is one process with one thread, one UDP socket and one loop. It is
+the **hub** of one subnet. The hosts on the subnet name it as their
+CHUDP peer, it passes packets between them as a cable would, and it
+answers its own services.
 
-    hosts on the subnet: Lisp Machines, cbridge
-        │  CHUDP over UDP
-    chudp::Link       the socket, the endpoints, the checks;
-        │             a packet for another host passed on, untouched
-        │  Framed, for this host
-    Ncp               AIM-628 chapters 3 and 4
-        │  Service / Session
-    services          STATUS  TIME  UPTIME  FILE  ·  HOSTAB  NAME
+```text
+hosts on the subnet: Lisp Machines, cbridge
+    │  CHUDP over UDP
+chudp::Link       the socket, the endpoints, the checks;
+    │             a packet for another host passed on, untouched
+    │  Framed, for this host
+Ncp               AIM-628 chapters 3 and 4
+    │  Service / Session
+services          STATUS  TIME  UPTIME  FILE  ·  HOSTAB  NAME
+```
 
-Nothing blocks but the socket read, and nothing runs but the loop. That
-is what lets containment check a path and then open it without `openat`
-(§6), and it is why a second thread would be a change of design, not an
-optimisation.
+Nothing blocks except the socket read, and nothing runs except the loop.
+This is what lets containment check a path and then open it without
+`openat` (§6). It is also why a second thread would be a change of
+design rather than an optimisation.
 
 ## 2. Build
 
-- **Rust 2024**, the latest edition (`edition = "2024"`).
-- **Toolchain pinned to 1.98.0**, stable, in `rust-toolchain.toml` with
-  `clippy` and `rustfmt`; the release profile is Cargo's default. When
-  1.99 ships, the pin moves.
-- **No dependencies.** `[dependencies]` stays empty. std has the socket,
-  both clocks, the filesystem, the test harness and the arguments; the
-  flags and the file of them are parsed by hand. Two places where a
-  crate would be the honest answer, and neither is taken:
-  - **`openat` with `O_NOFOLLOW`**, for containment that holds against a
-    concurrent writer. std has it only as a private helper
-    (`openat_nofollow_dironly`, `sys/fs/unix.rs`, read in 1.92's source),
-    and the constants differ by platform, so hand-written FFI would be
-    guessing at numbers. One thread and one writer make it unnecessary
-    (§6); a second thread would make `libc` the one dependency.
-  - **Signals.** std has no handler. The daemon has nothing to flush, so
-    `SIGTERM`'s default action is the shutdown (§10).
-- **One `unsafe`**: `geteuid`, declared `extern "C"` --- std links the C
-  library already --- so the daemon can refuse to run as root.
-  `unsafe_code` is denied for the whole package in `Cargo.toml`'s
-  `[lints]`, tests included, and that one function allows it.
-- **Library and binary**: `src/lib.rs` is the daemon, so tests
-  drive it in-process; `src/main.rs` is arguments and the loop.
-- **Lints**: `cargo clippy --all-targets -- -D warnings` clean, and
-  `cargo doc --no-deps` with `RUSTDOCFLAGS="-D warnings"`, so that a doc
-  link that leads nowhere, or to a private item, is caught.
-- **rustfmt**: `use_small_heuristics = "Max"`, a call or a struct
+- **Edition.** ozd uses Rust 2024 (`edition = "2024"`).
+- **Toolchain.** `rust-toolchain.toml` pins the stable 1.98.0 toolchain,
+  with `clippy` and `rustfmt`. The release profile is Cargo's default.
+  The pin moves forward with stable releases.
+- **No dependencies.** `[dependencies]` is empty. The standard library
+  provides the socket, both clocks, the filesystem, the test harness and
+  the command line, and ozd parses its flags and its file of flags by
+  hand. In two places a crate would be the natural answer, and ozd does
+  without it:
+  - **`openat` with `O_NOFOLLOW`** would make containment hold even
+    against a concurrent writer. The standard library has it only as a
+    private helper (`openat_nofollow_dironly` in `sys/fs/unix.rs`, as of
+    1.92), and its constants differ between platforms, so hand-written
+    FFI would mean guessing at numbers. With one thread and one writer it
+    is not needed (§6). A second thread would make `libc` the one
+    dependency.
+  - **Signals.** The standard library has no signal handler. The daemon
+    has nothing to flush, so the default action of `SIGTERM` is its
+    shutdown (§10).
+- **One `unsafe`.** `geteuid` is declared `extern "C"`, from the C
+  library that the standard library already links, so that the daemon
+  can refuse to run as root. `Cargo.toml` denies `unsafe_code` for the
+  whole package, tests included, and only that one function allows it.
+- **Library and binary.** `src/lib.rs` is the daemon, so that tests can
+  drive it in-process. `src/main.rs` handles the command line and runs
+  the loop.
+- **Lints.** `cargo clippy --all-targets -- -D warnings` is clean.
+  `cargo doc --no-deps` runs with `RUSTDOCFLAGS="-D warnings"`, which
+  catches a doc link that leads nowhere or to a private item.
+- **rustfmt.** `use_small_heuristics = "Max"` keeps a call or a struct
   literal on one line whenever it fits.
-- **Licence**: AGPL-3.0-or-later with SPDX headers.
-- **Git**. `.gitignore`: `/target`, and `CLAUDE.md`, which is
-  not committed for now. `Cargo.lock` is committed: this is a binary.
+- **Licence.** ozd is AGPL-3.0-or-later, with SPDX headers.
+- **`Cargo.lock`** is committed, because ozd is a binary.
 
 ## 3. Modules
 
-    src/
-      lib.rs            the modules
-      main.rs           arguments, startup, the loop
-      config.rs         the flags and the file of them, checked (§8)
-      daemon.rs         the daemon: the link, the NCP, the services, turn (§4)
-      log.rs            one line an event on stderr, stamped in UTC (§10)
-      address.rs        parse_address
-      packet.rs         the packet and the check word
-      roots.rs          the tree FILE serves: roots, resolve, readonly (§6)
-      chudp.rs          the frame, and the link and hub (§5)
-      ncp.rs            the NCP
-      lispm.rs          the Lisp Machine character set
-      service/
-        status.rs  time.rs  file.rs  hostab.rs  name.rs
+```text
+src/
+  lib.rs            the modules
+  main.rs           arguments, startup, the loop
+  config.rs         the flags and the file of them, checked (§8)
+  daemon.rs         the daemon: the link, the NCP, the services, turn (§4)
+  log.rs            one line an event on stderr, stamped in UTC (§10)
+  address.rs        parse_address
+  packet.rs         the packet and the check word
+  roots.rs          the tree FILE serves: roots, resolve, readonly (§6)
+  chudp.rs          the frame, and the link and hub (§5)
+  ncp.rs            the NCP
+  lispm.rs          the Lisp Machine character set
+  service/
+    status.rs  time.rs  file.rs  hostab.rs  name.rs
+```
 
-**`ncp`** is Chaosnet's connection layer, its TCP. It opens and closes
-connections --- RFC, OPN, CLS --- numbers and acknowledges packets, sends
-again what is lost, carries EOF, and hands each request to the service
-registered for its contact name. MIT's name for that layer is the Network
-Control Program; the Lisp Machine's own is
+**`ncp`** is Chaosnet's connection layer, the equivalent of TCP. It
+opens and closes connections (RFC, OPN, CLS), numbers and acknowledges
+packets, sends again what is lost, carries EOF, and hands each request
+to the service registered for its contact name. MIT called this layer
+the Network Control Program, and the Lisp Machine's own is
 `sys/network/chaos/chsncp.lisp`. Each service module is named after its
 contact name.
 
-A BRD for a contact no service takes is let fall, as the machine's own
-NCP lets it fall (`RECEIVE-BRD`, `chsncp.lisp:1613`, with
-`CLS-ON-ERROR-P` nil, `:1588`), not refused with a CLS: a hub meets every
-broadcast on the subnet (`tests/ncp.rs`).
+A BRD for a contact that no service takes is dropped silently rather
+than refused with a CLS. The machine's own NCP does the same
+(`RECEIVE-BRD`, `chsncp.lisp:1613`, with `CLS-ON-ERROR-P` nil, `:1588`).
+A hub sees every broadcast on the subnet, so it must not answer the ones
+it does not serve (`tests/ncp.rs`).
 
-**A connection's index** is a slot of the table in its low ten bits and
-that slot's uniquizer in the six above, and slots are taken round the
-table, as the machine's own NCP takes its 128 (`chsncp.lisp`,
-`INDEX-CONN-FREE-POINTER` and `UNIQUIZER-TABLE`): an index is not given
-out again until the table has gone round and its slot's uniquizer with
-it, so a late packet for a connection that has gone --- a CLS that
-crossed this end's own --- finds no connection rather than the next one.
-With every slot taken, an RFC is refused and a connection from this end
-is not made.
+**A connection's index** has two parts. Its low ten bits are a slot in
+the connection table, and the six bits above them are that slot's
+uniquizer, which goes up by one each time the slot is given out. Slots
+are taken in turn around the table. The machine's own NCP works the same
+way with 128 slots (`chsncp.lisp`, `INDEX-CONN-FREE-POINTER` and
+`UNIQUIZER-TABLE`). So an index is not given out again until the table
+has gone round and the slot's uniquizer has changed. A late packet for a
+connection that has closed, such as a CLS that crossed this end's own,
+then finds no connection instead of the next one. When every slot is
+taken, an RFC is refused, and a connection from this end is not made.
 
 ## 4. The loop
 
-    start   config → startup checks (§6) → bind → Ncp with its services
-            → stale temporaries removed (§6)
-    loop    now ← nanoseconds since start, from Instant
-            wait for one datagram, at most 100 ms → the link (§5)
-            while Ncp::transmit(now) gives a buffer → Link::send(buffer)
+```text
+start   config → startup checks (§6) → bind → Ncp with its services
+        → stale temporaries removed (§6)
+loop    now ← nanoseconds since start, from Instant
+        wait for one datagram, at most 100 ms → the link (§5)
+        while Ncp::transmit(now) gives a buffer → Link::send(buffer)
+```
 
-**Why it wakes when nothing arrives.** Two jobs are due even on a silent
-network: sending again a packet the other end has not acknowledged,
-every half second (`RETRANSMIT_NS`), and giving up a connection silent
-for three minutes (`HOST_DOWN_NS`). The NCP has no timer of its own;
-it does both whenever it is asked for output --- `transmit` runs
-`service_all` when its queue is empty. So the
-loop waits for a packet at most 100 ms, the socket's read timeout: a
-packet that arrives is handled at once, and if none does the loop wakes
-anyway, asks for output, and waits again. An idle daemon wakes ten times
+**Why it wakes when nothing arrives.** Two jobs are due even on a
+silent network. A packet that the other end has not acknowledged is sent
+again every half second (`RETRANSMIT_NS`), and a connection that has
+been silent for three minutes is given up (`HOST_DOWN_NS`). The NCP has
+no timer of its own. It does both jobs whenever it is asked for output:
+`transmit` runs `service_all` when its queue is empty. So the loop waits
+for a packet for at most 100 ms, which is the socket's read timeout. A
+packet that arrives is handled at once. If none arrives, the loop wakes
+anyway, asks for output and waits again. An idle daemon wakes ten times
 a second, which costs nothing measurable, and a retransmission is at
 most 100 ms late against its 500 ms interval.
 
-- **`now` is `Instant` since start, in nanoseconds.** The NCP's timeouts
-  are nanoseconds already and hold as written.
-- **The body is `Daemon::turn(now, wait)`.** `main` calls it for ever with
-  the clock; the tests call it with a clock they set, so a test of UPTIME
-  or of a retransmission is exact rather than timed.
-- **One packet in flight per connection**: the far end is a CADR
-  interface that holds one packet, and a burst would be lost into it. A file moves at the other end's acknowledgement rate.
+- **`now` is the time since start, from `Instant`, in nanoseconds.** The
+  NCP's timeouts are already in nanoseconds, so they work as written.
+- **The loop body is `Daemon::turn(now, wait)`.** `main` calls it for
+  ever with the real clock. The tests call it with a clock they set, so
+  a test of UPTIME or of a retransmission is exact rather than timed.
+- **One packet is in flight per connection.** The far end is a CADR
+  interface that holds one packet, and a burst would be lost in it. A
+  file therefore moves at the rate at which the other end acknowledges
+  packets.
 
 ## 5. The link and the hub
 
-`chudp::Link` owns the socket and the table of endpoints, and is the hub.
+`chudp::Link` owns the socket and the table of endpoints, and it is the
+hub.
 
 - **It binds what `--listen` says**: a port, an address, or an address
-  and a port. A bare port is on the
-  loopback, and no `--listen` at all is `127.0.0.1:42042` --- a fresh
-  install answers its own host and nothing else. An address without a
-  port takes 42042. `0.0.0.0`, or `::`, is every interface.
-- **Endpoints are learned**: a packet's source address --- the header's
-  --- is recorded at the UDP address the datagram came from. A host behind
-  `cbridge` is learned at `cbridge`'s endpoint, which is right: that is
-  where its packets go. A `--peer` fixes an endpoint, and a packet
-  does not move a fixed one. The table is not expired; it holds at most
-  one entry per address.
-- **Receiving**, in order; each drop is counted for STATUS and printed
-  under `--trace`:
-  1. `unwrap`, verbatim: version, function, length.
-  2. The trailer's source is this host's address, or 0: dropped, as a
-     frame claiming to be from this station.
-  3. The source is learned, unless it is fixed or is this host --- before
-     anything else, so that an answer to it can be passed on at once.
-  4. By destination:
-     - **this host**: to `Ncp::receive`.
-     - **0**, a broadcast: to `Ncp::receive`, and passed on to every
-       endpoint but the one it came from.
-     - **another host of this subnet with an endpoint**: passed on to
-       that endpoint, unless it is the one the datagram came from.
-     - **anything else** --- another subnet, or a host not yet heard
-       from: dropped.
-- **Passed on means untouched.** The datagram goes out as it came, byte
-  for byte: the cable does not change a frame, and neither does the hub
-  --- no forwarding count, no new trailer. That is what makes it a hub
-  and not a bridge, and why nothing goes to another subnet: there is no
-  routing to decide where.
-- **The trailer's check word**, on a packet for this host, is compared
-  and a mismatch traced, never dropped: what a CHUDP peer puts there is
-  unverified (`chudp.rs`, `unwrap`), and UDP carries a checksum of its
-  own --- optional over IPv4, where a sender may leave it zero.
-  `Ncp::receive` does not drop on it.
-- **Sending this host's own packets**: the NCP's buffer ends in the
-  destination; it goes out as `wrap(buffer, own address,
-  check_word(buffer + own address))` --- the 9401's CRC-16 (`packet.rs`)
-  --- to the destination's endpoint, or to every distinct
-  endpoint once for a destination of 0. A destination with no endpoint
-  is dropped and counted.
-- **A machine names this host as its CHUDP peer.** One whose CHUDP sends
-  a unicast only to a peer named for its destination also names every
-  other machine of the subnet at this host's endpoint, or its packets for
-  them never reach the hub (§9).
+  and a port. A bare port is on the loopback. Without `--listen`, it
+  binds `127.0.0.1:42042`, so a fresh install answers its own host and
+  nothing else. An address without a port uses 42042. `0.0.0.0`, or
+  `::`, means every interface.
+- **Endpoints are learned.** A packet's source address, from its
+  header, is recorded against the UDP address that the datagram came
+  from. A host behind `cbridge` is learned at `cbridge`'s endpoint,
+  which is correct, because that is where its packets go. A `--peer`
+  fixes an endpoint, and a packet does not move a fixed one. The table
+  does not expire, and it holds at most one entry per address.
+- **Receiving** works in this order. Each drop is counted for STATUS and
+  printed under `--trace`.
+  1. `unwrap` checks the version, the function and the length.
+  2. A datagram whose trailer gives this host's address, or 0, as its
+     source is dropped, since it claims to come from this station.
+  3. The source is learned, unless it is fixed or is this host. This
+     happens before anything else, so that an answer to it can be passed
+     on at once.
+  4. The destination decides the rest:
+     - **this host**: the packet goes to `Ncp::receive`.
+     - **0**, a broadcast: the packet goes to `Ncp::receive`, and it is
+       passed on to every endpoint except the one it came from.
+     - **another host of this subnet with a known endpoint**: the packet
+       is passed on to that endpoint, unless that is where it came from.
+     - **anything else**, such as another subnet or a host not yet heard
+       from: the packet is dropped.
+- **A packet passed on is not changed.** The datagram goes out byte for
+  byte as it came in. A cable does not change a frame, and neither does
+  the hub: there is no forwarding count and no new trailer. This is what
+  makes ozd a hub rather than a bridge, and it is why nothing goes to
+  another subnet: there is no routing to decide where.
+- **The trailer's check word** on a packet for this host is compared,
+  and a mismatch is traced but never dropped. What a CHUDP peer puts in
+  that word is unverified (`chudp.rs`, `unwrap`), and UDP has a checksum
+  of its own, although over IPv4 a sender may leave it zero.
+  `Ncp::receive` does not drop a packet for its check word either.
+- **Sending this host's own packets.** The NCP's buffer ends with the
+  destination. It goes out as `wrap(buffer, own address,
+  check_word(buffer + own address))`, where the check word is the 9401's
+  CRC-16 (`packet.rs`). It goes to the destination's endpoint, or once
+  to every distinct endpoint for a destination of 0. A packet for a
+  destination with no endpoint is dropped and counted.
+- **A machine names this host as its CHUDP peer.** A machine whose CHUDP
+  sends a unicast packet only to a peer named for its destination must
+  also name every other machine of the subnet at this host's endpoint.
+  Otherwise its packets for them never reach the hub (§9).
 
 ## 6. Containment
 
-`CLAUDE.md` §3, as code. FILE serves anyone who reaches the socket; what
-it may name is all the security there is.
+FILE serves anyone who can reach the socket, so what it lets a client
+name is all of its security.
 
-**At startup**, before the socket is bound; each failure is a refusal to
-start, with its reason:
+**At startup**, before the socket is bound, ozd refuses to start, and
+says why, if any of these is true:
 
 - `geteuid()` is 0.
-- A root is not an absolute path, does not canonicalise, is not a
+- A root is not an absolute path, cannot be canonicalised, is not a
   directory, or is `/`.
-- A root without `,ro` is not writable --- a probe file created in
-  it and removed.
+- A root without `,ro` is not writable. ozd checks this by creating a
+  probe file in the root and removing it.
 
-Then two things that are not refusals. The base's entries that a mount
-covers are **warned about**, by name: they exist and cannot be reached.
-And once the socket is bound, stale FILE temporaries are removed from
-each writable root: a daemon killed mid-write leaves one, and binding
-first stops a second daemon given the same endpoint before it touches a
-root. Their name comes from one constant, so the
-cleanup matches what FILE makes (`roots.rs`, `temporary_name`) and
-nothing else.
+Two more things happen that are not refusals. Entries of the base root
+that a mount covers are **warned about** by name, because they exist but
+cannot be reached. And once the socket is bound, stale FILE temporaries
+are removed from each writable root. A daemon killed in the middle of a
+write leaves one behind. Binding first means that a second daemon given
+the same endpoint stops before it touches a root. A temporary's name
+comes from one constant, so the cleanup matches only what FILE makes
+(`roots.rs`, `temporary_name`) and nothing else.
 
-**Roots.** FILE serves one tree: a **base root**, and optionally **named
-roots mounted at its top level**, each read-only or not (`,ro`).
+**Roots.** FILE serves one tree. It is made of a **base root** and,
+optionally, **named roots mounted at its top level**. Each root is
+either read-only (`,ro`) or not.
 
-    --root /srv/lispm                         # the base: homes, and the rest
-    --root tree=/path/to/system-100-0/sys,ro  # mounted at /tree, read-only
+```text
+--root /srv/lispm                         # the base: homes, and the rest
+--root tree=/path/to/system-100-0/sys,ro  # mounted at /tree, read-only
+```
 
-`/tree/...` is the second directory, read-only; everything else under
-`/` --- `/<user>/`, the home LOGIN gives a user --- is the base.
+Here `/tree/...` is the second directory, and it is read-only.
+Everything else under `/` is in the base, including `/<user>/`, the home
+that LOGIN gives a user.
 
-- **A mount covers the base.** If the base has a `tree` of its own, a
-  mount named `tree` wins, as a Unix mount point covers the directory
-  under it; the base's `tree` cannot be reached, and startup says so.
+- **A mount covers the base.** If the base has a directory named
+  `tree`, a mount named `tree` wins, just as a Unix mount point covers
+  the directory under it. The base's `tree` cannot be reached, and ozd
+  says so at startup.
 - **A listing of `/`** shows the base's entries and the mounts' names,
-  each name once. Nothing can be made at `/` under a mount's name.
-- **Names match exactly**, as every directory name does: FILE folds no
-  case in a pathname, only LOGIN's home, and a band sends its pathnames
-  in lower case (`/tree/...`, System 100's `sys/site/sys.translations`).
-  So mounts are named in lower case.
-- **With mounts and no base**, `/` itself is read-only and names only
-  the mounts. One `--root` without a name is a single root.
+  each name once. Nothing can be created at `/` under a mount's name.
+- **Names match exactly**, as directory names do. FILE folds case only in
+  LOGIN's home, never in a pathname, and a band sends its pathnames in
+  lower case (`/tree/...`, System 100's `sys/site/sys.translations`). So
+  mounts are named in lower case.
+- **With mounts and no base**, `/` itself is read-only and lists only
+  the mounts. A single `--root` without a name is a single root.
 
-**`resolve(pathname)`**:
+**`resolve(pathname)`** works in four steps:
 
-1. Split on `/` and drop empty components; a `.` or `..` is refused with
-   `ATD`, not normalised. So no path climbs out of a root, or from one
-   root into another.
-2. The first component picks a mount if it names one, and the rest is
-   under that root; otherwise the whole path is under the base.
-3. Canonicalise the deepest part that exists, following every symlink
-   on the way; the result must be that root or lie under it. A symlink
-   anywhere is followed, and one that resolves outside its own root is
-   refused with `ATD` when used. **No second tree by symlink**: a link
-   at a root's top level does not bring its target into the tree --- a
-   mount is how a directory elsewhere is served.
-4. Return the canonical existing part with the not-yet-existing rest
-   joined back on. That is what is opened, never the client's string.
+1. It splits the pathname on `/` and drops empty components. A `.` or
+   `..` component is refused with `ATD`, not normalised, so no path
+   climbs out of a root or from one root into another.
+2. If the first component names a mount, the rest of the path is under
+   that root. Otherwise the whole path is under the base.
+3. It canonicalises the deepest part that exists, following every
+   symlink on the way, and the result must be that root or lie under
+   it. A symlink anywhere is followed, and one that resolves outside its
+   own root is refused with `ATD` when it is used. **There is no second
+   tree by symlink**: a link at a root's top level does not bring its
+   target into the tree. A directory elsewhere is served by mounting it.
+4. It returns the canonical existing part, with the rest of the path,
+   which does not exist yet, joined back on. That path is what gets
+   opened, never the string the client sent.
 
 `resolve_for_writing` also refuses a root itself, and anything in a
 read-only root (below).
 
-**Why a check and then an open are safe here**: the path checked is the
-path opened, it contains no symlink when checked, and nothing else runs
-between the two --- the loop is the only thread, and this process is a
-writable root's only writer (`CLAUDE.md` §3); a read-only root is
-written by nobody. Both conditions are written down in the code where
-they are relied on.
+**Why checking and then opening is safe here.** The path that is
+checked is the path that is opened, and it contains no symlink when it
+is checked. Nothing else runs between the two, because the loop is the
+only thread and this process is the only writer of a writable root,
+while nobody writes to a read-only root at all. The operator keeps the
+second condition, as the README's Security section says. The code notes
+both conditions where it relies on them.
 
-**Opening**: `symlink_metadata` first; anything but a regular file or a
+**Opening.** FILE reads the type of what is at a path with
+`symlink_metadata` first. Anything other than a regular file or a
 directory is refused with `WKF`, "wrong kind of file", which the band
-turns into its `WRONG-KIND-OF-FILE` condition (`sys/io/file/open.lisp:260`).
-A FIFO would block the loop at `open`.
+turns into its `WRONG-KIND-OF-FILE` condition
+(`sys/io/file/open.lisp:260`). Opening a FIFO would block the loop.
 
-**A read-only root**, `,ro`: in one, OPEN for output, DELETE, RENAME,
-CREATE-DIRECTORY, CREATE-LINK and CHANGE-PROPERTIES are refused with
-`ATF`, "Access to file denied", before anything is touched. The band
-turns `ATF` into `INCORRECT-ACCESS-TO-FILE` (`io/file/open.lisp:224`),
-its ordinary condition for it. FILE has no code of its own for a refused
+**A read-only root**, marked `,ro`, refuses OPEN for output, DELETE,
+RENAME, CREATE-DIRECTORY, CREATE-LINK and CHANGE-PROPERTIES with `ATF`,
+"Access to file denied", before anything is touched. The band turns
+`ATF` into `INCORRECT-ACCESS-TO-FILE` (`io/file/open.lisp:224`), its
+usual condition for it. FILE has no error code of its own for a refused
 write (`PROTOCOLS.md`, FILE). A RENAME from one root into another is
-refused the same way: it would be a copy, not a rename.
+refused the same way, because it would be a copy rather than a rename.
 
-**Writes**: the temporary is made in the target's own directory, so the
-same resolve holds it inside its root, and it is renamed over the
-target. Two machines writing one file: the last rename wins, whole; no
-file is ever half one and half the other.
+**Writes.** The temporary is made in the target's own directory, so the
+same resolution keeps it inside its root, and at CLOSE it is renamed
+over the target. If two machines write the same file, the last rename
+wins as a whole, and no file is ever half one and half the other.
 
-**CREATE-LINK**: both ends resolved.
+**CREATE-LINK** resolves both of its ends.
 
-**Holes closed in writing `roots.rs`**, each with its test in
+**More that the tree refuses**, each with a test in
 `tests/containment.rs`:
 
-- **Roots may not overlap**; startup refuses it. A read-only mount inside
-  a writable base could otherwise be written through a link made in the
-  base, which resolves under the base.
+- **Roots may not overlap**, and startup refuses it. Otherwise a
+  read-only mount inside a writable base could be written through a
+  link made in the base, because the link resolves under the base.
 - **A temporary's name is refused in every pathname**, in any ASCII
-  case, with `ATD`: a filesystem that folds case would take `#OZD-...#`
-  for one. No client can delete one mid-write and put a link in its place,
-  and the cleanup, which matches the name exactly, touches only what this
-  daemon made.
-- **A link that does not resolve**, dangling or looping, is refused:
-  creating through a dangling link would make its target, wherever it
-  points.
-- **No roots, or a bad mount name, do not start.** The writability probe
-  is named as a temporary, so one a crash leaves is removed at the next
-  start.
+  case, with `ATD`. A filesystem that folds case would take `#OZD-...#`
+  for a temporary's name. So no client can delete a temporary mid-write
+  and put a link in its place, and the cleanup, which matches the name
+  exactly, removes only what this daemon made.
+- **A link that does not resolve**, because it dangles or loops, is
+  refused. Creating a file through a dangling link would create its
+  target, wherever that is.
+- **No roots, or a bad mount name, stop the daemon from starting.** The
+  writability probe is named like a temporary, so a probe that a crash
+  leaves behind is removed at the next start.
 
-**FILE's rules, from the same work** (§12, step 6):
+**FILE's rules**:
 
-- A link is followed to read or to write through; **DELETE and RENAME act
-  on the link itself** --- its directory resolved, its own name not
-  followed --- as Unix does. Removing a link that does
-  not resolve is how one is got rid of.
-- **DELETE on a handle**, a delete while open, deletes the file being
-  read or written, at once, as `FILE.c` does: a write's temporary, and its
-  CLOSE then puts nothing in place and is answered as ever; a read's file,
-  through the tree as a pathname's DELETE, so a read-only root refuses it
-  with `ATF`. A pathname as well, no transfer, or a listing is `BUG`, as
-  `FILE.c` has it.
-- **A DATA-CONNECTION whose connection closes before it opens** ---
-  refused by the client, or given up --- is answered `NET`, "Data
-  connection could not be established", as `FILE.c` answers it, and its
-  two handles are not kept. `NET` is `FILE.c`'s own code, in neither
-  `chfile.text`'s table nor the band's `io/file/open.lisp`: what a band
-  makes of it is **unverified**.
+- A link is followed to read or to write through it, but **DELETE and
+  RENAME act on the link itself**: its directory is resolved, and its
+  own name is not followed, as on Unix. Removing a link that does not
+  resolve is how such a link is got rid of.
+- **DELETE on a handle**, a "delete while open", deletes the file being
+  read or written at once, as `FILE.c` does. For a write, it deletes the
+  temporary, and the CLOSE then puts nothing in place and is answered as
+  usual. For a read, it deletes the file through the tree, just as a
+  DELETE with a pathname does, so a read-only root refuses it with `ATF`.
+  A DELETE with both a handle and a pathname, on a handle with no
+  transfer, or on a directory listing is refused with `BUG`, as in
+  `FILE.c`.
+- **A DATA-CONNECTION whose connection closes before it opens**, because
+  the client refused it or it was given up, is answered with `NET`,
+  "Data connection could not be established", as `FILE.c` answers it,
+  and its two handles are not kept. `NET` is `FILE.c`'s own code. It
+  appears neither in `chfile.text`'s table nor in the band's
+  `io/file/open.lisp`, so what a band makes of it is **unverified**.
 - **DIRECTORY reads each entry with `symlink_metadata`, or through
-  `resolve`, never `metadata`**, which follows links, and would give the
-  size and date of a file outside the root.
-- **A write's temporary is created once**, `create_new`, and written
-  through the handle it was made with, never reopened by name.
-- `/` itself resolves to the top, not to a path: PROBE and PROPERTIES of
-  it, and DIRECTORY, read it through `Tree::list_top`.
-- **A listing** describes a link inside its own root as what it leads
-  to, and a link the tree refuses --- out of its root, into another, or
-  leading nowhere --- by its own size and date, so that it can be seen
-  and deleted. A temporary is listed nowhere: no pathname can name one.
+  `resolve`, and never with `metadata`**, which follows links and would
+  give the size and date of a file outside the root.
+- **A write's temporary is created once**, with `create_new`, and
+  written through the handle it was made with. It is never reopened by
+  name.
+- `/` itself resolves to the top of the tree, not to a path. PROBE,
+  PROPERTIES and DIRECTORY of `/` read it through `Tree::list_top`.
+- **A listing** describes a link inside its own root as whatever it
+  leads to. It describes a link that the tree refuses, because it leads
+  out of its root, into another root or nowhere, by the link's own size
+  and date, so that the link can be seen and deleted. A temporary is
+  listed nowhere, since no pathname can name one.
 - **`/`** answers PROBE and PROPERTIES as a directory of length 0, dated
-  now; OPEN of it for reading is `FNF`, and a link to it is refused.
+  now. OPEN of `/` for reading is `FNF`, and a link to `/` is refused.
 
 ## 7. Services
 
-**Stage 1.**
+ozd serves six protocols (`PROTOCOLS.md`).
 
-- **STATUS**: the official name; one block, for this host's subnet, its
-  meters counted at the socket and shared with the service through an
-  `Arc` of atomics (`Service` is `Send`): 1, every datagram received; 2,
-  every datagram sent, this host's own and those passed on; 7, those
-  rejected for their length; 8, those rejected for anything else. 3 to
-  6 are zero and true: there is no
-  interface here to abort, lose a packet in, or fail a CRC.
-- **TIME**: universal time from the system clock, least significant
-  byte first.
-- **UPTIME**: sixtieths of a second since start, `now × 60 / 10⁹`,
-  wrapping at 32 bits, about 828 days.
-- **FILE**: `sys/doc/chfile.text`, with §6.
-
-**Stage 2.**
-
-- **HOSTAB**: each line the client sends is looked up, ignoring case,
-  among this host's names and every `--host`'s. The answer is one
-  `NAME` line per name, official first, `CHAOS` in octal, and
-  `SYSTEM-TYPE` if its flag gives one --- `--name`'s, for
-  this host --- then an EOF; or `ERROR No such host`, then an EOF. Never
-  `MACHINE-TYPE` (`PROTOCOLS.md`, HOSTAB). The
-  connection stays open for the next name until the client closes it.
-  A line longer than any name matches nothing, and no more of it than
-  that is kept.
-- **NAME**: one line, `Nobody is logged in.`, ended in the Lisp
-  Machine's newline; then an EOF, and a CLS once the EOF is receipted, as
-  the machine's own server ends (`FORMAT-AND-EOF`, `chuse.lisp:550`). A
-  band's `(finger)` asks here when given no host (`PROTOCOLS.md`, NAME).
+- **STATUS** answers with the official name and one block for this
+  host's subnet. Its meters are counted at the socket and shared with
+  the service through an `Arc` of atomics, since `Service` is `Send`.
+  Meter 1 counts every datagram received, and meter 2 every datagram
+  sent, both this host's own and those passed on. Meter 7 counts those
+  rejected for their length, and meter 8 those rejected for anything
+  else. Meters 3 to 6 are zero, and that is true: there is no interface
+  here to abort, to lose a packet in, or to fail a CRC.
+- **TIME** answers with the universal time from the system clock, least
+  significant byte first.
+- **UPTIME** answers with the sixtieths of a second since start,
+  `now × 60 / 10⁹`, which wraps at 32 bits after about 828 days.
+- **FILE** follows `sys/doc/chfile.text`, with the containment of §6.
+- **HOSTAB** looks up each line that the client sends, ignoring case,
+  among this host's names and every `--host`'s names. For a match, it
+  answers with one `NAME` line per name, the official name first, the
+  `CHAOS` address in octal, and a `SYSTEM-TYPE` line if the host's flag
+  gives one (for this host, the one on `--name`), and then an EOF. For no
+  match, it answers `ERROR No such host` and then an EOF. It never sends
+  `MACHINE-TYPE` (`PROTOCOLS.md`, HOSTAB). The connection stays open for
+  the next name until the client closes it. A line longer than any name
+  matches nothing, and no more of it than that is kept.
+- **NAME** answers with one line, `Nobody is logged in.`, ended with the
+  Lisp Machine's newline. It then sends an EOF, and a CLS once the EOF
+  is acknowledged, which is how the machine's own server ends
+  (`FORMAT-AND-EOF`, `chuse.lisp:550`). A band's `(finger)` asks here
+  when it is given no host (`PROTOCOLS.md`, NAME).
 
 ## 8. The flags, and the file of them
 
-Everything is a flag, and a file of flags gives the defaults. Addresses
-are octal, or `subnet:host`. A value is one word, its parts separated by
-commas (`--root /srv/lispm,ro`). As a file of them:
+Every setting is a flag, and a file of flags can give the defaults.
+Addresses are written in octal, or as `subnet:host`. A value is one
+word, with its parts separated by commas (`--root /srv/lispm,ro`). As a
+file of flags:
 
-    # this host's Chaos address; required
-    --address 3060
-    # its names, the official first, and its own system type; required
-    --name MIT-OZ,OZ,system=UNIX
-    # where it listens; see §5
-    --listen 192.0.2.10
-    # the base root, and a root mounted at /tree, read-only
-    --root /srv/lispm
-    --root tree=/path/to/system-100-0/sys,ro
-    # the site's host table, for HOSTAB
-    --host 3050,MIT-LISPM-1,LM1,system=LISPM
-    # an endpoint that is fixed; the rest are learned
-    --peer 3040@192.0.2.5
+```text
+# this host's Chaos address; required
+--address 3060
+# its names, the official first, and its own system type; required
+--name MIT-OZ,OZ,system=UNIX
+# where it listens; see §5
+--listen 192.0.2.10
+# the base root, and a root mounted at /tree, read-only
+--root /srv/lispm
+--root tree=/path/to/system-100-0/sys,ro
+# the site's host table, for HOSTAB
+--host 3050,MIT-LISPM-1,LM1,system=LISPM
+# an endpoint that is fixed; the rest are learned
+--peer 3040@192.0.2.5
+```
 
-`--address` and `--name` are required, and given once, as `--listen` is
-if at all; `--root`, `--host` and `--peer` may each be given again. A
-`--root` whose value begins with `/` is the base; any other is
-`<name>=<path>`, mounted at `/<name>`; `,ro` makes either read-only.
-`--peer` is `<address>@<ip>[:<port>]`, the port 42042 unless given. A comma cannot be in a path.
+`--address` and `--name` are required, and each may be given only once,
+as may `--listen`. `--root`, `--host` and `--peer` may each be given
+more than once. A `--root` whose value begins with `/` is the base. Any
+other `--root` is `<name>=<path>`, mounted at `/<name>`. `,ro` makes
+either kind read-only. `--peer` is `<address>@<ip>[:<port>]`, with port
+42042 unless one is given. A path cannot contain a comma.
 
-The host table and the endpoints are separate: a `--host` is what HOSTAB
-says, a `--peer` where packets go. A machine needs neither to be served;
-it needs a `--host` to be found by name.
+The host table and the endpoints are separate. A `--host` is what HOSTAB
+tells, and a `--peer` is where packets go. A machine needs neither to be
+served, but it needs a `--host` to be found by name.
 
-**The file of flags, `.ozdrc`**: `-c|--config <file>` names one, which
-must be there; else `OZD_RC` names one; else
-`.ozdrc` in the directory ozd is run from; else `.ozdrc` in
-the home directory --- the first of those there, not all of them. A line
-is a flag and, after a space, the rest of the line is its value; a blank
-line, or one beginning with `#`, is a comment. A flag the command line
-gives leaves that flag's lines out of the file: the command line has the
-last word. A file cannot name another.
+**The file of flags, `.ozdrc`.** `-c|--config <file>` names the file,
+which must then exist. Without it, ozd uses the file that `OZD_RC`
+names, then `.ozdrc` in the directory it is run from, then `.ozdrc` in
+the home directory. It reads only the first of these that exists. Each
+line is a flag, and after a space, the rest of the line is its value. A
+blank line, or a line that begins with `#`, is a comment. A flag given
+on the command line leaves that flag's lines in the file unread, so the
+command line has the last word. A file cannot name another file.
 
 `#` begins a comment only at the start of a line, so a path in a file
-may hold a blank or a `#`. The file is read first and the command line
-after it. `--trace` may be in a file; `--check`, `--help` and `--config`
-may not: each is what one run is asked to do, and in a file every run
-would do it --- a service would exit at once, cleanly, and never serve.
-A flag's value is the next word unless that word is one of ozd's
-flags, so `--address --name OZ` is `--address` without its value. `-c`
-given twice is refused, and so is a file that is there but cannot be
-read.
+may contain a blank or a `#`. The file is read first and the command
+line after it. `--trace` may be in a file, but `--check`, `--help` and
+`--config` may not. Each of those is something one run is asked to do,
+and in a file every run would do it: a service would then exit at once,
+cleanly, and never serve. A flag's value is the next word, unless that
+word is one of ozd's flags, so `--address --name OZ` is `--address`
+without a value. `-c` given twice is refused, and so is a file that
+exists but cannot be read.
 
-**What is refused, and how.** What is not flags --- an unknown flag, a
-word that is none, a flag without its value, `-c` naming a file that is
-not there, a file's line that is not a flag --- is a usage error, with
-the usage, and exits 2. A value refused names its flag and value, and
-its file and line when it came from one, and exits 1.
+**How a refusal is reported.** Input that is not made of flags is a
+usage error: an unknown flag, a word that is not a flag, a flag without
+its value, `-c` naming a file that does not exist, or a line of the file
+that is not a flag. ozd prints the usage and exits with 2. A refused
+value is reported with its flag and value, and with its file and line
+if it came from a file, and ozd exits with 1.
 
-**Checked at load**, the first failure reported with its flag, and with
-its file and line when it came from one (`src/config.rs`):
+**Checked at load.** The first failure is reported with its flag, and
+with its file and line if it came from a file (`src/config.rs`):
 
-- **Addresses**: each valid by `parse_address`, which refuses a zero
-  half. This host's may not be a `--host`'s or a `--peer`'s, and no
-  address comes twice among the `--host`s or among the `--peer`s. A
-  `--host` and a `--peer` may share one: they answer different questions
-  about one host, which is how `cbridge` gets a name and a fixed
-  endpoint.
-- **Names**: each once across `--name` and every `--host`, ignoring case,
-  as HOSTAB looks them up. A name, a system type and a mount's name are
-  printable ASCII: HOSTAB and FILE send a character as one byte, and
-  U+008D would be the band's newline in an answer.
-- **System types**: `system=` on a `--host`, and on `--name` for this
-  host's own; once a flag, with a value, in upper case. The band interns
-  the value as it comes, and a type it has no flavor for gives the host
-  its default flavor (`sys/network/host.lisp:279`), so `lispm` would
-  quietly name the wrong one. System 100's own table gives `MIT-OZ` as
-  `UNIX` (`sys/site/hosts.text:4`).
-- **Roots**: at least one, at most one base, no mount's name twice, and a
-  mount's name one lower-case directory name, since a band asks in lower
-  case and names match exactly (§6); paths absolute.
-- **Endpoints**: IP literals, as `--listen` takes them; no names to
-  resolve at startup.
+- **Addresses** must be valid for `parse_address`, which refuses a zero
+  half. This host's address may not be a `--host`'s or a `--peer`'s, and
+  no address may appear twice among the `--host`s or among the
+  `--peer`s. A `--host` and a `--peer` may share an address, because
+  they answer different questions about one host. That is how `cbridge`
+  gets a name and a fixed endpoint.
+- **Names** may appear only once across `--name` and all `--host`s,
+  ignoring case, because HOSTAB looks them up that way. A name, a system
+  type and a mount's name must be printable ASCII. HOSTAB and FILE send
+  a character as one byte, and U+008D would be the band's newline in an
+  answer.
+- **System types** are given as `system=` on a `--host`, and on `--name`
+  for this host's own type. Each flag may have one, with a value, in
+  upper case. The band interns the value as it comes, and a type it has
+  no flavor for gives the host its default flavor
+  (`sys/network/host.lisp:279`), so `lispm` would quietly name the wrong
+  one. System 100's own table gives `MIT-OZ` as `UNIX`
+  (`sys/site/hosts.text:4`).
+- **Roots**: there must be at least one root, at most one base, and no
+  mount name twice. A mount's name must be one lower-case directory
+  name, because a band asks in lower case and names match exactly (§6).
+  Paths must be absolute.
+- **Endpoints** must be IP literals, as `--listen` takes them, so there
+  are no names to resolve at startup.
 
-**No example files ship.** The flags are few, and the README configures
+ozd ships no example files. The flags are few, and the README configures
 a System 100 site with them on one command line.
 
 ## 9. A site of several machines
 
-- **Each machine an address.** A band knows the machines in its own host
-  table, and System 100's names one Lisp Machine, `MIT-LISPM-1` at 3050.
-  A second emulator at another address still boots: a band whose address
-  is not in its table makes itself an unnamed Lisp Machine
-  (`SETUP-MY-ADDRESS`, `chsncp.lisp:776`), and `CHECK-THIS-SITE-INTEGRITY`
-  says to fix the site files (`network/host.lisp:483`). Its own name is
-  the band's business, in `SYS: SITE;`. What this host adds is HOSTAB:
-  a `--host` here and every band that asks can find that machine by
-  name. That System 100's table knows `OZ`, the name its site option
-  gives, as 3060 is not verified here; the first HOSTAB test against a
-  band shows it.
-- **Every machine names this host as its CHUDP peer, and reaches the
-  others through it** (§5). A machine whose CHUDP sends a unicast only to
-  a peer named for its destination also names every other machine's
-  address at this host's endpoint --- the same endpoint every time.
-- **On one host**, ports: ozd takes 42042, and each machine one of its
-  own, the first 42043, the next 42044, and so on (the README).
-- **On several hosts**, `--listen` an address on the segment, or
-  `0.0.0.0`, and each machine names it as its peer.
-- **The Global Chaosnet** is not reached through the hub, which passes
-  nothing to another subnet. A machine that wants it has `cbridge` as a
-  peer of its own for those addresses.
+- **Each machine has an address.** A band knows the machines in its own
+  host table, and System 100's table names one Lisp Machine,
+  `MIT-LISPM-1` at 3050. A second emulator at another address still
+  boots. A band whose address is not in its table makes itself an
+  unnamed Lisp Machine (`SETUP-MY-ADDRESS`, `chsncp.lisp:776`), and
+  `CHECK-THIS-SITE-INTEGRITY` says to fix the site files
+  (`network/host.lisp:483`). The machine's own name is set in the band,
+  in `SYS: SITE;`. What ozd adds is HOSTAB: with a `--host` here, every
+  band that asks can find that machine by name. It is unverified that
+  System 100's band knows `OZ`, the name its site option gives, as 3060.
+  The first HOSTAB test against a band will show it.
+- **Every machine names this host as its CHUDP peer and reaches the
+  others through it** (§5). A machine whose CHUDP sends a unicast packet
+  only to a peer named for its destination also names every other
+  machine's address at this host's endpoint, which is the same endpoint
+  each time.
+- **On one host**, each program needs its own port. ozd takes 42042,
+  and the machines take 42043, 42044 and so on (see the README).
+- **On several hosts**, give `--listen` an address on the segment, or
+  `0.0.0.0`, and have each machine name that address as its peer.
+- **The Global Chaosnet** cannot be reached through the hub, which
+  passes nothing to another subnet. A machine that wants it has
+  `cbridge` as a peer of its own for those addresses.
 
 ## 10. Logging and running
 
-- **stderr**, one line an event, with a UTC timestamp made by `civil`
-  (`log.rs`): startup, its checks and its
-  warnings; each connection opened, refused and closed, with the host
-  and contact; every FILE operation that changes a root --- write,
-  rename, delete, create-directory, create-link --- with its pathname;
-  errors.
-- **`--trace`**: every packet, every packet passed on, and every drop.
-- **`--check`**: read the flags and the file of them, run the startup
-  checks, exit. For an
-  administrator, and for the tests.
-- **systemd**, `contrib/ozd.service`: `User=ozd`, `Restart=on-failure`,
-  and hardening that costs nothing here --- `NoNewPrivileges=yes`,
-  `ProtectSystem=strict`, `ReadWritePaths=` each writable root,
-  `ProtectHome=yes`, `PrivateTmp=yes`.
-- **launchd**, `contrib/com.metebalci.ozd.plist`: `UserName`,
-  `ProgramArguments`, `KeepAlive`, `StandardErrorPath`.
-- **Shutdown** is `SIGTERM`'s default. The only state is the roots, and
-  an interrupted write's temporary is removed at the next start.
+- **stderr** gets one line per event, stamped in UTC by `civil`
+  (`log.rs`). The events are: startup, its checks and its warnings; each
+  connection opened, refused and closed, with the host and the contact;
+  every FILE operation that changes a root (write, rename, delete,
+  create-directory, create-link and change-properties), with its
+  pathname; and errors.
+- **`--trace`** prints every packet, every packet passed on, and every
+  drop.
+- **`--check`** reads the flags and the file of flags, runs the startup
+  checks and exits. It is for administrators and for the tests.
+- **systemd**: `contrib/ozd.service` sets `User=ozd` and
+  `Restart=on-failure`, and it adds hardening that costs nothing here:
+  `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ReadWritePaths=` for
+  each writable root, `ProtectHome=yes` and `PrivateTmp=yes`.
+- **launchd**: `contrib/com.metebalci.ozd.plist` sets `UserName`,
+  `ProgramArguments`, `KeepAlive` and `StandardErrorPath`.
+- **Shutdown** is the default action of `SIGTERM`. The only state is the
+  roots, and the temporary of an interrupted write is removed at the
+  next start.
 
 ## 11. Tests
 
-`cargo test`, std only: loopback sockets, and temporary directories
-that a test removes when done, or that the harness keeps under Cargo's
-`CARGO_TARGET_TMPDIR`, inside `target/`, so that a run leaves nothing
-behind outside it.
+`cargo test` needs only the standard library. The tests use loopback
+sockets and temporary directories. A test removes its directories when
+it is done, or the harness keeps them under Cargo's
+`CARGO_TARGET_TMPDIR`, inside `target/`, so a run leaves nothing behind
+outside it.
 
-**The harness**, `tests/support/`: a daemon built from a config in a
-temporary directory, and **test hosts** --- each an `Ncp` at its own
-address on its own loopback socket, with scripted sessions. The NCP is
-symmetric, and `Ncp::connect` opens a connection from
-a test host's side. All are turned by the test with one clock it sets.
+**The harness**, `tests/support/`, builds a daemon from a configuration
+in a temporary directory, and it provides **test hosts**. Each test host
+is an `Ncp` at its own address, on its own loopback socket, with
+scripted sessions. The NCP is symmetric, so `Ncp::connect` opens a
+connection from a test host's side. The test turns all of them with one
+clock that it sets.
 
-**The tests**, in the order they are written (`CLAUDE.md` §10):
+**The tests** cover:
 
-1. **The frame**: one whole packet's bytes, and the check word, pinned
-   (`tests/frame.rs`). The byte order is unverified (§5); the first run
-   against another implementation, `cbridge` or `klh10`, settles it, and
-   a correction is a change to two constants and to those tests.
-2. **The flags**: each flag; each form of `--listen`; the file of them,
-   its comments, the command line winning, the search order; each refusal,
-   with its line.
-3. **The link and the hub**: an unknown host's endpoint learned and
-   answered; a fixed endpoint not moved by a packet; this host's own
-   address as the source dropped; a packet from one test host to another
-   reaching it byte for byte; a broadcast reaching every test host but
-   its sender, and answered here; a packet for another subnet, or for a
-   host not yet heard from, reaching nobody; nothing sent back to the
-   endpoint it came from.
-4. **STATUS** over loopback, its meters counting what the test sent.
-5. **TIME** within a second of the system clock; **UPTIME** 600 at ten
-   seconds of the test's clock.
-6. **Containment**, the table of `CLAUDE.md` §10.4, written before
-   FILE; with it, a symlink inside a root followed, one
-   pointing out of it refused, a mount reached by its name and not by
-   `..`, a mount covering a base directory of its name and startup
-   warning of it, every write in a read-only root refused with `ATF` and
-   nothing on disk changed.
-7. **FILE**: the scripted client, then two at once.
+1. **The frame.** One whole packet's bytes and the check word are
+   pinned (`tests/frame.rs`). The byte order is unverified (§5). The
+   first run against another implementation, `cbridge` or `klh10`, will
+   settle it, and a correction will change two constants and those
+   tests.
+2. **The flags**: each flag, each form of `--listen`, the file of flags
+   with its comments, the command line winning over the file, the search
+   order, and each refusal with its line.
+3. **The link and the hub.** An unknown host's endpoint is learned and
+   answered. A fixed endpoint is not moved by a packet. A datagram with
+   this host's own address as its source is dropped. A packet from one
+   test host to another reaches it byte for byte. A broadcast reaches
+   every test host except its sender, and it is answered here. A packet
+   for another subnet, or for a host not yet heard from, reaches nobody.
+   Nothing is sent back to the endpoint that a packet came from.
+4. **STATUS** over loopback, with its meters counting what the test
+   sent.
+5. **TIME** within a second of the system clock, and **UPTIME** at 600
+   after ten seconds of the test's clock.
+6. **Containment.** A table of pathnames that a client can send, none of
+   which may reach or touch anything outside the tree: `..` at every
+   depth, a host's absolute path such as `/etc/passwd` (which lands
+   under the root), a symlink under a root that points outside it, a
+   symlink that the client makes with CREATE-LINK, a symlink swapped in
+   between two commands, a write whose temporary or rename target would
+   be outside, and a FIFO. Alongside them, a symlink inside a root is
+   followed, a mount is reached by its name and not by `..`, a mount
+   covers a base directory of its name and startup warns of it, and every
+   write in a read-only root is refused with `ATF`, with nothing on disk
+   changed.
+7. **FILE**, with a scripted client, and with two clients at once.
 8. **HOSTAB** and **NAME**, each with a scripted client taken from the
    machine's own user end.
 
-**The acceptance test** is by hand, and written in the README: two
-machines run against ozd, configured for System 100 as the README has
-it, boot, know the date, read their sources from the read-only mount and write in the base,
-print the right `(uptime)`; `(hostat)` on each shows ozd and the
-other.
-
-## 12. Order of work
-
-1. **Scaffold** --- `git init`, `Cargo.toml`, the pins, the licence, the
-   lints → verify: `cargo build`, `cargo clippy --all-targets -- -D
-   warnings` and `cargo test` pass on an empty crate.
-2. **Address, packet, frame**, with their tests → verify: the pinned
-   bytes.
-3. **Config** → verify: its tests.
-4. **Link, hub, NCP, loop, STATUS** → verify: the link's and STATUS's
-   tests; then by hand, `(hostat)` on a band run with ozd as its
-   CHUDP peer, which is the first interoperation of this CHUDP with
-   anything but itself.
-5. **TIME, UPTIME** → verify: their tests; then a band that boots knowing
-   the date.
-6. **Containment tests**, failing → **FILE**, as §6 says → verify:
-   containment, the scripted client and two clients pass; then a band
-   reads and writes its files.
-7. **The daemon's edges**: startup checks and warnings, logging,
-   `--check`, the units → verify: a test for each refusal; the README's
-   acceptance steps, by hand.
-8. **HOSTAB**, then **NAME**, each test first.
+**The acceptance test** is done by hand. ozd runs with the System 100
+site that the README configures, its `tree` mount pointing at the
+release's `sys` directory and its base root at an empty directory that
+it can write. Two machines run next to it, each with a pack of its own,
+and each names the other at ozd's endpoint (§9). Each machine should
+boot, know the date, read its sources from the read-only mount, write in
+the base, and print the right `(uptime)`, and `(hostat)` on each should
+show ozd and the other machine. The second machine boots without a name,
+because System 100's host table lists only 3050 (§9).
