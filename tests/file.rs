@@ -633,6 +633,109 @@ fn the_file_service_writes_files() {
     assert_eq!(r, "TC O0001 ERROR FNF C File not found");
 }
 
+/// **A file being read is deleted while open**: DELETE on its handle and
+/// no pathname, `chfile.text`'s "delete while open", which the band's
+/// `:DELETE` sends on any open stream. The file is removed at once, as
+/// `FILE.c`'s `delete` removes it, through the tree as a pathname's DELETE
+/// is, and the change is reported; the read goes on to its CLOSE, answered
+/// as ever, with its mark.
+#[test]
+fn a_file_being_read_is_deleted_while_open() {
+    let s = Scratch::new("delete-reading");
+    let root = s.dir("base");
+    std::fs::write(root.join("going.text"), "soon gone\n").unwrap();
+    let (mut n, _, log) = serve_logged(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let r = n.command(c, 30, &format!("T3 I0001 OPEN READ CHARACTER{nl}/going.text{nl}"));
+    assert!(r.starts_with("T3 I0001 OPEN "), "{r:?}");
+    assert_eq!(n.command(c, 40, "T4 I0001 DELETE"), "T4 I0001 DELETE");
+    assert!(!root.join("going.text").exists(), "gone at once");
+    n.down(c);
+    let r = n.command(c, 50, "T5 I0001 CLOSE");
+    assert!(r.starts_with("T5 I0001 CLOSE "), "and the read closes as ever: {r:?}");
+    assert_eq!(opcodes(&n.down(c)), [file::SYNC_MARK_OP], "with its mark");
+    let log = log.lock().unwrap();
+    assert!(log.iter().any(|l| l.ends_with(" delete /going.text")), "{log:?}");
+}
+
+/// **A write deleted while open closes with nothing put in place**: the
+/// band's `:REAL-CLOSE`, aborting, sends DELETE on the handle and then its
+/// CLOSE, with the synchronous mark (`sys/network/chaos/qfile.lisp`). The
+/// DELETE takes the temporary away at once; the CLOSE is answered as ever,
+/// as `FILE.c`'s `xclose` answers one after a delete while open, and puts
+/// nothing in place --- over a file that is there, or where none was.
+#[test]
+fn a_write_deleted_while_open_closes_with_nothing_in_place() {
+    let s = Scratch::new("delete-writing");
+    let root = s.dir("base");
+    std::fs::write(root.join("kept.lisp"), "as it was\n").unwrap();
+    let mut n = serve(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let mut now = 30;
+    for (target, before) in [("/kept.lisp", Some("as it was\n")), ("/new.lisp", None)] {
+        let open = format!("T3 O0001 OPEN WRITE CHARACTER IF-EXISTS SUPERSEDE{nl}{target}{nl}");
+        let r = n.command(c, now, &open);
+        assert!(r.starts_with("T3 O0001 OPEN "), "{r:?}");
+        n.send_data(c, now + 1, file::CHARACTER_OP, b"half a file");
+        assert_eq!(n.command(c, now + 2, "T4 O0001 DELETE"), "T4 O0001 DELETE");
+        assert!(temporaries(&root).is_empty(), "the temporary gone at once");
+        n.queue_data(c, file::SYNC_MARK_OP, &[]);
+        let r = n.command(c, now + 3, "T5 O0001 CLOSE");
+        assert!(r.starts_with("T5 O0001 CLOSE "), "answered as ever: {r:?}");
+        let path = root.join(&target[1..]);
+        let there = std::fs::read_to_string(&path).ok();
+        assert_eq!(there.as_deref(), before, "nothing put in place at {target}");
+        now += 10;
+    }
+}
+
+/// **A delete while open in a read-only root is refused**, `ATF`, before
+/// anything is touched, as a pathname's DELETE there is: the file stays,
+/// and the read goes on to its CLOSE.
+#[test]
+fn a_delete_while_open_in_a_read_only_root_is_refused() {
+    let s = Scratch::new("delete-read-only");
+    let root = s.dir("base");
+    let sys = s.dir("sys");
+    std::fs::write(sys.join("file.lisp"), "(stays)\n").unwrap();
+    let mut n = serve(vec![base(&root), readonly(mount("sys", &sys))]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let mut now = 30;
+    let r = n.command(c, now, &format!("T3 I0001 OPEN READ CHARACTER{nl}/sys/file.lisp{nl}"));
+    assert!(r.starts_with("T3 I0001 OPEN "), "{r:?}");
+    refused(&mut n, c, &mut now, &s.dir, "ATF", "I0001 DELETE");
+    let r = n.command(c, now + 1, "T5 I0001 CLOSE");
+    assert!(r.starts_with("T5 I0001 CLOSE "), "the read goes on: {r:?}");
+}
+
+/// **A DELETE on a handle is refused where `FILE.c` refuses it**, each a
+/// `BUG` that touches nothing: on a handle with no transfer, with a
+/// pathname as well as the handle, and on a handle listing a directory.
+#[test]
+fn a_delete_on_a_handle_is_refused_where_file_c_refuses_it() {
+    let s = Scratch::new("delete-refused");
+    let root = s.dir("base");
+    std::fs::write(root.join("a.text"), "a\n").unwrap();
+    let mut n = serve(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let mut now = 30;
+    refused(&mut n, c, &mut now, &s.dir, "BUG", "I0001 DELETE");
+    now += 1;
+    let r = n.command(c, now, &format!("T3 I0001 OPEN READ CHARACTER{nl}/a.text{nl}"));
+    assert!(r.starts_with("T3 I0001 OPEN "), "{r:?}");
+    refused(&mut n, c, &mut now, &s.dir, "BUG", &format!("I0001 DELETE{nl}/a.text{nl}"));
+    now += 1;
+    n.command(c, now, "T4 I0001 CLOSE");
+    now += 1;
+    let r = n.command(c, now, &format!("T5 I0001 DIRECTORY{nl}/*{nl}"));
+    assert!(r.starts_with("T5 I0001 DIRECTORY"), "{r:?}");
+    refused(&mut n, c, &mut now, &s.dir, "BUG", "I0001 DELETE");
+}
+
 /// **The commands that change a directory**, each answered by name:
 /// delete, rename, create a directory, create a link, change properties,
 /// expunge, complete, and properties down a data connection. Each change to

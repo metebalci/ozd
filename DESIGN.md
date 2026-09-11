@@ -283,6 +283,12 @@ file is ever half one and half the other.
   on the link itself** --- its directory resolved, its own name not
   followed --- as Unix does. Removing a link that does
   not resolve is how one is got rid of.
+- **DELETE on a handle**, a delete while open, deletes the file being
+  read or written, at once, as `FILE.c` does: a write's temporary, and its
+  CLOSE then puts nothing in place and is answered as ever; a read's file,
+  through the tree as a pathname's DELETE, so a read-only root refuses it
+  with `ATF`. A pathname as well, no transfer, or a listing is `BUG`, as
+  `FILE.c` has it.
 - **DIRECTORY reads each entry with `symlink_metadata`, or through
   `resolve`, never `metadata`**, which follows links, and would give the
   size and date of a file outside the root.

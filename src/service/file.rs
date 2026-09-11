@@ -315,6 +315,9 @@ enum Transfer {
         /// The transaction id of a `CLOSE` that came before the mark and
         /// is waiting for it.
         closing: Option<String>,
+        /// Deleted while open: the temporary is gone, and the `CLOSE`
+        /// puts nothing in place (`Control::delete_while_open`).
+        deleted: bool,
     },
 }
 
@@ -830,23 +833,29 @@ impl Control {
                 let _ = std::fs::remove_file(&temp);
                 self.error(tid, handle, "NMR", 'F', &why);
             }
-            Transfer::Write { file, temp, real, pathname, truename, .. } => {
+            Transfer::Write { file, temp, real, pathname, truename, deleted, .. } => {
                 // What was written, measured through the handle it was
                 // written through.
                 let written = file.metadata();
                 drop(file);
-                // The rename is by the paths the OPEN resolved. Should a
-                // later command have swapped a directory on the way for a
-                // link, the temporary's path moved with it --- the two
-                // share every directory --- and where the link leads there
-                // is no temporary, which no client can name or make: the
-                // rename fails, and nothing is put there (see
+                // Deleted while open, its temporary is gone already and
+                // nothing is put in place; the CLOSE is answered as ever,
+                // as `FILE.c`'s `xclose` answers one.
+                //
+                // Otherwise the rename is by the paths the OPEN resolved.
+                // Should a later command have swapped a directory on the
+                // way for a link, the temporary's path moved with it ---
+                // the two share every directory --- and where the link
+                // leads there is no temporary, which no client can name or
+                // make: the rename fails, and nothing is put there (see
                 // `roots::temporary_name`).
-                if let Err(e) = std::fs::rename(&temp, &real) {
-                    let _ = std::fs::remove_file(&temp);
-                    return self.error(tid, handle, "MSC", 'F', &e.to_string());
+                if !deleted {
+                    if let Err(e) = std::fs::rename(&temp, &real) {
+                        let _ = std::fs::remove_file(&temp);
+                        return self.error(tid, handle, "MSC", 'F', &e.to_string());
+                    }
+                    self.changed(&format!("write {pathname}"));
                 }
-                self.changed(&format!("write {pathname}"));
                 let (length, when) = match written {
                     Ok(m) => (m.len(), date(&m)),
                     Err(_) => (0, now_date(self.time)),
@@ -860,19 +869,17 @@ impl Control {
     }
 
     /// Answers a `CLOSE` that was still waiting for its synchronous mark
-    /// when the write it was waiting on was taken away --- an
-    /// `UNDATA-CONNECTION` or a `DELETE` on the same handle. `CNO`,
-    /// "CLOSE on non-open channel", is `chfile.text`'s code for it: by
-    /// the time the CLOSE could be answered there was no longer a
-    /// channel to close.
+    /// when the write it was waiting on was taken away by an
+    /// `UNDATA-CONNECTION`. `CNO`, "CLOSE on non-open channel", is
+    /// `chfile.text`'s code for it: by the time the CLOSE could be answered
+    /// there was no longer a channel to close. A `DELETE` on the handle
+    /// takes nothing away: the write stays, deleted, for its `CLOSE`.
     ///
     /// The band never gets here. Its `:REAL-CLOSE` waits for the CLOSE's
-    /// reply before it frees the data connection, its abort route sends
-    /// the DELETE first --- when the CLOSE that follows finds no
-    /// transfer at all --- and it only undoes a data connection that has
-    /// gone dormant. This is so that a client which does it the other
-    /// way round is told, rather than left waiting for a reply that
-    /// would never come.
+    /// reply before it frees the data connection, and it only undoes a data
+    /// connection that has gone dormant. This is so that a client which
+    /// does it the other way round is told, rather than left waiting for a
+    /// reply that would never come.
     fn stranded(&mut self, handle: &str, closing: Option<String>) {
         if let Some(tid) = closing {
             self.error(&tid, handle, "CNO", 'C', "The transfer was abandoned before its mark");
@@ -1003,6 +1010,7 @@ impl Control {
                 stalled: None,
                 marked: false,
                 closing: None,
+                deleted: false,
             },
         );
     }
@@ -1129,21 +1137,66 @@ impl Control {
         }
     }
 
-    /// `DELETE`: on a handle in the middle of a write it abandons the
-    /// temporary and leaves the real file alone, which is what the
-    /// client's `:REAL-CLOSE` does when it aborts; with a pathname and no
-    /// handle it removes what the pathname names, and **a link itself,
-    /// never what it leads to**: the pathname is resolved as an entry, its
-    /// directory followed and its own name not (`DESIGN.md` §6, "FILE's
-    /// rules"). So a link that leads nowhere is removed like any other.
+    /// `DELETE`: on a handle, the file being read or written on it
+    /// (`Control::delete_while_open`); with a pathname and no handle, what
+    /// the pathname names (`Control::delete_entry`).
     fn delete(&mut self, tid: &str, handle: &str, pathname: &str) {
-        if !handle.is_empty()
-            && let Some(Transfer::Write { temp, closing, .. }) = self.transfers.remove(handle)
-        {
-            let _ = std::fs::remove_file(&temp);
-            self.stranded(handle, closing);
-            return self.reply(tid, handle, "DELETE", "");
+        if handle.is_empty() {
+            self.delete_entry(tid, handle, pathname)
+        } else {
+            self.delete_while_open(tid, handle, pathname)
         }
+    }
+
+    /// `DELETE` on a handle, a "delete while open": the file being read
+    /// or written on the handle "will be deleted after we close it
+    /// (regardless of direction)" (`sys/doc/chfile.text`, DELETE). As
+    /// `FILE.c`'s `delete` does it, at once: a write's temporary, and the
+    /// `CLOSE` then puts nothing in place and is answered as ever; a read's
+    /// file, removed as a pathname's `DELETE` removes it --- through the
+    /// tree, so a read-only root refuses it, `ATF`, and the change is
+    /// reported --- while the read goes on to its `CLOSE`. The band's
+    /// `:REAL-CLOSE` sends one when it aborts a write, and then the
+    /// `CLOSE`; its `:DELETE` sends one on any open stream.
+    ///
+    /// Refused, each a `BUG`, where `FILE.c` refuses it: with a pathname as
+    /// well as the handle, on a handle with no transfer, and on a listing.
+    fn delete_while_open(&mut self, tid: &str, handle: &str, pathname: &str) {
+        if !pathname.is_empty() {
+            return self.error(
+                tid,
+                handle,
+                "BUG",
+                'C',
+                "Both a file handle and filename in DELETE",
+            );
+        }
+        let what = match self.transfers.get(handle) {
+            None => Err("No transfer when DELETE on file handle"),
+            Some(Transfer::Directory) => Err("Trying to DELETE a directory list transfer"),
+            Some(Transfer::Read { truename, .. }) => Ok(Some(truename.clone())),
+            Some(Transfer::Write { .. }) => Ok(None),
+        };
+        match what {
+            Err(why) => self.error(tid, handle, "BUG", 'C', why),
+            Ok(Some(read)) => self.delete_entry(tid, handle, &read),
+            Ok(None) => {
+                if let Some(Transfer::Write { temp, deleted, .. }) = self.transfers.get_mut(handle)
+                    && !*deleted
+                {
+                    let _ = std::fs::remove_file(&*temp);
+                    *deleted = true;
+                }
+                self.reply(tid, handle, "DELETE", "")
+            }
+        }
+    }
+
+    /// `DELETE` of what a pathname names, and **a link itself, never what
+    /// it leads to**: the pathname is resolved as an entry, its directory
+    /// followed and its own name not (`DESIGN.md` §6, "FILE's rules"). So a
+    /// link that leads nowhere is removed like any other.
+    fn delete_entry(&mut self, tid: &str, handle: &str, pathname: &str) {
         let path = match self.tree.resolve_entry_for_writing(pathname) {
             Ok(entry) => entry.path(),
             Err((code, msg)) => return self.error(tid, handle, code, 'C', &msg),
