@@ -10,11 +10,11 @@ time and their host table, and passing packets between them. Several
 machines share it, each naming it as its CHUDP peer --- as MIT's did,
 one associated machine for many Lisp Machines.
 
-**Under construction.** STATUS, TIME, UPTIME, FILE, HOSTAB and NAME
-are served, and the hub passes packets between the machines; none of it
-has yet met a real band, which is what the acceptance test below is
-for. The design is `DESIGN.md`, and every protocol a Lisp Machine
-speaks is recorded in `PROTOCOLS.md`, with where each fact was read.
+STATUS, TIME, UPTIME, FILE, HOSTAB and NAME are served, and the hub
+passes packets between the machines. None of it has yet met a real
+band; the acceptance test below is for that. The design is `DESIGN.md`,
+and every protocol a Lisp Machine speaks is recorded in `PROTOCOLS.md`,
+with where each fact was read.
 
 ## Build
 
