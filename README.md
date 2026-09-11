@@ -159,7 +159,23 @@ ordinary UDP port.
 user of its own, which owns the writable roots and nothing else, as the
 Security section asks. Neither has been tried on its system yet.
 
-On Linux with systemd, create the user, give it the base root, and
+On Linux with systemd, `contrib/install-systemd.sh` does the whole
+installation. Build ozd first, and then run the script as root from this
+directory, with your file of flags:
+
+```sh
+sudo contrib/install-systemd.sh ozdrc
+```
+
+The script reads the roots from the file of flags. It creates the `ozd`
+user, creates the writable roots and gives them to that user, and
+installs the binary, the file of flags and the unit. It also writes a
+drop-in that lets the unit write to exactly those roots. It then checks
+the flags and the roots as the `ozd` user, and starts the service. With
+`--dry-run`, it prints what it would do and changes nothing. So far it
+has been checked only with `--dry-run`.
+
+To install by hand instead, create the user, give it the base root, and
 install the binary, a file of flags and the unit:
 
 ```sh
