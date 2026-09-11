@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Containment: the tree FILE serves, and nothing outside it (`CLAUDE.md`
-//! §3 and §10, item 4; `DESIGN.md` §6 and §11, item 6).
+//! Containment: the tree FILE serves, and nothing outside it (`DESIGN.md`
+//! §6 and §11, item 6).
 //!
 //! Written before FILE comes across, against [`ozd::roots`] alone:
 //! every pathname a client can send is resolved here as FILE will resolve
@@ -11,8 +11,8 @@
 //! under `std::env::temp_dir()`, holding the roots and, beside them, what
 //! must never be reached, so that "nothing changed" covers both.
 //!
-//! **One case of `CLAUDE.md` §10.4 is not here, on purpose**: "a component
-//! that is a symlink swapped between the check and the open". No check can
+//! **One case is not here, on purpose**: a component that is a symlink
+//! swapped between the check and the open. No check can
 //! stop that. What makes it impossible is that nothing runs between the
 //! two: one thread, this process the only writer of a writable root, and a
 //! read-only root written by nobody (`DESIGN.md` §1, §6). That invariant
@@ -351,7 +351,7 @@ fn a_symlink_under_a_root_pointing_outside_is_refused() {
 
 /// **A link at the top of the base is not a second tree.** Its target is
 /// not taken into the tree, which would serve a file outside the root to
-/// anyone who can name the link (`CLAUDE.md` §3). The same directory is
+/// anyone who can name the link (`DESIGN.md` §6). The same directory is
 /// served by mounting it, and then by the mount's own rules --- here,
 /// read-only.
 #[cfg(unix)]
@@ -499,7 +499,7 @@ fn a_rename_across_roots_is_refused() {
 /// **A FIFO, or anything else that is neither a regular file nor a
 /// directory, is refused before it is opened**, with `ATD` (`DESIGN.md`
 /// §6). The loop is one thread, and opening a FIFO that has no writer
-/// blocks it, and every client with it (`CLAUDE.md` §8d); the kind is read
+/// blocks it, and every client with it; the kind is read
 /// with `symlink_metadata`, which opens nothing. FILE answers the same
 /// case with `WKF` (`tests/file.rs`). A socket stands for a
 /// device node, which a test cannot make. If this test hangs, something
@@ -554,7 +554,7 @@ fn a_fifo_is_refused() {
 /// in, the other, which would let a path through the outer reach the
 /// inner's files under the outer's rules. Nothing is left on disk by any
 /// of it, and the probe of a writable root that does start leaves nothing
-/// either (`CLAUDE.md` §3, §10.4; `DESIGN.md` §6).
+/// either (`DESIGN.md` §6).
 #[test]
 fn a_root_that_is_missing_not_a_directory_slash_or_relative_does_not_start() {
     let s = Scratch::new("startup");

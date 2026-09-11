@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! FILE, driven as a band drives it, through two real NCPs (`CLAUDE.md`
-//! §10, items 5 and 6; `DESIGN.md` §11, item 7): a client NCP opens the
+//! FILE, driven as a band drives it, through two real NCPs (`DESIGN.md`
+//! §11, item 7): a client NCP opens the
 //! control connection to `FILE 1` at a server NCP that holds the service,
 //! serves the contact names of the data connections the server calls back,
 //! and speaks the user end's half of `sys/doc/chfile.text` as
@@ -11,7 +11,7 @@
 //!
 //! First the protocol's ordinary exchanges, against the tree
 //! (`src/roots.rs`), with no allowlist, since FILE serves whoever reaches
-//! it (`CLAUDE.md` §2). A write as a band makes it --- the SYNC mark on the
+//! it (`DESIGN.md` §6). A write as a band makes it --- the SYNC mark on the
 //! data connection and the CLOSE on the control, the rename waiting for the
 //! mark --- is `a_read_and_a_write_in_the_base`. Then what the tree changes
 //! (`DESIGN.md` §6): a read-only mount, listings that never describe a file
@@ -883,7 +883,7 @@ fn the_file_service_manages_a_directory() {
 /// root itself is no file to open for writing, delete, rename or create; a
 /// link deeper in that points out of the tree leads nowhere, for reading as
 /// for writing. A link in the root's top level is refused like any other
-/// that leaves its root (`CLAUDE.md` §3), and the same directory is served
+/// that leaves its root (`DESIGN.md` §6), and the same directory is served
 /// by mounting it, under the mount's own rules. Every refusal is `ATD`, and
 /// afterwards nothing has appeared beside the root or where either link
 /// points.
@@ -1203,7 +1203,7 @@ fn a_wildcard_is_matched_in_linear_time() {
 
 /// **A FIFO in the root is not opened.** A named pipe with no writer blocks
 /// whoever opens it --- here the loop's one thread, and every client with
-/// it (`CLAUDE.md` §8d) --- and a device streams without end. So only a
+/// it --- and a device streams without end. So only a
 /// regular file or a directory is opened (`DESIGN.md` §6, "Opening"), its
 /// kind read first with `symlink_metadata`, which opens nothing, and
 /// anything else is refused: on `OPEN READ`, on `PROBE`, and on an `OPEN
@@ -1600,8 +1600,8 @@ fn a_read_and_a_write_in_the_base() {
 }
 
 /// **A read-only mount is read, and every write there is refused with `ATF`
-/// before anything is touched** (`DESIGN.md` §6, "A read-only root"; `CLAUDE.md`
-/// §3): OPEN for output, of a new file and over one, and through a link;
+/// before anything is touched** (`DESIGN.md` §6, "A read-only root"): OPEN
+/// for output, of a new file and over one, and through a link;
 /// DELETE, of a file, a link, a directory, and the mount itself; RENAME
 /// within the mount, and across its line either way; CREATE-DIRECTORY;
 /// CREATE-LINK; CHANGE-PROPERTIES. The band turns `ATF` into
@@ -1914,7 +1914,7 @@ fn an_interrupted_write_leaves_only_a_temporary_that_startup_removes() {
 }
 
 /// **Two machines at once, and neither sees the other's session**
-/// (`CLAUDE.md` §10, item 6): each holds a control connection and a data
+/// (`DESIGN.md` §11, item 7): each holds a control connection and a data
 /// connection of its own, under the same handle names and the same
 /// transaction ids, and each writes and reads at the same time as the
 /// other. Every reply, every file and every listing goes to the machine
@@ -1980,8 +1980,8 @@ fn two_clients_at_once_see_only_their_own_sessions() {
     }
 }
 
-/// **The containment table, through FILE's own commands** (`CLAUDE.md` §10,
-/// item 4; `tests/containment.rs` holds it against the tree alone). Each
+/// **The containment table, through FILE's own commands** (`DESIGN.md` §11,
+/// item 6; `tests/containment.rs` holds it against the tree alone). Each
 /// pathname a client can send that would reach outside a root, sent in
 /// every command that names one, is refused with its code and changes
 /// nothing on disk:

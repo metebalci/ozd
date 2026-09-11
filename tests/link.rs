@@ -44,9 +44,8 @@ fn brd(from: u16, contact: &str) -> Packet {
 /// **An unknown host's endpoint is learned, and it is answered there.** A
 /// packet's source --- the header's --- is recorded at the UDP address the
 /// datagram came from, before anything else is done with the packet, so
-/// the answer to it has somewhere to go (`DESIGN.md` §5). A
-/// learned endpoint moves when the host does: that is what learning means
-/// (`CLAUDE.md` §3).
+/// the answer to it has somewhere to go (`DESIGN.md` §5). A learned
+/// endpoint moves when the host does: that is what learning means.
 #[test]
 fn an_unknown_hosts_endpoint_is_learned_and_answered() {
     let mut d = daemon(&site(""));
@@ -68,7 +67,7 @@ fn an_unknown_hosts_endpoint_is_learned_and_answered() {
 /// **A fixed endpoint is not moved by a packet.** A `--peer` is a
 /// statement about where a host is; a packet claiming that host's address
 /// from somewhere else is answered at the endpoint it gave, and does
-/// not move it (`CLAUDE.md` §3).
+/// not move it (`DESIGN.md` §5).
 #[test]
 fn a_fixed_endpoint_is_not_moved_by_a_packet() {
     let (named, named_at) = support::socket();
@@ -152,7 +151,7 @@ fn a_packet_from_one_host_to_another_is_passed_on_byte_for_byte() {
 /// **A broadcast reaches every host but its sender, and is answered
 /// here.** On one cable every host hears every broadcast; over CHUDP the
 /// hub makes it so, passing the datagram on to every endpoint but the one
-/// it came from, and taking it itself (`DESIGN.md` §5, `CLAUDE.md` §8b).
+/// it came from, and taking it itself (`DESIGN.md` §5).
 /// A BRD for TIME is then answered by every host that serves TIME, this
 /// one among them (AIM-628 §4.5).
 #[test]

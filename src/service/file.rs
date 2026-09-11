@@ -56,9 +56,8 @@
 //! and followed by a *synchronous mark* on the data connection, which is
 //! what the user end reads until.
 //!
-//! **Containment** is not the protocol's but this server's (`DESIGN.md`
-//! §6; `CLAUDE.md` §3), since this FILE answers anyone who reaches it
-//! (`CLAUDE.md` §2):
+//! **Containment** is not the protocol's but this server's, since this
+//! FILE answers anyone who reaches it (`DESIGN.md` §6):
 //!
 //! - **Every pathname is resolved in the [`Tree`]**, never against a root
 //!   directory directly: a read through [`Tree::resolve`], a write
@@ -150,7 +149,7 @@ pub struct File {
 
 impl File {
     /// A service over `tree`, answering **every** host that reaches it
-    /// (`CLAUDE.md` §2). Each change to a root is reported through `log`,
+    /// (`DESIGN.md` §6). Each change to a root is reported through `log`,
     /// if given.
     pub fn new(tree: Arc<Tree>, log: Option<LogHook>) -> File {
         File { tree, time: None, log }
@@ -257,7 +256,7 @@ struct Control {
     /// `-1` for an older client.
     version: u32,
     /// Who `LOGIN` said this is: shown as a file's author, and never a
-    /// credential (`CLAUDE.md` §3).
+    /// credential (the README, "Security").
     user: Option<String>,
     /// Handles by name, each to its channel; the input and output
     /// handles of one data connection share a channel.
@@ -1577,7 +1576,7 @@ impl Session for Control {
 /// regular file or a directory, or `None` if nothing is there --- read
 /// with `symlink_metadata`, which opens nothing (`DESIGN.md` §6,
 /// "Opening"). The loop is one thread, and opening a FIFO that has no
-/// writer would block it, and every client with it (`CLAUDE.md` §8d).
+/// writer would block it, and every client with it.
 ///
 /// **Anything else is `WKF`**, and not the `ATD` the tree gives. The band
 /// makes a condition of both: `sys/io/file/open.lisp` puts each code on

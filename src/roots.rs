@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The tree FILE serves: its roots, how a pathname is resolved in it, and
-//! which roots are read-only (`DESIGN.md` §6; `CLAUDE.md` §3).
+//! which roots are read-only (`DESIGN.md` §6).
 //!
 //! **A tree is a base root and named roots mounted at its top level**, each
-//! read-only or not, `,ro` (`CLAUDE.md` §8c, decided 2026-09-10). A
+//! read-only or not, `,ro` (`DESIGN.md` §6, "Roots"). A
 //! pathname whose first component is exactly a mount's name is in that
 //! mount, the rest of it under the mount's directory; any other pathname is
 //! in the base. With mounts and no base, `/` names the mounts and nothing
@@ -13,14 +13,14 @@
 //!
 //! **Nothing outside a root is ever named by a [`Place`]**, and so nothing
 //! outside one is served. That is the whole of FILE's security, since FILE
-//! answers anyone who reaches it (`CLAUDE.md` §2, §3). [`Tree::resolve`]
+//! answers anyone who reaches it (`DESIGN.md` §6). [`Tree::resolve`]
 //! splits a pathname on `/`, refuses `.` and `..` rather than normalising
 //! them, puts an absolute pathname under the root, and canonicalises the
 //! deepest part that exists. Beyond that:
 //!
 //! - **No second tree by symlink.** A link at a root's top level does not
 //!   bring its target into the tree, which would serve a file outside the
-//!   root to anyone who names the link (`CLAUDE.md` §3). A link anywhere is
+//!   root to anyone who names the link (`DESIGN.md` §6). A link anywhere is
 //!   followed and must lead into its own root. A directory that lives
 //!   elsewhere is served by mounting it.
 //! - **What comes back is what was checked**: the canonical path, with the
@@ -48,18 +48,18 @@
 //! opens it, because nothing else runs --- the daemon is one thread, its
 //! loop the only thing in it (`DESIGN.md` §1), and it is the only writer of
 //! a writable root, while a read-only root is written by nobody
-//! (`CLAUDE.md` §3, `DESIGN.md` §6). **Both are conditions, not checks**:
+//! (`DESIGN.md` §6). **Both are conditions, not checks**:
 //! a second thread, or another writer in a writable root, makes the gap
 //! between check and open real, and the answer then is `openat` with
 //! `O_NOFOLLOW`, which std does not offer (`DESIGN.md` §2).
 //!
 //! **What no path check sees.** A hard link inside a root to a file outside
-//! it canonicalises to a path under the root, and is out of scope
-//! (`CLAUDE.md` §3); so is a bind mount that shows one root's directory
-//! inside another, which canonicalises the same way. The mitigation for
-//! both is operational: the roots belong to the daemon's own unprivileged
-//! user and nobody else writes into them, and a read-only root is
-//! read-only on disk as well.
+//! it canonicalises to a path under the root, and is out of scope; so is a
+//! bind mount that shows one root's directory inside another, which
+//! canonicalises the same way. The mitigation for both is operational: the
+//! roots belong to the daemon's own unprivileged user and nobody else
+//! writes into them, and a read-only root is read-only on disk as well
+//! (the README, "Security").
 
 use std::collections::BTreeSet;
 use std::io::ErrorKind;
@@ -182,7 +182,7 @@ enum Picked<'a, 'p> {
 
 impl Tree {
     /// The tree of these roots, if every one can be served safely, or why
-    /// not (`DESIGN.md` §6, "At startup"; `CLAUDE.md` §3, §10.4):
+    /// not (`DESIGN.md` §6, "At startup"):
     ///
     /// - there is at least one root, at most one base, and no mount's name
     ///   twice;
@@ -282,7 +282,7 @@ impl Tree {
     /// **FILE opens the path returned, and that is safe only because nothing
     /// runs between this check and the open**: one thread, this process the
     /// only writer of a writable root, and a read-only root written by
-    /// nobody (`CLAUDE.md` §3, `DESIGN.md` §6; the module documentation).
+    /// nobody (`DESIGN.md` §6; the module documentation).
     pub fn resolve(&self, pathname: &str) -> Result<Resolved, Refusal> {
         match self.find(pathname)? {
             Found::Top => Ok(Resolved::Top),
@@ -556,7 +556,7 @@ impl Place {
     /// directory, or `None` if nothing is there. Anything else --- a FIFO,
     /// a device, a socket --- is refused with `ATD` (`DESIGN.md` §6,
     /// "Opening"): the loop is one thread, and opening a FIFO that has no
-    /// writer blocks it, and every client with it (`CLAUDE.md` §8d). So is a
+    /// writer blocks it, and every client with it. So is a
     /// link, which a place cannot hold unless the tree changed since it was
     /// resolved.
     ///
