@@ -13,9 +13,9 @@ Machines.
 
 ozd serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME, and it passes
 packets between the machines on its subnet. None of this has been tried
-against a real band yet; the acceptance test below is for that. The
-design is in `DESIGN.md`. Every protocol a Lisp Machine speaks is
-described in `PROTOCOLS.md`, together with where each fact comes from.
+against a real band yet. The design is in `DESIGN.md`. Every protocol a
+Lisp Machine speaks is described in `PROTOCOLS.md`, together with where
+each fact comes from.
 
 ## Build
 
@@ -87,9 +87,9 @@ anything. `--trace` prints every packet, and `--help` describes each
 flag. ozd refuses to run as root, and it logs to stderr, one line per
 event.
 
-Each machine names ozd as its CHUDP peer. With
-[muir](https://github.com/metebalci/muir), a CADR simulator, that looks
-like this:
+Each machine names ozd as its CHUDP peer. This example runs a machine
+with [muir](https://github.com/metebalci/muir), a CADR simulator, on the
+same computer as ozd:
 
 ```sh
 muir --disk-pack /path/to/disk-sys-100-0.img \
@@ -97,33 +97,26 @@ muir --disk-pack /path/to/disk-sys-100-0.img \
      --chaos-udp-peer 3060@127.0.0.1:42042
 ```
 
-A second machine uses 3051 and port 42044, and so on. Some CHUDP
-implementations send a packet only to a peer that is named for its
-destination. A machine like that must also name every other machine's
-address at ozd's endpoint, so that packets between the machines pass
-through ozd (`DESIGN.md` §9).
+Because both programs run on one computer, each needs its own UDP port.
+ozd uses 42042, the machine uses 42043, and the machine reaches ozd at
+`127.0.0.1:42042`. A second machine on the same computer would use the
+address 3051 and the port 42044, and so on.
 
-## Trying it
-
-The acceptance test is done by hand (`DESIGN.md` §11). Run ozd as
-above, with its `tree` mount pointing at the System 100 release's `sys`
-directory and its base root at an empty directory that ozd can write.
-Next to it, run two machines, each with a pack of its own. With muir:
+On separate computers, every program can use the default port, 42042,
+but each must listen on its network address instead of the loopback.
+For example, start ozd with `--listen 192.0.2.10`, and run the machine
+on another computer like this:
 
 ```sh
-muir --disk-pack /path/to/pack-1.img --chaos-address 3050 \
-     --chaos-udp 42043 --chaos-udp-peer 3060@127.0.0.1:42042 \
-     --chaos-udp-peer 3051@127.0.0.1:42042
-muir --disk-pack /path/to/pack-2.img --chaos-address 3051 \
-     --chaos-udp 42044 --chaos-udp-peer 3060@127.0.0.1:42042 \
-     --chaos-udp-peer 3050@127.0.0.1:42042
+muir --disk-pack /path/to/disk-sys-100-0.img \
+     --chaos-address 3050 --chaos-udp 192.0.2.20 \
+     --chaos-udp-peer 3060@192.0.2.10
 ```
 
-Each machine should boot and know the date, read its sources from
-`/tree/`, and write to the base root. `(uptime)` should print the right
-uptime, and `(hostat)` should show ozd and the other machine. The second
-machine boots without a name, because System 100's host table lists only
-3050 (`DESIGN.md` §9).
+Some CHUDP implementations send a packet only to a peer that is named
+for its destination. A machine like that must also name every other
+machine's address at ozd's endpoint, so that packets between the
+machines pass through ozd (`DESIGN.md` §9).
 
 ## Security
 
@@ -162,10 +155,51 @@ ordinary UDP port.
 ## As a service
 
 `contrib/ozd.service` is a systemd unit, and
-`contrib/com.metebalci.ozd.plist` is a launchd daemon. Both run ozd as
-its own user, which owns the writable roots and nothing else, as the
+`contrib/com.metebalci.ozd.plist` is a launchd daemon. Both run ozd as a
+user of its own, which owns the writable roots and nothing else, as the
 Security section asks. Neither has been tried on its system yet.
+
+On Linux with systemd, create the user, give it the base root, and
+install the binary, a file of flags and the unit:
+
+```sh
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin ozd
+sudo mkdir -p /srv/lispm
+sudo chown ozd: /srv/lispm
+sudo install -m 755 target/release/ozd /usr/local/bin/ozd
+sudo install -m 644 ozdrc /etc/ozdrc
+sudo install -m 644 contrib/ozd.service /etc/systemd/system/ozd.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now ozd
+```
+
+Here `ozdrc` is your file of flags, one flag per line, such as the flags
+in the Run section. The unit lets ozd write only to `/srv/lispm`, so if
+your writable roots are elsewhere, list them in its `ReadWritePaths=`
+line. A root under `/home` also needs `ProtectHome=read-only` in place of
+`ProtectHome=yes`. The log goes to the journal: `journalctl -u ozd`.
+
+On macOS, create a hidden system user named `_ozd` that owns the
+writable roots, for example with `dscl`. Install the binary as
+`/usr/local/bin/ozd` and the file of flags as `/usr/local/etc/ozdrc`,
+and copy the plist to `/Library/LaunchDaemons/`.
 
 ## Licence
 
-AGPL-3.0-or-later.
+ozd, the associated machine for a site of MIT CADR Lisp Machines.
+
+Copyright (C) 2026 Mete Balci
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published
+by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+The full text is in `LICENSE`.
