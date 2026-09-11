@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The services of stage 1 but FILE, each asked through the NCP as a band
-//! asks it --- STATUS as `HOSTAT` reads it, TIME against the system clock,
-//! UPTIME in the sixtieths the band divides by --- and the Lisp Machine
-//! character set that FILE, HOSTAB and NAME speak.
+//! STATUS, TIME and UPTIME, each asked through the NCP as a band asks it
+//! --- STATUS as `HOSTAT` reads it, TIME against the system clock, UPTIME
+//! in the sixtieths the band divides by --- and the Lisp Machine character
+//! set that FILE, HOSTAB and NAME speak.
 
 mod support;
 
