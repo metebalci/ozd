@@ -480,7 +480,7 @@ fn a_connection_is_opened_from_this_end() {
     let log = Log::default();
     log.send(Out::Data(b"hello".to_vec()));
     log.send(Out::Eof);
-    let index = near.connect(0, 0o3060, "ECHO", Box::new(Recorder(log.clone())));
+    let index = near.connect(0, 0o3060, "ECHO", Box::new(Recorder(log.clone()))).expect("an index");
     assert_ne!(index, 0, "index 0 is never a connection");
     let rfc = next_from(&mut near, 0).expect("an RFC");
     assert_eq!(rfc.opcode, op::RFC);
@@ -537,7 +537,7 @@ fn a_connection_from_this_end_hears_only_the_host_it_asked() {
     far.serve(Box::new(Echo));
     let mut near = Ncp::new(0o3050);
     let log = Log::default();
-    let index = near.connect(0, 0o3060, "ECHO", Box::new(Recorder(log.clone())));
+    let index = near.connect(0, 0o3060, "ECHO", Box::new(Recorder(log.clone()))).expect("an index");
     for opcode in [op::CLS, op::OPN] {
         let stranger = Packet {
             opcode,
@@ -556,6 +556,67 @@ fn a_connection_from_this_end_hears_only_the_host_it_asked() {
     shuttle(&mut near, &mut far, 0);
     assert!(!log.take().iter().any(|e| e.starts_with("closed")), "and nothing closed it");
     assert_eq!((near.connections(), far.connections()), (1, 1), "the real OPN opened it");
+}
+
+/// **An index is not given out again at once**, and a late packet for a
+/// connection that has gone finds none: slots are taken round the table,
+/// and a slot taken again carries a new uniquizer, as the machine's own NCP
+/// takes them (`sys/network/chaos/chsncp.lisp`, `INDEX-CONN-FREE-POINTER`
+/// and `UNIQUIZER-TABLE`). So a CLS that crossed this end's own, or data
+/// retransmitted late, neither closes nor feeds the connection made since.
+#[test]
+fn a_late_packet_for_a_closed_connection_misses_the_next_one() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let opened = |h: &mut Ncp, from: u16, now: u64| -> u16 {
+        h.receive(now, &arriving(&rfc((0o3050, from), 0o3060, 1, "ECHO")));
+        let opn = next_from(h, now).expect("an OPN");
+        assert_eq!(opn.opcode, op::OPN);
+        opn.source_index
+    };
+    let late = |opcode: u8, to: u16, number: u16| Packet {
+        opcode,
+        forward: 0,
+        dest: 0o3060,
+        dest_index: to,
+        source: 0o3050,
+        source_index: 7,
+        number,
+        ack: 1,
+        data: b"late".to_vec(),
+    };
+    let first = opened(&mut h, 7, 0);
+    h.receive(10, &arriving(&late(op::CLS, first, 2)));
+    assert_eq!(h.connections(), 0, "the first is closed");
+    let second = opened(&mut h, 8, 20);
+    assert_ne!(second, first, "the index just freed is not given out again");
+    h.receive(30, &arriving(&late(op::CLS, first, 2)));
+    assert_eq!(h.connections(), 1, "a late CLS for the first leaves the second open");
+    h.receive(40, &arriving(&late(op::DAT, first, 3)));
+    let los = next_from(&mut h, 40).expect("an answer to the late data");
+    assert_eq!((los.opcode, los.dest_index), (op::LOS, 7), "no such connection, to its sender");
+}
+
+/// **A full table takes no more connections**: with every index in use, a
+/// connection from this end is not made --- its session is told so, as a
+/// close --- and an RFC from the other end is refused with a CLS, rather
+/// than an index being given out twice.
+#[test]
+fn a_full_table_takes_no_more_connections() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let log = Log::default();
+    let mut made = 0;
+    while h.connect(0, 0o3051, "FOO", Box::new(Recorder(log.clone()))).is_some() {
+        made += 1;
+        assert!(made < 5_000, "the table never fills");
+    }
+    assert!(log.take().iter().any(|e| e.starts_with("closed ")), "the session is told");
+    while next_from(&mut h, 0).is_some() {}
+    h.receive(0, &arriving(&rfc((0o3050, 7), 0o3060, 1, "ECHO")));
+    let cls = next_from(&mut h, 0).expect("a refusal");
+    assert_eq!((cls.opcode, cls.dest_index), (op::CLS, 7));
+    assert_eq!(h.connections(), made, "no connection past the table's end");
 }
 
 /// **A bad check word does not lose the packet.** What a CHUDP peer puts in

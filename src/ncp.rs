@@ -124,6 +124,9 @@ enum State {
 
 /// One end of a connection at this host.
 struct Conn {
+    /// This end's index for it: its slot, and that slot's uniquizer when
+    /// it was given out. What a packet for it carries.
+    local: u16,
     state: State,
     remote: (u16, u16),
     /// The contact name, for the log: the RFC's first word, without its
@@ -169,14 +172,36 @@ pub const RETRANSMIT_NS: u64 = 500_000_000;
 /// back than that, and this end does the same.
 pub const HOST_DOWN_NS: u64 = 180_000_000_000;
 
+/// The bits of a connection index that say which slot of the table holds
+/// the connection; the bits above them are that slot's uniquizer. The
+/// machine's own NCP has 128 slots, seven bits (`MAXIMUM-INDEX`,
+/// `sys/network/chaos/chsncp.lisp`); a site's host holds more connections
+/// at once, so ten here, and six bits of uniquizer above them.
+const SLOT_BITS: u32 = 10;
+
+/// The table's slots; slot 0 is never a connection, so no index is 0.
+const SLOTS: usize = 1 << SLOT_BITS;
+
+/// The slot an index names: its low [`SLOT_BITS`] bits.
+fn slot(index: u16) -> usize {
+    usize::from(index) & (SLOTS - 1)
+}
+
 /// The NCP: a node with services, at one address --- the server side of
 /// the protocols the associated machine's servers spoke. This host is
 /// that machine.
 pub struct Ncp {
     address: u16,
     services: Vec<Box<dyn Service>>,
-    /// Connections by local index; index 0 is never a connection.
+    /// Connections by slot, the low [`SLOT_BITS`] bits of a local index;
+    /// slot 0 is never a connection.
     conns: Vec<Option<Conn>>,
+    /// Each slot's uniquizer, the bits of an index above its slot: one
+    /// more each time the slot is given out.
+    uniquizers: Vec<u16>,
+    /// Where the search for a free slot starts: after the last slot given
+    /// out.
+    next_slot: usize,
     out: VecDeque<Vec<u16>>,
     /// Packets printed as they go by, for watching a run.
     pub trace: bool,
@@ -213,6 +238,8 @@ impl Ncp {
             address,
             services: Vec::new(),
             conns: vec![None],
+            uniquizers: vec![0],
+            next_slot: 1,
             out: VecDeque::new(),
             trace: false,
             window: 8,
@@ -270,20 +297,53 @@ impl Ncp {
         }
     }
 
-    fn free_index(&mut self) -> u16 {
-        // Index 0 is never a connection; reuse the lowest freed slot.
-        if let Some(i) = self.conns.iter().skip(1).position(|c| c.is_none()) {
-            return (i + 1) as u16;
+    /// A new index, or none with every slot taken, the machine's own NCP's
+    /// way (`sys/network/chaos/chsncp.lisp`): the next free slot after the
+    /// last one given out, taken round the table
+    /// (`INDEX-CONN-FREE-POINTER`), and above it that slot's uniquizer, one
+    /// more than it was (`UNIQUIZER-TABLE`). So an index is not given out
+    /// again until the table has gone round, and the slot's uniquizer with
+    /// it, and a packet for a connection that has gone --- a CLS that
+    /// crossed this end's own --- finds no connection rather than the next
+    /// one. The table grows to the slots in use.
+    fn free_index(&mut self) -> Option<u16> {
+        let usable = SLOTS - 1;
+        for k in 0..usable {
+            let s = (self.next_slot - 1 + k) % usable + 1;
+            if s >= self.conns.len() {
+                self.conns.resize_with(s + 1, || None);
+                self.uniquizers.resize(s + 1, 0);
+            }
+            if self.conns[s].is_none() {
+                self.next_slot = s % usable + 1;
+                let u = self.uniquizers[s].wrapping_add(1) & (u16::MAX >> SLOT_BITS);
+                self.uniquizers[s] = u;
+                return Some((u << SLOT_BITS) | s as u16);
+            }
         }
-        // No free slot: grow the table. It reaches only the peak of
-        // connections live at once, and a dead one is freed after
-        // [`HOST_DOWN_NS`], so it stays far below the u16 an index is ---
-        // the band's own table is a few dozen slots (`chsncp.lisp`
-        // `MAXIMUM-INDEX`). The cast would wrap only past 65,535
-        // simultaneous connections, which is a leak, not traffic.
-        debug_assert!(self.conns.len() < u16::MAX as usize, "connection indices exhausted");
-        self.conns.push(None);
-        (self.conns.len() - 1) as u16
+        None
+    }
+
+    /// The connection an index names: the one in its slot, if its index is
+    /// the whole of this one. A packet for a connection that has gone
+    /// carries the uniquizer it had, and finds none.
+    fn conn(&self, index: u16) -> Option<&Conn> {
+        self.conns.get(slot(index))?.as_ref().filter(|c| c.local == index)
+    }
+
+    fn conn_mut(&mut self, index: u16) -> Option<&mut Conn> {
+        self.conns.get_mut(slot(index))?.as_mut().filter(|c| c.local == index)
+    }
+
+    /// The connection an index names, out of the table, its slot free.
+    fn take(&mut self, index: u16) -> Option<Conn> {
+        let s = self.conns.get_mut(slot(index))?;
+        if s.as_ref().is_some_and(|c| c.local == index) { s.take() } else { None }
+    }
+
+    /// Every connection's index, in slot order.
+    fn indices(&self) -> Vec<u16> {
+        self.conns.iter().flatten().map(|c| c.local).collect()
     }
 
     /// Gives up a connection silent past [`HOST_DOWN_NS`], as the band's
@@ -295,10 +355,9 @@ impl Ncp {
     /// no longer taken for a duplicate. The comparison is strict, as the
     /// band's `(> DELTA-TIME HOST-DOWN-INTERVAL)` is.
     fn expire(&mut self, now: u64) {
-        for index in 1..self.conns.len() as u16 {
-            let dead = self.conns[index as usize]
-                .as_ref()
-                .is_some_and(|c| now.saturating_sub(c.last_heard) > HOST_DOWN_NS);
+        for index in self.indices() {
+            let dead =
+                self.conn(index).is_some_and(|c| now.saturating_sub(c.last_heard) > HOST_DOWN_NS);
             if dead {
                 let secs = HOST_DOWN_NS / 1_000_000_000;
                 self.note(index, format_args!("closed, host down: nothing heard for {secs} s"));
@@ -363,13 +422,16 @@ impl Ncp {
                 self.refuse(from, p.number, &name, reason);
             }
             Response::Accept(session) => {
-                let index = self.free_index();
+                let Some(index) = self.free_index() else {
+                    return self.refuse(from, p.number, &name, "Connection table full".into());
+                };
                 let window = self.window;
                 // §4.1: the OPN "conveys the server's index number ... its
                 // data field is the same as that of STS", a receipt and a
                 // window; its acknowledgement field acknowledges the RFC.
                 let initial = 1u16;
                 let conn = Conn {
+                    local: index,
                     state: State::OpnSent,
                     remote: from,
                     contact: name.into_boxed_str(),
@@ -388,7 +450,7 @@ impl Ncp {
                 data.extend_from_slice(&p.number.to_le_bytes());
                 data.extend_from_slice(&window.to_le_bytes());
                 let opn = self.packet(op::OPN, from, index, initial, p.number, data);
-                self.conns[index as usize] = Some(conn);
+                self.conns[slot(index)] = Some(conn);
                 self.remember(index, &opn, now);
                 self.send(opn);
                 self.note(index, format_args!("opened"));
@@ -398,16 +460,22 @@ impl Ncp {
 
     /// Opens a connection from this host: an RFC to `contact` at `host`,
     /// AIM-628 §4.1, the connection in the RFC-sent state until the OPN.
+    /// Its index; or none with every index in use, when nothing is sent and
+    /// the session is told so, as a close.
     pub fn connect(
         &mut self,
         now: u64,
         host: u16,
         contact: &str,
-        session: Box<dyn Session>,
-    ) -> u16 {
-        let index = self.free_index();
+        mut session: Box<dyn Session>,
+    ) -> Option<u16> {
+        let Some(index) = self.free_index() else {
+            session.closed(now, "Connection table full");
+            return None;
+        };
         let initial = 1u16;
         let conn = Conn {
+            local: index,
             state: State::RfcSent,
             remote: (host, 0),
             contact: contact.split_once(' ').map_or(contact, |(name, _)| name).into(),
@@ -422,41 +490,41 @@ impl Ncp {
             last_heard: now,
             backlog: VecDeque::new(),
         };
-        self.conns[index as usize] = Some(conn);
+        self.conns[slot(index)] = Some(conn);
         let rfc = self.packet(op::RFC, (host, 0), index, initial, 0, contact.as_bytes().to_vec());
         self.remember(index, &rfc, now);
         self.send(rfc);
-        index
+        Some(index)
     }
 
     /// Keeps a controlled packet for retransmission until receipted.
     fn remember(&mut self, index: u16, p: &Packet, now: u64) {
-        if let Some(c) = self.conns[index as usize].as_mut() {
+        if let Some(c) = self.conn_mut(index) {
             c.unacked.push_back((p.number, p.clone(), now));
         }
     }
 
     /// A receipt or acknowledgement of our packets up to `number`.
     fn receipted(&mut self, index: u16, number: u16) {
-        if let Some(c) = self.conns[index as usize].as_mut() {
+        if let Some(c) = self.conn_mut(index) {
             c.unacked.retain(|&(n, _, _)| n.wrapping_sub(number) as i16 > 0);
         }
     }
 
     fn sts(&mut self, index: u16) {
-        let Some(c) = self.conns[index as usize].as_ref() else { return };
+        let Some(c) = self.conn(index) else { return };
         let mut data = Vec::new();
         data.extend_from_slice(&c.last_received.to_le_bytes());
         data.extend_from_slice(&c.window.to_le_bytes());
         let p = self.packet(op::STS, c.remote, index, c.next_number, c.last_received, data);
-        if let Some(c) = self.conns[index as usize].as_mut() {
+        if let Some(c) = self.conn_mut(index) {
             c.last_acked = c.last_received;
         }
         self.send(p);
     }
 
     fn close(&mut self, now: u64, index: u16, reason: &str) {
-        if let Some(mut c) = self.conns[index as usize].take()
+        if let Some(mut c) = self.take(index)
             && let Some(s) = c.session.as_mut()
         {
             s.closed(now, reason);
@@ -468,13 +536,13 @@ impl Ncp {
     /// [`Ncp::log`] shows. Without a log nothing is looked up or formatted.
     fn note(&self, index: u16, what: fmt::Arguments) {
         let Some(log) = &self.log else { return };
-        let Some(c) = self.conns.get(index as usize).and_then(Option::as_ref) else { return };
+        let Some(c) = self.conn(index) else { return };
         log(&line(&c.contact, c.from_this_end, c.remote.0, what));
     }
 
     /// A packet for one of our connections.
     fn on_connection(&mut self, now: u64, index: u16, p: &Packet) {
-        let Some(c) = self.conns.get(index as usize).and_then(|c| c.as_ref()) else {
+        let Some(c) = self.conn(index) else {
             // §4.2: "LOS is sent in response to situations such as: arrival
             // of a data packet or an STS for a connection that does not
             // exist".
@@ -509,12 +577,12 @@ impl Ncp {
         }
         // A packet from the other end means it is alive: the host-down
         // timer starts again from here.
-        if let Some(c) = self.conns[index as usize].as_mut() {
+        if let Some(c) = self.conn_mut(index) {
             c.last_heard = now;
         }
         match p.opcode {
             op::OPN => {
-                let Some(c) = self.conns[index as usize].as_mut() else { return };
+                let Some(c) = self.conn_mut(index) else { return };
                 if c.state == State::RfcSent {
                     // The OPN answers the RFC whatever its acknowledgement
                     // field says: the band's OPN did not receipt it, and
@@ -530,7 +598,7 @@ impl Ncp {
                     }
                     self.sts(index);
                     self.note(index, format_args!("opened"));
-                    if let Some(c) = self.conns[index as usize].as_mut()
+                    if let Some(c) = self.conn_mut(index)
                         && let Some(s) = c.session.as_mut()
                     {
                         s.opened(now);
@@ -548,7 +616,7 @@ impl Ncp {
                     let receipt = u16::from_le_bytes([p.data[0], p.data[1]]);
                     let window = u16::from_le_bytes([p.data[2], p.data[3]]);
                     self.receipted(index, receipt);
-                    if let Some(c) = self.conns[index as usize].as_mut() {
+                    if let Some(c) = self.conn_mut(index) {
                         c.their_window = window;
                         if c.state == State::OpnSent {
                             c.state = State::Open;
@@ -564,9 +632,7 @@ impl Ncp {
                 // as a refusal from this one is a CLS ([`Response::Refuse`]):
                 // the connection never opened.
                 let refused = p.opcode == op::CLS
-                    && self.conns[index as usize]
-                        .as_ref()
-                        .is_some_and(|c| c.state == State::RfcSent);
+                    && self.conn(index).is_some_and(|c| c.state == State::RfcSent);
                 if refused {
                     self.note(index, format_args!("refused: {}", OneLine(&reason)));
                 } else {
@@ -591,7 +657,7 @@ impl Ncp {
 
     /// A controlled packet in: taken in order, receipted otherwise.
     fn controlled(&mut self, now: u64, index: u16, p: &Packet) {
-        let Some(c) = self.conns[index as usize].as_mut() else { return };
+        let Some(c) = self.conn_mut(index) else { return };
         if c.state == State::OpnSent {
             // Data may arrive before the STS: "the user process may begin
             // transmitting data when it sees the OPN."
@@ -618,9 +684,7 @@ impl Ncp {
             // a third of the window; here every packet is acknowledged,
             // which the protocol allows and keeps the other side moving.
             self.pump(now, index);
-            let needs_sts = self.conns[index as usize]
-                .as_ref()
-                .is_some_and(|c| c.last_acked != c.last_received);
+            let needs_sts = self.conn(index).is_some_and(|c| c.last_acked != c.last_received);
             if needs_sts {
                 self.sts(index);
             }
@@ -639,7 +703,7 @@ impl Ncp {
     /// receipt.
     fn pump(&mut self, now: u64, index: u16) {
         loop {
-            let Some(c) = self.conns[index as usize].as_mut() else { return };
+            let Some(c) = self.conn_mut(index) else { return };
             // One packet in flight at a time, whatever window the other end
             // offers.  The CADR's interface holds one packet, and its
             // microcode drains it a word a Unibus cycle --- six microseconds
@@ -665,7 +729,7 @@ impl Ncp {
                     c.backlog.pop_front().unwrap()
                 }
             };
-            let Some(c) = self.conns[index as usize].as_ref() else { return };
+            let Some(c) = self.conn(index) else { return };
             let (remote, number, ack) = (c.remote, c.next_number, c.last_received);
             let p = match next {
                 Out::Connect { host, contact, session } => {
@@ -682,12 +746,12 @@ impl Ncp {
                     bytes.truncate(MAX_DATA);
                     let p = self.packet(op::CLS, remote, index, number, ack, bytes);
                     self.send(p);
-                    self.conns[index as usize] = None;
+                    self.take(index);
                     return;
                 }
             };
             assert!(p.data.len() <= MAX_DATA, "a session offered {} bytes", p.data.len());
-            if let Some(c) = self.conns[index as usize].as_mut() {
+            if let Some(c) = self.conn_mut(index) {
                 c.next_number = c.next_number.wrapping_add(1);
                 c.last_acked = c.last_received;
             }
@@ -702,12 +766,10 @@ impl Ncp {
         // Give up connections whose peer has gone silent before doing any
         // more work for them.
         self.expire(now);
-        for index in 1..self.conns.len() as u16 {
-            if self.conns[index as usize].is_some() {
-                self.pump(now, index);
-            }
+        for index in self.indices() {
+            self.pump(now, index);
             let mut again = Vec::new();
-            if let Some(c) = self.conns[index as usize].as_mut() {
+            if let Some(c) = self.conn_mut(index) {
                 for (_, p, last) in c.unacked.iter_mut() {
                     if now.saturating_sub(*last) >= RETRANSMIT_NS {
                         *last = now;

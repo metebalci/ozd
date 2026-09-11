@@ -90,6 +90,16 @@ NCP lets it fall (`RECEIVE-BRD`, `chsncp.lisp:1613`, with
 `CLS-ON-ERROR-P` nil, `:1588`), not refused with a CLS: a hub meets every
 broadcast on the subnet (`tests/ncp.rs`).
 
+**A connection's index** is a slot of the table in its low ten bits and
+that slot's uniquizer in the six above, and slots are taken round the
+table, as the machine's own NCP takes its 128 (`chsncp.lisp`,
+`INDEX-CONN-FREE-POINTER` and `UNIQUIZER-TABLE`): an index is not given
+out again until the table has gone round and its slot's uniquizer with
+it, so a late packet for a connection that has gone --- a CLS that
+crossed this end's own --- finds no connection rather than the next one.
+With every slot taken, an RFC is refused and a connection from this end
+is not made.
+
 ## 4. The loop
 
     start   config → startup checks (§6) → bind → Ncp with its services
