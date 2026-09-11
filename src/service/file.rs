@@ -199,7 +199,10 @@ impl Service for File {
 /// transfer, and what a transfer produces goes down.
 #[derive(Default)]
 struct Channel {
+    /// The connection opened: its OPN came back.
     open: bool,
+    /// The connection closed: the client's CLS or LOS, or the NCP giving it
+    /// up. Closed before it opened, its `DATA-CONNECTION` could not be made.
     closed: bool,
     /// What is to go down it, in order.
     out: VecDeque<Out>,
@@ -232,7 +235,8 @@ impl Session for DataSession {
 }
 
 /// A `DATA-CONNECTION` waiting for its connection to open before it is
-/// answered, as `FILE.c` answers it only once `chopen` has succeeded.
+/// answered, as `FILE.c` answers it only once `chopen` has succeeded ---
+/// or to close without opening, when it is answered with `FILE.c`'s `NET`.
 struct Pending {
     tid: String,
     channel: Arc<Mutex<Channel>>,
@@ -1498,11 +1502,20 @@ impl Session for Control {
         }
     }
     fn poll(&mut self, _now: u64) -> Vec<Out> {
-        // Data connections that have opened since: answered now.
+        // Data connections that have opened since: answered now. One that
+        // closed without opening --- refused by the client, or given up by
+        // the NCP --- is answered with `FILE.c`'s error for it, `NET`, and
+        // its two handles go: `FILE.c` makes them only once its `chopen`
+        // has succeeded.
         let mut opened = Vec::new();
+        let mut failed = Vec::new();
         self.pending.retain(|p| {
-            if p.channel.lock().unwrap().open {
+            let ch = p.channel.lock().unwrap();
+            if ch.open {
                 opened.push(p.tid.clone());
+                false
+            } else if ch.closed {
+                failed.push((p.tid.clone(), p.channel.clone()));
                 false
             } else {
                 true
@@ -1510,6 +1523,10 @@ impl Session for Control {
         });
         for tid in opened {
             self.reply(&tid, "", "DATA-CONNECTION", "");
+        }
+        for (tid, channel) in failed {
+            self.handles.retain(|_, ch| !Arc::ptr_eq(ch, &channel));
+            self.error(&tid, "", "NET", 'C', "Data connection could not be established");
         }
         // What the user end has sent up a data connection belongs to the
         // **write** in progress on that connection, and to nothing else.

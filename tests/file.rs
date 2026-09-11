@@ -736,6 +736,27 @@ fn a_delete_on_a_handle_is_refused_where_file_c_refuses_it() {
     refused(&mut n, c, &mut now, &s.dir, "BUG", "I0001 DELETE");
 }
 
+/// **A data connection that cannot be made is answered**, not left
+/// waiting: the server calls the client back at the output handle's
+/// contact name, and a client that refuses it --- here, one listening for
+/// no such contact --- has its `DATA-CONNECTION` answered with `FILE.c`'s
+/// error for it, `NET`, "Data connection could not be established". Its
+/// two handles are not made, so the same two can be asked for again.
+#[test]
+fn a_data_connection_that_cannot_be_made_is_answered() {
+    let s = Scratch::new("data-refused");
+    let root = s.dir("base");
+    let mut n = serve(vec![base(&root)]);
+    let c = n.client(LM1, 0);
+    let r = n.command(c, 10, "T1  LOGIN LISPM LISPM ");
+    assert!(r.starts_with("T1  LOGIN LISPM "), "{r:?}");
+    let r = n.command(c, 20, "T2  DATA-CONNECTION I0001 O0001");
+    assert_eq!(r, "T2  ERROR NET C Data connection could not be established");
+    n.listen(c, "O0001");
+    let r = n.command(c, 30, "T3  DATA-CONNECTION I0001 O0001");
+    assert_eq!(r, "T3  DATA-CONNECTION", "and its handles are free again");
+}
+
 /// **The commands that change a directory**, each answered by name:
 /// delete, rename, create a directory, create a link, change properties,
 /// expunge, complete, and properties down a data connection. Each change to

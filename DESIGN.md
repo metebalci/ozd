@@ -299,6 +299,12 @@ file is ever half one and half the other.
   through the tree as a pathname's DELETE, so a read-only root refuses it
   with `ATF`. A pathname as well, no transfer, or a listing is `BUG`, as
   `FILE.c` has it.
+- **A DATA-CONNECTION whose connection closes before it opens** ---
+  refused by the client, or given up --- is answered `NET`, "Data
+  connection could not be established", as `FILE.c` answers it, and its
+  two handles are not kept. `NET` is `FILE.c`'s own code, in neither
+  `chfile.text`'s table nor the band's `io/file/open.lisp`: what a band
+  makes of it is **unverified**.
 - **DIRECTORY reads each entry with `symlink_metadata`, or through
   `resolve`, never `metadata`**, which follows links, and would give the
   size and date of a file outside the root.
