@@ -102,7 +102,8 @@ event.
 
 To check that a running ozd answers, run the example that comes with its
 source, from this directory. It asks a host for STATUS, TIME and UPTIME
-over CHUDP, as a Lisp Machine would, and prints the answers:
+over CHUDP, as a Lisp Machine would, then lists a directory through FILE
+and counts what is in it:
 
 ```sh
 cargo run --example ask 3060@127.0.0.1:42042
@@ -113,13 +114,16 @@ asking 3060 at 127.0.0.1:42042, from 3376
 STATUS  MIT-OZ
 TIME    2026-09-13T13:24:58Z (+0 s from this host)
 UPTIME  0d 1h 6m 45s
+FILE    / holds 2 directories and 1 file
 ```
 
 The argument names ozd as `--peer` names a peer: its Chaos address, then
 where it listens, by name or IP address, at port 42042 unless one is
-given. The example sends from an address of its own on the same subnet,
-host 376, which ozd learns as it learns any machine's. If one of your
-machines has that address, give another as a second argument.
+given. The directory listed is `/`, unless an argument that begins with
+`/` names another. The example logs in as `ASK`, and it sends from an
+address of its own on the same subnet, host 376, which ozd learns as it
+learns any machine's. If one of your machines has that address, give
+another as an argument.
 
 Each machine names ozd as its CHUDP peer. This example runs a machine
 with [muir](https://github.com/metebalci/muir), a CADR simulator, on the
