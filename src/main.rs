@@ -194,14 +194,19 @@ fn main() {
     // before the flags' own, and it is read here, with the startup's other
     // checks, so that `--check` covers it and a table that cannot be read
     // stops the daemon rather than quietly leaving HOSTAB half a site.
+    let mut table: Option<(usize, PathBuf)> = None;
     if let Some(path) = config.hosts_text.clone() {
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| fail(&format!("--hosts-text {}: {e}", path.display())));
         let hosts =
             hosts_text::parse(&text).unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
+        let before = config.hosts.len();
         config
             .add_hosts(hosts)
             .unwrap_or_else(|e| fail(&format!("--hosts-text {}: {e}", path.display())));
+        // What the table gave, which is its hosts but this one's own line,
+        // passed over: the count the log says at startup.
+        table = Some((config.hosts.len() - before, path));
     }
     // The roots: each canonicalised, a directory, not `/`, writable unless
     // `,ro`, and inside no other; a base directory a mount covers is warned
@@ -216,6 +221,10 @@ fn main() {
     }
     if let Some(path) = &read {
         log::event(format_args!("flags from {}", path.display()));
+    }
+    if let Some((hosts, path)) = &table {
+        let s = if *hosts == 1 { "" } else { "s" };
+        log::event(format_args!("{hosts} host{s} from {}", path.display()));
     }
     // Bound before anything in a root is touched: a second daemon given
     // the first's endpoint stops here, and the temporaries of the writes

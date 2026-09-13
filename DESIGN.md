@@ -513,8 +513,9 @@ a System 100 site with them on one command line.
 ## 10. Logging and running
 
 - **stderr** gets one line per event, stamped in UTC by `civil`
-  (`log.rs`). The events are: startup, its checks and its warnings; each
-  connection opened, refused and closed, with the host and the contact;
+  (`log.rs`). The events are: startup, its checks and its warnings, the
+  file of flags it read and how many hosts a `--hosts-text` table gave
+  (§8); each connection opened, refused and closed, with host and contact;
   every FILE operation that changes a root (write, rename, delete,
   create-directory, create-link and change-properties), with its
   pathname; and errors.

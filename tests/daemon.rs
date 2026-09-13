@@ -337,6 +337,54 @@ fn hostab_and_name_are_served() {
     assert_eq!(hostab.events(), ["opened"], "HOSTAB opens and waits for a name");
 }
 
+/// **A `--hosts-text` table says at startup how many hosts it gave**
+/// (`DESIGN.md` §10), so that a site can see its table was read and read
+/// whole. This host's own line is passed over, so a table naming it and
+/// two machines is two hosts.
+#[test]
+fn the_host_table_says_how_many_hosts_it_gave() {
+    let table = support::scratch().join("counted-hosts.text");
+    std::fs::write(
+        &table,
+        "; the site's hosts\nNET CHAOS,\t7\n\
+         HOST MIT-OZ,\tCHAOS 3060,SERVER,UNIX,VAX,[OZ]\n\
+         HOST MIT-LISPM-1,\tCHAOS 3050,USER,LISPM,LISPM,[LM1]\n\
+         HOST MIT-LISPM-2,\tCHAOS 3051,USER,LISPM,LISPM\n",
+    )
+    .expect("a host table");
+    let flags = format!("{}--hosts-text {}\n", site(""), table.display());
+    let path = flags_file("counted.ozdrc", &flags);
+    let mut child = ozd()
+        .arg("-c")
+        .arg(&path)
+        .stdin(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("it starts");
+    let stderr = child.stderr.take().expect("its stderr");
+    let _running = Running(child);
+    // Everything it says up to the line that means it is serving.
+    let mut said = Vec::new();
+    let mut reader = BufReader::new(stderr);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        assert!(reader.read_line(&mut line).expect("a line") > 0, "it ended before listening");
+        said.push(line.clone());
+        if support::running_as_root() || line.contains("listening at ") {
+            break;
+        }
+    }
+    if support::running_as_root() {
+        return;
+    }
+    let counted = said.iter().find(|l| l.contains(" hosts from ")).unwrap_or_else(|| {
+        panic!("no count of the table among {said:?}");
+    });
+    assert!(counted.contains("2 hosts from "), "the two machines, not this host: {counted:?}");
+    assert!(counted.contains("counted-hosts.text"), "and which file: {counted:?}");
+}
+
 /// **The roots are checked before anything is bound**, by a run and by
 /// `--check` alike (`DESIGN.md` §6): a root that is not there, or `/`, is
 /// a refusal to start, naming it, exit 1. A base directory a mount covers
