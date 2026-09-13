@@ -10,7 +10,7 @@
 
 use crate::chudp::Link;
 use crate::config::{Config, Logging};
-use crate::log;
+use crate::log::{self, Names};
 use crate::ncp::{Ncp, Service};
 use crate::roots::Tree;
 use crate::service::file::File;
@@ -47,11 +47,14 @@ impl Daemon {
         link.trace = logging.trace;
         let mut ncp = Ncp::new(config.address);
         // Each connection opened, refused and closed, as a line of the log
-        // (`DESIGN.md` §10); `trace` stays the packets.
+        // naming the host by the site's table (`DESIGN.md` §10); `trace`
+        // stays the packets.
         ncp.log = Some(Arc::new(|line: &str| log::event(line)));
         ncp.trace = logging.trace;
         ncp.log_simple = logging.simple;
-        for service in services(config, &meters, &tree, logging) {
+        let names = Arc::new(names(config));
+        ncp.names = names.clone();
+        for service in services(config, &meters, &tree, logging, &names) {
             ncp.serve(service);
         }
         Ok(Daemon { link, ncp, meters })
@@ -130,10 +133,12 @@ fn services(
     meters: &Arc<Meters>,
     tree: &Arc<Tree>,
     logging: Logging,
+    names: &Arc<Names>,
 ) -> Vec<Box<dyn Service>> {
     let mut file = File::new(tree.clone(), Some(Arc::new(|line: &str| log::event(line))));
     file.log_file = logging.file;
     file.log_file_probe = logging.file_probe;
+    file.names = names.clone();
     vec![
         Box::new(Status::new(&config.names[0], (config.address >> 8) as u8, meters.clone())),
         Box::new(Time::new()),
@@ -147,4 +152,12 @@ fn services(
         Box::new(Name::new()),
         Box::new(file),
     ]
+}
+
+/// The site's host table as the log names a host (`DESIGN.md` §10): this
+/// host's official name, and each `--host`'s and `--hosts-text` host's.
+fn names(config: &Config) -> Names {
+    let own = (config.address, config.names[0].as_str());
+    let hosts = config.hosts.iter().map(|h| (h.address, h.names[0].as_str()));
+    Names::new(std::iter::once(own).chain(hosts))
 }

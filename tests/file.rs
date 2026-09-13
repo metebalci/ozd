@@ -23,6 +23,7 @@
 //! when the test ends.
 
 use ozd::lispm::{self, NEWLINE};
+use ozd::log::Names;
 use ozd::ncp::{Ncp, Out, Response, Service, Session, op};
 use ozd::packet::{self, Framed, Packet};
 use ozd::roots::{Root, Tree, is_temporary, temporary_name};
@@ -869,11 +870,11 @@ fn the_file_service_manages_a_directory() {
     assert_eq!(
         *log.lock().unwrap(),
         [
-            "3050 create-directory /tree/sys/made",
-            "3050 rename /tree/sys/one.lisp to /tree/sys/two.lisp",
-            "3050 delete /tree/sys/two.lisp",
-            "3050 create-link /tree/sys/link to /tree/sys/only.text",
-            "3050 change-properties /tree/sys/only.text",
+            "3050 (?) create-directory /tree/sys/made",
+            "3050 (?) rename /tree/sys/one.lisp to /tree/sys/two.lisp",
+            "3050 (?) delete /tree/sys/two.lisp",
+            "3050 (?) create-link /tree/sys/link to /tree/sys/only.text",
+            "3050 (?) change-properties /tree/sys/only.text",
         ]
     );
 }
@@ -917,7 +918,7 @@ fn the_access_lines_are_logged_when_asked() {
     let lines = log.lock().unwrap();
     assert_eq!(
         *lines,
-        ["3050 login LISPM", "3050 read /read.text", "3050 directory /*"],
+        ["3050 (?) login LISPM", "3050 (?) read /read.text", "3050 (?) directory /*"],
         "and the probe is not among them"
     );
 }
@@ -935,7 +936,26 @@ fn the_probe_lines_are_logged_when_asked() {
     let nl = NEWLINE as char;
     n.command(c, 30, &format!("T3  OPEN PROBE{nl}/read.text{nl}"));
     let lines = log.lock().unwrap();
-    assert_eq!(*lines, ["3050 login LISPM", "3050 probe /read.text"]);
+    assert_eq!(*lines, ["3050 (?) login LISPM", "3050 (?) probe /read.text"]);
+}
+
+/// **A client is named by the host table as well as by its address**
+/// (`DESIGN.md` §10), as the NCP names a host: its official name in
+/// parentheses.
+#[test]
+fn a_client_is_named_in_the_log_by_the_host_table() {
+    let s = Scratch::new("log-names");
+    let root = s.dir("base");
+    let tree = Arc::new(Tree::new(vec![base(&root)]).unwrap());
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let seen = log.clone();
+    let hook: LogHook = Arc::new(move |line: &str| seen.lock().unwrap().push(line.to_string()));
+    let mut file = File::new(tree, Some(hook));
+    file.log_file = true;
+    file.names = Arc::new(Names::new([(LM1, "MIT-LISPM-1")]));
+    let mut n = Net::new(file);
+    ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    assert_eq!(*log.lock().unwrap(), ["3050 (MIT-LISPM-1) login LISPM"]);
 }
 
 /// **Without the flags nothing a client reads is logged**, and the log
@@ -1667,7 +1687,7 @@ fn a_read_and_a_write_in_the_base() {
     assert!(r.ends_with(&format!("{nl}/tmp/file-write.text{nl}")), "{r:?}");
     assert_eq!(std::fs::read(tmp.join("file-write.text")).unwrap(), b"LISPM\n");
     assert!(temporaries(&tmp).is_empty(), "a temporary was left behind: {:?}", temporaries(&tmp));
-    assert_eq!(*log.lock().unwrap(), ["3050 write /tmp/file-write.text"]);
+    assert_eq!(*log.lock().unwrap(), ["3050 (?) write /tmp/file-write.text"]);
 
     // Read back, in the Lisp Machine's character set.
     let r = n.command(c, 40, &format!("T5 I0001 OPEN READ CHARACTER{nl}/tmp/file-write.text{nl}"));
@@ -1741,7 +1761,7 @@ fn a_readonly_mount_is_read_and_every_write_there_is_refused_with_atf() {
     // The base beside it is written as ever.
     accepted(&mut n, c, &mut now, &format!(" DELETE{nl}/mine.text{nl}"));
     assert!(!root.join("mine.text").exists());
-    assert_eq!(*log.lock().unwrap(), ["3050 delete /mine.text"]);
+    assert_eq!(*log.lock().unwrap(), ["3050 (?) delete /mine.text"]);
 }
 
 /// **A listing never describes a file outside a root** (`DESIGN.md` §6,
@@ -1888,7 +1908,8 @@ fn a_link_is_deleted_itself_and_not_what_it_leads_to() {
         expected.remove(Path::new("base").join(name).as_path()).unwrap();
         assert_eq!(snapshot(&s.dir), expected, "DELETE /{name}: the link, and nothing else");
     }
-    let reported: Vec<String> = links.iter().map(|(n, _)| format!("3050 delete /{n}")).collect();
+    let reported: Vec<String> =
+        links.iter().map(|(n, _)| format!("3050 (?) delete /{n}")).collect();
     assert_eq!(*log.lock().unwrap(), reported);
 
     // In a read-only mount, refused; through a link out of its root,
@@ -1946,10 +1967,10 @@ fn a_link_is_renamed_itself() {
     assert_eq!(
         *log.lock().unwrap(),
         [
-            "3050 rename /in to /sub/moved",
-            "3050 rename /rel to /sub/rel",
-            "3050 rename /dangling to /sub/dangling",
-            "3050 rename /out to /sub/out",
+            "3050 (?) rename /in to /sub/moved",
+            "3050 (?) rename /rel to /sub/rel",
+            "3050 (?) rename /dangling to /sub/dangling",
+            "3050 (?) rename /out to /sub/out",
         ]
     );
 }
@@ -2247,12 +2268,12 @@ fn the_containment_table_through_file_commands() {
     assert_eq!(
         *log.lock().unwrap(),
         [
-            "3050 create-link /to-sys to /sys/file.lisp".to_string(),
-            format!("3050 create-link /to-host to {own}"),
-            "3050 rename /later to /was-later".into(),
-            "3050 create-link /later to /sys".into(),
-            "3050 rename /was-later to /moved-later".into(),
-            "3050 create-link /was-later to /sys".into(),
+            "3050 (?) create-link /to-sys to /sys/file.lisp".to_string(),
+            format!("3050 (?) create-link /to-host to {own}"),
+            "3050 (?) rename /later to /was-later".into(),
+            "3050 (?) create-link /later to /sys".into(),
+            "3050 (?) rename /was-later to /moved-later".into(),
+            "3050 (?) create-link /was-later to /sys".into(),
         ]
     );
 }

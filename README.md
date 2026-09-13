@@ -84,7 +84,8 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   login, with the address of the machine that asked. `--log-file-probe`
   writes one for each FILE probe, which a band makes far more often than it
   reads. Without them, a machine's whole boot leaves one line in the log,
-  the connection it opened.
+  the connection it opened. A line names a machine by its address and by its
+  name in the host table, or `(?)` when the table does not have it.
 - `--listen` sets where ozd answers. Without it, ozd listens on
   `127.0.0.1:42042`, which only this host can reach. Give an address on
   your network, or `0.0.0.0`, to let other hosts reach it.

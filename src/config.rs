@@ -500,8 +500,9 @@ pub struct Logging {
     pub trace: bool,
     /// `--log-simple`: a line of the log for each simple transaction
     /// answered --- STATUS, TIME, UPTIME --- in the shape a connection's
-    /// lines have, `TIME from 3050 answered`. A band asks STATUS of every
-    /// host at each `(hostat)`, so these are asked for on their own.
+    /// lines have, `TIME from 3050 (MIT-LISPM-1) answered`. A band asks
+    /// STATUS of every host at each `(hostat)`, so these are asked for on
+    /// their own.
     pub simple: bool,
     /// `--log-file`: a line for each file FILE reads, each directory it
     /// lists and each `LOGIN`, beside the lines every change to a root

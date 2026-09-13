@@ -209,32 +209,38 @@ pub struct Ncp {
     pub window: u16,
     /// The log, if there is one (`DESIGN.md` §10): a line for each
     /// connection opened, refused and closed, without the time, which the
-    /// log adds. Each names the contact and the other host, in octal ---
-    /// `from` it when it asked for the connection, `to` it when this end
-    /// did:
+    /// log adds. Each names the contact and the other host --- `from` it
+    /// when it asked for the connection, `to` it when this end did.
+    /// `<host>` below is that host's address in octal and its name in
+    /// [`Ncp::names`], as in `3050 (MIT-LISPM-1)`, or `?` for an address
+    /// the table does not hold:
     ///
     /// ```text
-    /// ECHO from 3050 opened               an RFC accepted: the OPN sent
-    /// ECHO to 3060 opened                 an RFC from this end: the OPN back
-    /// ECHO from 3050 refused: <reason>    the CLS sent for an RFC
-    /// ECHO to 3060 refused: <reason>      the CLS back for one from this end
-    /// ECHO from 3050 closed by its CLS: <reason>
-    /// ECHO from 3050 closed by its LOS: <reason>
-    /// ECHO from 3050 closed by our CLS: <reason>    a session's
-    /// ECHO from 3050 closed, host down: nothing heard for 180 s
+    /// ECHO from <host> opened             an RFC accepted: the OPN sent
+    /// ECHO to <host> opened               an RFC from this end: the OPN back
+    /// ECHO from <host> refused: <reason>  the CLS sent for an RFC
+    /// ECHO to <host> refused: <reason>    the CLS back for one from this end
+    /// ECHO from <host> closed by its CLS: <reason>
+    /// ECHO from <host> closed by its LOS: <reason>
+    /// ECHO from <host> closed by our CLS: <reason>    a session's
+    /// ECHO from <host> closed, host down: nothing heard for 180 s
     /// ```
     ///
     /// The last is [`HOST_DOWN_NS`]. A simple transaction makes no
     /// connection, and is how STATUS is asked, over and over, so it is
     /// logged only where [`Ncp::log_simple`] asks for it, as `TIME from
-    /// 3050 answered`. Nothing is logged for a BRD let fall. A contact name
-    /// and a reason come off the network, so a control character in either
-    /// is written as its escape, and a line stays one line. Unset, nothing
-    /// is formatted.
+    /// <host> answered`. Nothing is logged for a BRD let fall. A contact
+    /// name and a reason come off the network, so a control character in
+    /// either is written as its escape, and a line stays one line. Unset,
+    /// nothing is formatted.
     pub log: Option<crate::log::Hook>,
     /// `--log-simple`: each simple transaction answered is a line of
     /// [`Ncp::log`] too. Off unless set.
     pub log_simple: bool,
+    /// The site's host table, for the name each line of [`Ncp::log`] gives
+    /// a host after its address. Empty unless set, and then every host is
+    /// `(?)`.
+    pub names: std::sync::Arc<crate::log::Names>,
 }
 
 impl Ncp {
@@ -250,6 +256,7 @@ impl Ncp {
             window: 8,
             log: None,
             log_simple: false,
+            names: Default::default(),
         }
     }
 
@@ -380,7 +387,12 @@ impl Ncp {
     /// with the `contact` the RFC asked for.
     fn refuse(&mut self, to: (u16, u16), number: u16, contact: &str, reason: String) {
         if let Some(log) = &self.log {
-            log(&line(contact, false, to.0, format_args!("refused: {}", OneLine(&reason))));
+            log(&line(
+                contact,
+                false,
+                self.names.host(to.0),
+                format_args!("refused: {}", OneLine(&reason)),
+            ));
         }
         let mut bytes = reason.into_bytes();
         bytes.truncate(MAX_DATA);
@@ -426,7 +438,7 @@ impl Ncp {
                 if self.log_simple
                     && let Some(log) = &self.log
                 {
-                    log(&line(&name, false, from.0, format_args!("answered")));
+                    log(&line(&name, false, self.names.host(from.0), format_args!("answered")));
                 }
             }
             Response::Refuse(reason) => {
@@ -548,7 +560,7 @@ impl Ncp {
     fn note(&self, index: u16, what: fmt::Arguments) {
         let Some(log) = &self.log else { return };
         let Some(c) = self.conn(index) else { return };
-        log(&line(&c.contact, c.from_this_end, c.remote.0, what));
+        log(&line(&c.contact, c.from_this_end, self.names.host(c.remote.0), what));
     }
 
     /// A packet for one of our connections.
@@ -870,10 +882,15 @@ impl Ncp {
 
 /// A line for the log: the `contact`, `from` the other host `host` if it
 /// asked for the connection and `to` it if this end did, and `what` came of
-/// it --- `ECHO from 3050 opened` ([`Ncp::log`]).
-fn line(contact: &str, from_this_end: bool, host: u16, what: fmt::Arguments) -> String {
+/// it --- `ECHO from 3050 (MIT-LISPM-1) opened` ([`Ncp::log`]).
+fn line(
+    contact: &str,
+    from_this_end: bool,
+    host: crate::log::Named<'_>,
+    what: fmt::Arguments,
+) -> String {
     let way = if from_this_end { "to" } else { "from" };
-    format!("{} {way} {host:o} {what}", OneLine(contact))
+    format!("{} {way} {host} {what}", OneLine(contact))
 }
 
 /// Text off the network, fit for one line of the log: a control character

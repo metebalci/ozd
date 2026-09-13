@@ -79,6 +79,7 @@
 //!   service is given, with its pathname (`DESIGN.md` §10).
 
 use crate::lispm::{NEWLINE, from_bytes, from_lispm, lispm_text, to_lispm};
+use crate::log::Names;
 use crate::ncp::{Out, Response, Service, Session};
 use crate::packet::MAX_DATA;
 use crate::roots::{Place, Refusal, Resolved, Tree, is_temporary, temporary_name};
@@ -128,11 +129,11 @@ pub fn async_mark_data(handle: &str, code: &str, message: &str) -> Vec<u8> {
     data
 }
 
-/// Where the service reports each change it makes to a root: one line,
-/// the client's address in octal, what was done, and its pathname as the
-/// client wrote it --- `3050 write /tmp/x.text`, `3050 rename /a to /b`
-/// --- for the daemon to put in its log (`DESIGN.md` §10). The changes are
-/// a write's rename into place (`write`), `rename`, `delete`,
+/// Where the service reports each change it makes to a root: one line, the
+/// client as [`File::names`] names it, what was done, and its pathname as
+/// the client wrote it, as in `3050 (MIT-LISPM-1) write /tmp/x.text`, for
+/// the daemon to put in its log (`DESIGN.md` §10). The changes are a
+/// write's rename into place (`write`), `rename`, `delete`,
 /// `create-directory`, `create-link` and `change-properties`. Shared by
 /// every control connection's session, so an `Arc`; `Send` and `Sync`, as a
 /// session is `Send`.
@@ -151,6 +152,10 @@ pub struct File {
     pub log_file: bool,
     /// `--log-file-probe`: report each `PROBE` too.
     pub log_file_probe: bool,
+    /// The site's host table, for the name each line gives the client
+    /// after its address (`DESIGN.md` §10). Empty unless set, and then
+    /// every client is `(?)`.
+    pub names: Arc<Names>,
 }
 
 impl File {
@@ -159,7 +164,14 @@ impl File {
     /// if given; what is served is reported too where [`File::log_file`]
     /// and [`File::log_file_probe`] say so.
     pub fn new(tree: Arc<Tree>, log: Option<LogHook>) -> File {
-        File { tree, time: None, log, log_file: false, log_file_probe: false }
+        File {
+            tree,
+            time: None,
+            log,
+            log_file: false,
+            log_file_probe: false,
+            names: Arc::default(),
+        }
     }
 
     /// Dates by `universal` instead of the machine's clock, if given.
@@ -189,15 +201,7 @@ impl Service for File {
     }
     fn request(&mut self, _now: u64, args: &str, from: (u16, u16)) -> Response {
         let version = args.split_whitespace().next().and_then(|v| v.parse().ok()).unwrap_or(1);
-        Response::Accept(Box::new(Control::new(
-            self.tree.clone(),
-            self.time,
-            self.log.clone(),
-            self.log_file,
-            self.log_file_probe,
-            from.0,
-            version,
-        )))
+        Response::Accept(Box::new(Control::new(self, from.0, version)))
     }
 }
 
@@ -261,6 +265,8 @@ struct Control {
     /// `--log-file` and `--log-file-probe`, as the service was given them.
     log_file: bool,
     log_file_probe: bool,
+    /// The site's host table, as the service was given it.
+    names: Arc<Names>,
     client: u16,
     /// The protocol version from the RFC's argument: `FILE 1` is 1. It
     /// chooses the shape of the reply to a write's `CLOSE` --- `FILE.c`
@@ -373,21 +379,16 @@ fn parse(text: &str) -> Option<Command<'_>> {
 }
 
 impl Control {
-    fn new(
-        tree: Arc<Tree>,
-        time: Option<u32>,
-        log: Option<LogHook>,
-        log_file: bool,
-        log_file_probe: bool,
-        client: u16,
-        version: u32,
-    ) -> Control {
+    /// A session for `client`, at protocol `version`, with what the service
+    /// `file` was given.
+    fn new(file: &File, client: u16, version: u32) -> Control {
         Control {
-            tree,
-            time,
-            log,
-            log_file,
-            log_file_probe,
+            tree: file.tree.clone(),
+            time: file.time,
+            log: file.log.clone(),
+            log_file: file.log_file,
+            log_file_probe: file.log_file_probe,
+            names: file.names.clone(),
             client,
             version,
             user: None,
@@ -453,7 +454,7 @@ impl Control {
     /// One line for the log: which client, and `what` it did.
     fn note(&self, what: &str) {
         if let Some(log) = &self.log {
-            log(&format!("{:o} {what}", self.client));
+            log(&format!("{} {what}", self.names.host(self.client)));
         }
     }
 

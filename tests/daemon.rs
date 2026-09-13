@@ -491,12 +491,13 @@ fn a_second_daemon_on_the_same_endpoint_removes_nothing() {
 
 /// **A connection is logged**, by the daemon run from its command line and
 /// a file of flags: a test host opens NAME, and the log says `NAME from
-/// 3050 opened`, the NCP's line (`DESIGN.md` §10) with the log's UTC time
-/// before it. The daemon turns on its own clock and the test host on the
-/// test's, until the line comes or five seconds pass.
+/// 3050 (MIT-LISPM-1) opened`, the NCP's line (`DESIGN.md` §10) with the
+/// host named by the site's `--host` and the log's UTC time before it. The
+/// daemon turns on its own clock and the test host on the test's, until the
+/// line comes or five seconds pass.
 #[test]
 fn a_connection_is_logged() {
-    let path = flags_file("logged.ozdrc", &site(""));
+    let path = flags_file("logged.ozdrc", &site("--host 3050,MIT-LISPM-1,LM1\n"));
     let mut child = ozd()
         .arg("-c")
         .arg(&path)
@@ -538,7 +539,7 @@ fn a_connection_is_logged() {
     while start.elapsed() < Duration::from_secs(5) {
         lm1.turn(start.elapsed().as_nanos() as u64);
         seen.extend(heard.try_iter());
-        if seen.iter().any(|l| l.contains("NAME from 3050 opened")) {
+        if seen.iter().any(|l| l.contains("NAME from 3050 (MIT-LISPM-1) opened")) {
             return;
         }
     }

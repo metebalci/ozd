@@ -13,6 +13,7 @@
 
 mod support;
 
+use ozd::log::Names;
 use ozd::ncp::{self, Ncp, Out, Response, Service, Session, op};
 use ozd::packet::{self, Framed, Packet};
 use ozd::service::time::Time;
@@ -746,7 +747,7 @@ fn the_log_follows_an_accepted_stream_to_its_close() {
     let me = (0o3050, 0o21);
     h.receive(0, &arriving(&rfc(me, 0o3060, 100, "ECHO")));
     let opn = next_from(&mut h, 0).expect("an OPN");
-    assert_eq!(log.take(), ["ECHO from 3050 opened"]);
+    assert_eq!(log.take(), ["ECHO from 3050 (?) opened"]);
     h.receive(5, &arriving(&rfc(me, 0o3060, 100, "ECHO")));
     let server = (0o3060, opn.source_index);
     h.receive(10, &arriving(&sts(me, server, 101, opn.number, 5)));
@@ -774,7 +775,7 @@ fn the_log_follows_an_accepted_stream_to_its_close() {
         Packet { opcode: op::CLS, number: 103, ack: back.number, data: b"done".to_vec(), ..dat };
     h.receive(40, &arriving(&cls));
     assert_eq!(h.connections(), 0);
-    assert_eq!(log.take(), ["ECHO from 3050 closed by its CLS: done"]);
+    assert_eq!(log.take(), ["ECHO from 3050 (?) closed by its CLS: done"]);
 }
 
 /// **A LOS from the other end closes a connection as its CLS does**
@@ -803,7 +804,7 @@ fn a_los_from_the_other_end_is_logged() {
     assert_eq!(h.connections(), 0);
     assert_eq!(
         log.take(),
-        ["ECHO from 3050 opened", "ECHO from 3050 closed by its LOS: No such connection"]
+        ["ECHO from 3050 (?) opened", "ECHO from 3050 (?) closed by its LOS: No such connection"]
     );
 }
 
@@ -824,8 +825,8 @@ fn a_refusal_is_logged_with_its_reason() {
     assert_eq!(
         log.take(),
         [
-            "NOSUCH from 3050 refused: No server for contact name NOSUCH",
-            "ECHO from 3051 refused: Not today",
+            "NOSUCH from 3050 (?) refused: No server for contact name NOSUCH",
+            "ECHO from 3051 (?) refused: Not today",
         ]
     );
 }
@@ -849,7 +850,32 @@ fn a_simple_transaction_answered_is_logged_when_asked() {
     let log = Lines::hook(&mut h);
     h.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, "TIME")));
     assert_eq!(next_from(&mut h, 0).map(|p| p.opcode), Some(op::ANS));
-    assert_eq!(log.take(), ["TIME from 3050 answered"]);
+    assert_eq!(log.take(), ["TIME from 3050 (?) answered"]);
+}
+
+/// **A line names a host by the host table as well as by its address**
+/// (`DESIGN.md` §10): its official name in parentheses, and `?` for an
+/// address the table does not hold --- in an answer's line and a
+/// connection's alike.
+#[test]
+fn a_host_is_named_in_the_log_by_the_host_table() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Time::fixed(0)));
+    h.names = Arc::new(Names::new([(0o3050, "MIT-LISPM-1")]));
+    h.log_simple = true;
+    let log = Lines::hook(&mut h);
+    h.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, "TIME")));
+    h.receive(0, &arriving(&rfc((0o3051, 0o21), 0o3060, 1, "TIME")));
+    h.receive(0, &arriving(&rfc((0o3050, 0o22), 0o3060, 1, "NOSUCH")));
+    while next_from(&mut h, 0).is_some() {}
+    assert_eq!(
+        log.take(),
+        [
+            "TIME from 3050 (MIT-LISPM-1) answered",
+            "TIME from 3051 (?) answered",
+            "NOSUCH from 3050 (MIT-LISPM-1) refused: No server for contact name NOSUCH",
+        ]
+    );
 }
 
 /// **A connection opened from this end is logged when the OPN comes
@@ -873,13 +899,13 @@ fn a_connection_opened_from_this_end_is_logged_at_both_ends() {
     far.receive(0, &arriving(&rfc));
     shuttle(&mut near, &mut far, 0);
     assert_eq!(events.take(), ["opened"]);
-    assert_eq!(near_log.take(), ["ECHO to 3060 opened"]);
-    assert_eq!(far_log.take(), ["ECHO from 3050 opened"]);
+    assert_eq!(near_log.take(), ["ECHO to 3060 (?) opened"]);
+    assert_eq!(far_log.take(), ["ECHO from 3050 (?) opened"]);
     events.send(Out::Close("done".into()));
     shuttle(&mut near, &mut far, 10);
     assert_eq!((near.connections(), far.connections()), (0, 0));
-    assert_eq!(near_log.take(), ["ECHO to 3060 closed by our CLS: done"]);
-    assert_eq!(far_log.take(), ["ECHO from 3050 closed by its CLS: done"]);
+    assert_eq!(near_log.take(), ["ECHO to 3060 (?) closed by our CLS: done"]);
+    assert_eq!(far_log.take(), ["ECHO from 3050 (?) closed by its CLS: done"]);
 }
 
 /// **An RFC from this end that the other end refuses is logged as
@@ -895,8 +921,8 @@ fn a_refusal_of_this_ends_rfc_is_logged_at_both_ends() {
     near.connect(0, 0o3060, "ECHO NO", Box::new(Recorder(Log::default())));
     shuttle(&mut near, &mut far, 0);
     assert_eq!(near.connections(), 0);
-    assert_eq!(near_log.take(), ["ECHO to 3060 refused: Not today"]);
-    assert_eq!(far_log.take(), ["ECHO from 3050 refused: Not today"]);
+    assert_eq!(near_log.take(), ["ECHO to 3060 (?) refused: Not today"]);
+    assert_eq!(far_log.take(), ["ECHO from 3050 (?) refused: Not today"]);
 }
 
 /// **A connection given up for silence is logged as closed, host down**
@@ -911,7 +937,7 @@ fn a_host_down_expiry_is_logged() {
     h.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, "ECHO")));
     h.connect(0, 0o3051, "FOO", Box::new(Recorder(Log::default())));
     while next_from(&mut h, 0).is_some() {}
-    assert_eq!(log.take(), ["ECHO from 3050 opened"]);
+    assert_eq!(log.take(), ["ECHO from 3050 (?) opened"]);
     let t = ncp::HOST_DOWN_NS;
     while next_from(&mut h, t).is_some() {}
     assert_eq!((h.connections(), log.take()), (2, vec![]), "not at the interval");
@@ -920,8 +946,8 @@ fn a_host_down_expiry_is_logged() {
     assert_eq!(
         log.take(),
         [
-            "ECHO from 3050 closed, host down: nothing heard for 180 s",
-            "FOO to 3051 closed, host down: nothing heard for 180 s",
+            "ECHO from 3050 (?) closed, host down: nothing heard for 180 s",
+            "FOO to 3051 (?) closed, host down: nothing heard for 180 s",
         ]
     );
 }
@@ -983,9 +1009,9 @@ fn a_log_line_is_one_line_whatever_arrives() {
     assert_eq!(
         lines,
         [
-            r"NO\nSUCH from 3050 refused: No server for contact name NO\nSUCH",
-            "ECHO from 3050 opened",
-            r"ECHO from 3050 closed by its CLS: bye\r\nECHO from 3051 opened\u{7}",
+            r"NO\nSUCH from 3050 (?) refused: No server for contact name NO\nSUCH",
+            "ECHO from 3050 (?) opened",
+            r"ECHO from 3050 (?) closed by its CLS: bye\r\nECHO from 3051 opened\u{7}",
         ]
     );
 }

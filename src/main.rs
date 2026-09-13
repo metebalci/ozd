@@ -122,7 +122,8 @@ time and their host table, and passing packets between them.
   --trace                      print every packet, every packet passed on to
                                another host, and every drop, with why.
   --log-simple                 log each simple transaction answered, STATUS,
-                               TIME or UPTIME, as \"TIME from 3050 answered\".
+                               TIME or UPTIME, as a line like
+                               \"TIME from 3050 (MIT-LISPM-1) answered\".
                                A band asks STATUS of every host at each
                                (hostat), so this is asked for on its own.
   --log-file                   log what FILE serves, not only what it

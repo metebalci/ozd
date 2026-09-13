@@ -17,7 +17,11 @@
 //!
 //! [`civil`] is the one calendar function: FILE's dates are made with it
 //! too, through a re-export, rather than with a copy of its own.
+//!
+//! A line that names a host gives its address and its name in the site's
+//! host table, as [`Names::host`] writes them: `3050 (MIT-LISPM-1)`.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::io::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -27,6 +31,43 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// them. An `Arc`, since FILE shares one among every control connection's
 /// session; `Send` and `Sync`, as a session is `Send`.
 pub type Hook = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
+/// The site's host table as the log names a host (`DESIGN.md` §10): each
+/// address's official name, from `--name`, `--host` and `--hosts-text`,
+/// the hosts HOSTAB answers for. The NCP and FILE share one, in an `Arc`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Names(HashMap<u16, String>);
+
+impl Names {
+    /// The table of `hosts`, each an address and its official name. Where
+    /// an address comes twice the first stands; the flags refuse a second.
+    pub fn new<'a>(hosts: impl IntoIterator<Item = (u16, &'a str)>) -> Names {
+        let mut names = HashMap::new();
+        for (address, name) in hosts {
+            names.entry(address).or_insert_with(|| name.to_string());
+        }
+        Names(names)
+    }
+
+    /// `address` as a line of the log gives it: in octal, then its host's
+    /// official name in parentheses, or `?` where the table has none ---
+    /// `3050 (MIT-LISPM-1)`, `3051 (?)`.
+    pub fn host(&self, address: u16) -> Named<'_> {
+        Named { address, name: self.0.get(&address).map(String::as_str) }
+    }
+}
+
+/// An address and its host's name, as [`Names::host`] writes them.
+pub struct Named<'a> {
+    address: u16,
+    name: Option<&'a str>,
+}
+
+impl fmt::Display for Named<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:o} ({})", self.address, self.name.unwrap_or("?"))
+    }
+}
 
 /// One event, on a line of its own: the time now, in UTC, and `what`.
 pub fn event(what: impl fmt::Display) {

@@ -72,7 +72,7 @@ src/
   config.rs         the flags and the file of them, checked (§8)
   hosts_text.rs     a band's own host table, read as HOSTAB's (§8)
   daemon.rs         the daemon: the link, the NCP, the services, turn (§4)
-  log.rs            one line an event on stderr, stamped in UTC (§10)
+  log.rs            one line an event on stderr, in UTC, hosts named (§10)
   address.rs        parse_address
   packet.rs         the packet and the check word
   roots.rs          the tree FILE serves: roots, resolve, readonly (§6)
@@ -515,17 +515,20 @@ a System 100 site with them on one command line.
 
 ## 10. Logging and running
 
-- **stderr** gets one line per event, stamped in UTC by `civil`
-  (`log.rs`). The events are: startup, its checks and its warnings, the
-  file of flags it read and how many hosts a `--hosts-text` table gave
-  (§8); each connection opened, refused and closed, with host and contact;
-  every FILE operation that changes a root (write, rename, delete,
-  create-directory, create-link and change-properties), with its
-  pathname; and errors.
+- **stderr** gets one line per event, stamped in UTC by `civil` (`log.rs`).
+  The events are: startup, its checks and its warnings, the file of flags it
+  read and how many hosts a `--hosts-text` table gave (§8); each connection
+  opened, refused and closed, with host and contact; every FILE operation
+  that changes a root (write, rename, delete, create-directory, create-link
+  and change-properties), with its pathname; and errors. A line that names a
+  host gives its address in octal and then, in parentheses, its official
+  name in the host table that `--name`, `--host` and `--hosts-text` make:
+  `3050 (MIT-LISPM-1)`, or `3051 (?)` for an address the table does not
+  hold.
 - **`--log-simple`** adds a line for each simple transaction answered,
   STATUS, TIME or UPTIME, in the shape of a connection's lines: `TIME from
-  3050 answered`. A band asks STATUS of every host at each `(hostat)`, so it
-  is asked for on its own.
+  3050 (MIT-LISPM-1) answered`. A band asks STATUS of every host at each
+  `(hostat)`, so it is asked for on its own.
 - **`--log-file`** adds what FILE serves to what it changes: a line for
   each file read, each directory listed and each `LOGIN`, in the same shape
   as a change's line, the client's address and then what it did. Without it
