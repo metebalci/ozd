@@ -283,13 +283,15 @@ enum Flag {
     HostsText,
     Peer,
     Trace,
+    LogAccess,
+    LogProbe,
     Check,
     Config,
     Help,
 }
 
 impl Flag {
-    const ALL: [Flag; 11] = [
+    const ALL: [Flag; 13] = [
         Flag::Address,
         Flag::Name,
         Flag::Listen,
@@ -298,6 +300,8 @@ impl Flag {
         Flag::HostsText,
         Flag::Peer,
         Flag::Trace,
+        Flag::LogAccess,
+        Flag::LogProbe,
         Flag::Check,
         Flag::Config,
         Flag::Help,
@@ -323,6 +327,8 @@ impl Flag {
             Flag::HostsText => "--hosts-text",
             Flag::Peer => "--peer",
             Flag::Trace => "--trace",
+            Flag::LogAccess => "--log-access",
+            Flag::LogProbe => "--log-probe",
             Flag::Check => "--check",
             Flag::Config => "--config",
             Flag::Help => "--help",
@@ -340,7 +346,7 @@ impl Flag {
             Flag::HostsText => Some("<file>"),
             Flag::Peer => Some("<addr>@<ip>[:<port>]"),
             Flag::Config => Some("<file>"),
-            Flag::Trace | Flag::Check | Flag::Help => None,
+            Flag::Trace | Flag::LogAccess | Flag::LogProbe | Flag::Check | Flag::Help => None,
         }
     }
 }
@@ -468,12 +474,30 @@ impl Flags {
 pub struct Run {
     /// The site.
     pub config: Config,
-    /// `--trace`: print every packet, every packet passed on, and every
-    /// drop, with why (`DESIGN.md` §10).
-    pub trace: bool,
+    /// What this run writes down: `--trace`, `--log-access` and
+    /// `--log-probe` (`DESIGN.md` §10).
+    pub logging: Logging,
     /// `--check`: check the flags and the roots, bind nothing, and exit
     /// (`DESIGN.md` §10).
     pub check: bool,
+}
+
+/// How much a run writes down (`DESIGN.md` §10). None of it changes what
+/// the daemon serves, and each may stand in a file of flags, since how much
+/// is written is a standing choice.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Logging {
+    /// `--trace`: every packet, every packet passed on, and every drop,
+    /// with why --- at the daemon's clock, and not the log.
+    pub trace: bool,
+    /// `--log-access`: a line of the log for each file read, each
+    /// directory listed and each `LOGIN`, beside the lines every change to
+    /// a root makes.
+    pub access: bool,
+    /// `--log-probe`: a line for each `PROBE` as well. A band probes far
+    /// more often than it reads, and serves no file by it, so it is asked
+    /// for on its own.
+    pub probe: bool,
 }
 
 impl Run {
@@ -579,6 +603,8 @@ struct Reading {
     /// Every host name given so far, this host's and every `--host`'s.
     named: Vec<Named>,
     trace: bool,
+    access: bool,
+    probe: bool,
     check: bool,
 }
 
@@ -607,6 +633,14 @@ impl Reading {
             Flag::Peer => self.peer(here, value),
             Flag::Trace => {
                 self.trace = true;
+                Ok(())
+            }
+            Flag::LogAccess => {
+                self.access = true;
+                Ok(())
+            }
+            Flag::LogProbe => {
+                self.probe = true;
                 Ok(())
             }
             Flag::Check => {
@@ -853,7 +887,8 @@ impl Reading {
             peers: self.peers.into_iter().map(|(p, _)| p).collect(),
             hosts_text: self.hosts_text.map(|(path, _)| path),
         };
-        Ok(Run { config, trace: self.trace, check: self.check })
+        let logging = Logging { trace: self.trace, access: self.access, probe: self.probe };
+        Ok(Run { config, logging, check: self.check })
     }
 }
 

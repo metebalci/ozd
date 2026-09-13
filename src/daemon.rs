@@ -9,7 +9,7 @@
 //! `DESIGN.md` §4, none of it protocol.
 
 use crate::chudp::Link;
-use crate::config::Config;
+use crate::config::{Config, Logging};
 use crate::log;
 use crate::ncp::{Ncp, Service};
 use crate::roots::Tree;
@@ -35,20 +35,21 @@ pub struct Daemon {
 impl Daemon {
     /// The daemon for the site `config` gives: its socket bound at
     /// `config.listen`, its NCP at `config.address`, and what it serves.
-    /// `trace` is `--trace`, for the link and the NCP both (`DESIGN.md`
-    /// §10). A socket that cannot be bound is the error, and then nothing
-    /// is served. `tree` is the roots as the startup checked them, which FILE
-    /// serves (`DESIGN.md` §6).
-    pub fn new(config: &Config, tree: Arc<Tree>, trace: bool) -> io::Result<Daemon> {
+    /// `logging` is what this run writes down: `--trace` for the link and
+    /// the NCP both, and `--log-access` and `--log-probe` for FILE
+    /// (`DESIGN.md` §10). A socket that cannot be bound is the error, and
+    /// then nothing is served. `tree` is the roots as the startup checked
+    /// them, which FILE serves (`DESIGN.md` §6).
+    pub fn new(config: &Config, tree: Arc<Tree>, logging: Logging) -> io::Result<Daemon> {
         let meters = Arc::new(Meters::default());
         let mut link = Link::bind(config, meters.clone())?;
-        link.trace = trace;
+        link.trace = logging.trace;
         let mut ncp = Ncp::new(config.address);
         // Each connection opened, refused and closed, as a line of the log
         // (`DESIGN.md` §10); `trace` stays the packets.
         ncp.log = Some(Arc::new(|line: &str| log::event(line)));
-        ncp.trace = trace;
-        for service in services(config, &meters, &tree) {
+        ncp.trace = logging.trace;
+        for service in services(config, &meters, &tree, logging) {
             ncp.serve(service);
         }
         Ok(Daemon { link, ncp, meters })
@@ -120,8 +121,17 @@ impl Daemon {
 ///   every `--host`;
 /// - NAME, saying that nobody is logged in;
 /// - FILE, from the roots the startup checked (`DESIGN.md` §6), each of
-///   its changes to a root a line of the log (§10).
-fn services(config: &Config, meters: &Arc<Meters>, tree: &Arc<Tree>) -> Vec<Box<dyn Service>> {
+///   its changes to a root a line of the log, and what it serves as well
+///   where `--log-access` and `--log-probe` ask for it (§10).
+fn services(
+    config: &Config,
+    meters: &Arc<Meters>,
+    tree: &Arc<Tree>,
+    logging: Logging,
+) -> Vec<Box<dyn Service>> {
+    let mut file = File::new(tree.clone(), Some(Arc::new(|line: &str| log::event(line))));
+    file.log_access = logging.access;
+    file.log_probe = logging.probe;
     vec![
         Box::new(Status::new(&config.names[0], (config.address >> 8) as u8, meters.clone())),
         Box::new(Time::new()),
@@ -133,6 +143,6 @@ fn services(config: &Config, meters: &Arc<Meters>, tree: &Arc<Tree>) -> Vec<Box<
             &config.hosts,
         )),
         Box::new(Name::new()),
-        Box::new(File::new(tree.clone(), Some(Arc::new(|line: &str| log::event(line))))),
+        Box::new(file),
     ]
 }

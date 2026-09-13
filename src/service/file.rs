@@ -145,14 +145,21 @@ pub struct File {
     time: Option<u32>,
     /// Where each change to a root is reported, if anywhere.
     log: Option<LogHook>,
+    /// `--log-access`: report what is served as well as what is changed
+    /// --- each file read, each directory listed, each `LOGIN`
+    /// (`DESIGN.md` §10).
+    pub log_access: bool,
+    /// `--log-probe`: report each `PROBE` too.
+    pub log_probe: bool,
 }
 
 impl File {
     /// A service over `tree`, answering **every** host that reaches it
     /// (`DESIGN.md` §6). Each change to a root is reported through `log`,
-    /// if given.
+    /// if given; what is served is reported too where [`File::log_access`]
+    /// and [`File::log_probe`] say so.
     pub fn new(tree: Arc<Tree>, log: Option<LogHook>) -> File {
-        File { tree, time: None, log }
+        File { tree, time: None, log, log_access: false, log_probe: false }
     }
 
     /// Dates by `universal` instead of the machine's clock, if given.
@@ -186,6 +193,8 @@ impl Service for File {
             self.tree.clone(),
             self.time,
             self.log.clone(),
+            self.log_access,
+            self.log_probe,
             from.0,
             version,
         )))
@@ -249,6 +258,9 @@ struct Control {
     time: Option<u32>,
     /// Where each change to a root is reported, if anywhere.
     log: Option<LogHook>,
+    /// `--log-access` and `--log-probe`, as the service was given them.
+    log_access: bool,
+    log_probe: bool,
     client: u16,
     /// The protocol version from the RFC's argument: `FILE 1` is 1. It
     /// chooses the shape of the reply to a write's `CLOSE` --- `FILE.c`
@@ -365,6 +377,8 @@ impl Control {
         tree: Arc<Tree>,
         time: Option<u32>,
         log: Option<LogHook>,
+        log_access: bool,
+        log_probe: bool,
         client: u16,
         version: u32,
     ) -> Control {
@@ -372,6 +386,8 @@ impl Control {
             tree,
             time,
             log,
+            log_access,
+            log_probe,
             client,
             version,
             user: None,
@@ -413,6 +429,29 @@ impl Control {
     /// Reports a change this session made to a root, `what` and its
     /// pathname, through the service's [`LogHook`] (`DESIGN.md` §10).
     fn changed(&self, what: &str) {
+        self.note(what);
+    }
+
+    /// Reports what this session served --- a `LOGIN`, a file read, a
+    /// directory listed --- where `--log-access` asks for it (`DESIGN.md`
+    /// §10).
+    fn served(&self, what: &str) {
+        if self.log_access {
+            self.note(what);
+        }
+    }
+
+    /// Reports a `PROBE`, where `--log-probe` asks for it: a band probes
+    /// far more often than it reads, and serves no file by it, so it is
+    /// asked for on its own.
+    fn probed(&self, what: &str) {
+        if self.log_probe {
+            self.note(what);
+        }
+    }
+
+    /// One line for the log: which client, and `what` it did.
+    fn note(&self, what: &str) {
         if let Some(log) = &self.log {
             log(&format!("{:o} {what}", self.client));
         }
@@ -436,6 +475,7 @@ impl Control {
                 // personal name off the two lines.
                 let home = format!("/{}/", user.to_lowercase());
                 let results = format!("{user} {home}{}{user}{}", NEWLINE as char, NEWLINE as char);
+                self.served(&format!("login {user}"));
                 self.user = Some(user);
                 self.reply(&tid, &handle, "LOGIN", &results);
             }
@@ -586,6 +626,7 @@ impl Control {
                 truename(pathname, true),
                 NEWLINE as char
             );
+            self.probed(&format!("probe {pathname}"));
             self.reply(tid, handle, "OPEN", &results);
             return;
         }
@@ -621,6 +662,7 @@ impl Control {
         let tn = truename(pathname, false);
         let results = format!("{properties}{}{tn}{}", NEWLINE as char, NEWLINE as char);
         if direction == "PROBE" {
+            self.probed(&format!("probe {pathname}"));
             self.reply(tid, handle, "OPEN", &results);
             return;
         }
@@ -628,6 +670,7 @@ impl Control {
         let Some(channel) = self.handles.get(handle).cloned() else {
             return self.error(tid, handle, "BUG", 'C', "No such file handle");
         };
+        self.served(&format!("read {pathname}"));
         self.reply(tid, handle, "OPEN", &results);
         let (op, bytes) =
             if characters { (CHARACTER_OP, to_lispm(&contents)) } else { (BINARY_OP, contents) };
@@ -658,6 +701,7 @@ impl Control {
                 truename(pathname, true),
                 NEWLINE as char
             );
+            self.probed(&format!("probe {pathname}"));
             return self.reply(tid, handle, "OPEN", &results);
         }
         self.error(tid, handle, "FNF", 'C', "That is a directory")
@@ -695,6 +739,7 @@ impl Control {
             text.push_str(&self.file_properties(&meta));
             text.push(nl);
         }
+        self.served(&format!("directory {pathname}"));
         self.reply(tid, handle, "DIRECTORY", "");
         {
             // A byte a character: `text` holds the protocol's newline at

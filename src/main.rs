@@ -9,7 +9,8 @@
 //!         [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
 //!         [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
 //!         [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-//!         [--trace] [--check] [-c|--config <file>] [-h|--help]
+//!         [--trace] [--log-access] [--log-probe] [--check]
+//!         [-c|--config <file>] [-h|--help]
 //! ```
 //!
 //! The site is flags (`ozd::config`), on the command line or in a file
@@ -57,7 +58,8 @@ const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,s
            [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
            [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
            [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-           [--trace] [--check] [-c|--config <file>] [-h|--help]";
+           [--trace] [--log-access] [--log-probe] [--check]
+           [-c|--config <file>] [-h|--help]";
 
 /// What `-h` and `--help` print after the usage: what this is, then each
 /// flag in the order the usage gives them, then the file of flags and how
@@ -119,6 +121,14 @@ time and their host table, and passing packets between them.
                                sends.
   --trace                      print every packet, every packet passed on to
                                another host, and every drop, with why.
+  --log-access                 log what is served, not only what is changed:
+                               a line for each file read, each directory
+                               listed and each LOGIN, with the client's
+                               address, as the lines for a write or a delete
+                               have. A band's boot is a few hundred lines.
+  --log-probe                  log each PROBE as well. A band probes far
+                               more often than it reads, and serves no file
+                               by it, so it is asked for on its own.
   --check                      check the flags and the roots, then exit, 0
                                if all is well and 1 if not; binds nothing and
                                changes nothing.
@@ -178,7 +188,7 @@ fn main() {
              owns its roots and nothing else (DESIGN.md §6)",
         );
     }
-    let Run { mut config, trace, check } =
+    let Run { mut config, logging, check } =
         Run::new(&typed, &file).unwrap_or_else(|e| refused(&e, read.as_deref()));
     // A band's own host table, where `--hosts-text` names one: its hosts go
     // before the flags' own, and it is read here, with the startup's other
@@ -211,7 +221,7 @@ fn main() {
     // the first's endpoint stops here, and the temporaries of the writes
     // the first is making stay where they are.
     let tree = Arc::new(tree);
-    let mut daemon = Daemon::new(&config, tree.clone(), trace)
+    let mut daemon = Daemon::new(&config, tree.clone(), logging)
         .unwrap_or_else(|e| fail(&format!("--listen {}: {e}", config.listen)));
     // A daemon killed mid-write leaves a FILE temporary: each is removed
     // before FILE can make another, the loop not having turned, and

@@ -156,7 +156,7 @@ pub fn tree(config: &Config) -> Arc<Tree> {
 /// A daemon for the site `text` gives, bound and not yet turned.
 pub fn daemon(text: &str) -> Daemon {
     let config = Config::parse(text).expect("the site's flags");
-    Daemon::new(&config, tree(&config), false).expect("a daemon")
+    Daemon::new(&config, tree(&config), ozd::config::Logging::default()).expect("a daemon")
 }
 
 /// The daemon's meters that count anything, in STATUS's order: every

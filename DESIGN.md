@@ -518,6 +518,13 @@ a System 100 site with them on one command line.
   every FILE operation that changes a root (write, rename, delete,
   create-directory, create-link and change-properties), with its
   pathname; and errors.
+- **`--log-access`** adds what is served to what is changed: a line for
+  each file read, each directory listed and each `LOGIN`, in the same shape
+  as a change's line, the client's address and then what it did. Without it
+  a band's whole boot leaves one line, the connection it opened.
+- **`--log-probe`** adds a line for each `PROBE`. A band probes far more
+  often than it reads, before a read and through a compile, and serves no
+  file by it, so it is asked for on its own.
 - **`--trace`** prints every packet, every packet passed on, and every
   drop.
 - **`--check`** reads the flags and the file of flags, runs the startup

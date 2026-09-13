@@ -250,7 +250,8 @@ fn nothing_is_sent_back_to_the_endpoint_it_came_from() {
 #[test]
 fn a_datagram_that_is_no_packet_is_dropped_and_counted() {
     let config = Config::parse(&site("")).unwrap();
-    let mut d = Daemon::new(&config, support::tree(&config), true).expect("a daemon");
+    let logging = ozd::config::Logging { trace: true, ..Default::default() };
+    let mut d = Daemon::new(&config, support::tree(&config), logging).expect("a daemon");
     let (lm1, _) = support::socket();
     let good = datagram(&rfc(LM1, OZ, "STATUS"), LM1);
     let long = [&good[..], &[0; 600]].concat();

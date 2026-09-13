@@ -338,11 +338,13 @@ fn a_word_that_is_not_a_flag_is_refused() {
 /// too.
 #[test]
 fn a_flag_without_its_value_is_refused() {
-    for flag in ["--address", "--name", "--listen", "--root", "--host", "--peer"] {
+    for flag in ["--address", "--name", "--listen", "--root", "--host", "--hosts-text", "--peer"] {
         misused_after(&format!("{flag}\n"), 4, &format!("{flag} wants <"));
         misused_after(&format!("{flag}   \n"), 4, &format!("{flag} wants <"));
     }
     misused_after("--trace yes\n", 4, "--trace takes no value");
+    misused_after("--log-access yes\n", 4, "--log-access takes no value");
+    misused_after("--log-probe yes\n", 4, "--log-probe takes no value");
 }
 
 /// **`--address`, `--name` and a `--root` are required**: with none, the
@@ -612,6 +614,8 @@ fn every_flag_can_be_given_on_the_command_line() {
         "--peer",
         "3040@192.0.2.5",
         "--trace",
+        "--log-access",
+        "--log-probe",
         "--check",
     ];
     let file = "--address 3060\n--name MIT-OZ,OZ,system=UNIX\n--listen 192.0.2.10\n\
@@ -619,9 +623,12 @@ fn every_flag_can_be_given_on_the_command_line() {
                 --host 3050,MIT-LISPM-1,LM1,system=LISPM\n--peer 3040@192.0.2.5\n";
     let r = run(&typed, "").unwrap();
     assert_eq!(r.config, Config::parse(file).unwrap());
-    assert!(r.trace && r.check);
+    assert!(r.logging.trace && r.logging.access && r.logging.probe && r.check);
     let r = run(&[], LEAST).unwrap();
-    assert!(!r.trace && !r.check, "neither unless given");
+    assert!(
+        !r.logging.trace && !r.logging.access && !r.logging.probe && !r.check,
+        "none of them unless given"
+    );
 }
 
 /// **The command line and the file of flags together are the site**: what
@@ -712,7 +719,16 @@ fn config_names_the_file_of_flags() {
 #[test]
 fn trace_may_be_in_a_file() {
     let r = run(&[], &format!("{LEAST}--trace\n")).unwrap();
-    assert!(r.trace && !r.check);
+    assert!(r.logging.trace && !r.check);
+}
+
+/// **The log flags may be in a file too**, and are the run's as `--trace`
+/// is: what a daemon writes down is a standing choice, and changes nothing
+/// it serves.
+#[test]
+fn the_log_flags_may_be_in_a_file() {
+    let r = run(&[], &format!("{LEAST}--log-access\n--log-probe\n")).unwrap();
+    assert!(r.logging.access && r.logging.probe && !r.logging.trace);
 }
 
 /// **`--check` and `-h`/`--help` are the command line's**, and in a file a

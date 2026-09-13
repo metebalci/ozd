@@ -878,6 +878,84 @@ fn the_file_service_manages_a_directory() {
     );
 }
 
+/// A service with `--log-access` on, and `--log-probe` with it where
+/// `probe` says: the same hook as [`serve_logged`], and the lines it took.
+fn serve_access(roots: Vec<Root>, probe: bool) -> (Net, Arc<Mutex<Vec<String>>>) {
+    let tree = Arc::new(Tree::new(roots).unwrap());
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let seen = log.clone();
+    let hook: LogHook = Arc::new(move |line: &str| seen.lock().unwrap().push(line.to_string()));
+    let mut file = File::new(tree, Some(hook));
+    file.log_access = true;
+    file.log_probe = probe;
+    (Net::new(file), log)
+}
+
+/// **With `--log-access`, what a client reads is logged as well as what it
+/// changes** (`DESIGN.md` §10): its login, each file read, and each
+/// directory listed, a line each with the client's address, as the change
+/// lines have. A `PROBE` opens nothing and is not among them.
+#[test]
+fn the_access_lines_are_logged_when_asked() {
+    let s = Scratch::new("log-access");
+    let root = s.dir("base");
+    std::fs::write(root.join("read.text"), "a file\n").unwrap();
+    let (mut n, log) = serve_access(vec![base(&root)], false);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let r = n.command(c, 30, &format!("T3 I0001 OPEN READ CHARACTER{nl}/read.text{nl}"));
+    assert!(r.starts_with("T3 I0001 OPEN "), "{r:?}");
+    n.down(c);
+    n.command(c, 40, "T4 I0001 CLOSE");
+    n.down(c);
+    n.command(c, 50, &format!("T5 I0001 DIRECTORY{nl}/*{nl}"));
+    n.down(c);
+    n.command(c, 60, "T6 I0001 CLOSE");
+    n.down(c);
+    let r = n.command(c, 70, &format!("T7  OPEN PROBE{nl}/read.text{nl}"));
+    assert!(r.starts_with("T7  OPEN "), "{r:?}");
+    let lines = log.lock().unwrap();
+    assert_eq!(
+        *lines,
+        ["3050 login LISPM", "3050 read /read.text", "3050 directory /*"],
+        "and the probe is not among them"
+    );
+}
+
+/// **`--log-probe` adds the probes.** A band probes far more often than it
+/// reads --- before a read, and through a compile --- and a probe serves no
+/// file, so it is a flag of its own.
+#[test]
+fn the_probe_lines_are_logged_when_asked() {
+    let s = Scratch::new("log-probe");
+    let root = s.dir("base");
+    std::fs::write(root.join("read.text"), "a file\n").unwrap();
+    let (mut n, log) = serve_access(vec![base(&root)], true);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    n.command(c, 30, &format!("T3  OPEN PROBE{nl}/read.text{nl}"));
+    let lines = log.lock().unwrap();
+    assert_eq!(*lines, ["3050 login LISPM", "3050 probe /read.text"]);
+}
+
+/// **Without the flags nothing a client reads is logged**, and the log
+/// keeps to what changes a root, as it did before they were there.
+#[test]
+fn without_the_flags_a_read_is_not_logged() {
+    let s = Scratch::new("log-quiet");
+    let root = s.dir("base");
+    std::fs::write(root.join("read.text"), "a file\n").unwrap();
+    let (mut n, _, log) = serve_logged(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    n.command(c, 30, &format!("T3 I0001 OPEN READ CHARACTER{nl}/read.text{nl}"));
+    n.down(c);
+    n.command(c, 40, "T4 I0001 CLOSE");
+    n.down(c);
+    let lines = log.lock().unwrap();
+    assert!(lines.is_empty(), "{lines:?}");
+}
+
 /// **The FILE service never writes outside the tree it serves.** A
 /// pathname is taken component by component with `..` and `.` refused; a
 /// root itself is no file to open for writing, delete, rename or create; a
