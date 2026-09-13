@@ -403,11 +403,11 @@ file of flags:
 ```
 
 `--address` and `--name` are required, and each may be given only once,
-as may `--listen`. `--root`, `--host` and `--peer` may each be given
-more than once. A `--root` whose value begins with `/` is the base. Any
-other `--root` is `<name>=<path>`, mounted at `/<name>`. `,ro` makes
-either kind read-only. `--peer` is `<address>@<ip>[:<port>]`, with port
-42042 unless one is given. A path cannot contain a comma.
+as may `--listen` and `--hosts-text`. `--root`, `--host` and `--peer` may
+each be given more than once. A `--root` whose value begins with `/` is
+the base. Any other `--root` is `<name>=<path>`, mounted at `/<name>`.
+`,ro` makes either kind read-only. `--peer` is `<address>@<ip>[:<port>]`,
+with port 42042 unless one is given. A path cannot contain a comma.
 
 The host table and the endpoints are separate. A `--host` is what HOSTAB
 tells, and a `--peer` is where packets go. A machine needs neither to be
@@ -567,7 +567,9 @@ clock that it sets.
    tests.
 2. **The flags**: each flag, each form of `--listen`, the file of flags
    with its comments, the command line winning over the file, the search
-   order, and each refusal with its line.
+   order, and each refusal with its line. A band's own host table is read
+   as HOSTAB's beside them (`tests/hosts_text.rs`), and what the log flags
+   add is asserted where FILE is (`tests/file.rs`).
 3. **The link and the hub.** An unknown host's endpoint is learned and
    answered. A fixed endpoint is not moved by a packet. A datagram with
    this host's own address as its source is dropped. A packet from one
