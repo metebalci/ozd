@@ -522,10 +522,10 @@ a System 100 site with them on one command line.
   every FILE operation that changes a root (write, rename, delete,
   create-directory, create-link and change-properties), with its
   pathname; and errors.
-- **`--log`** adds a line for each simple transaction answered, STATUS,
-  TIME or UPTIME, in the shape of a connection's lines: `TIME from 3050
-  answered`. A band asks STATUS of every host at each `(hostat)`, so it is
-  asked for on its own.
+- **`--log-simple`** adds a line for each simple transaction answered,
+  STATUS, TIME or UPTIME, in the shape of a connection's lines: `TIME from
+  3050 answered`. A band asks STATUS of every host at each `(hostat)`, so it
+  is asked for on its own.
 - **`--log-file`** adds what FILE serves to what it changes: a line for
   each file read, each directory listed and each `LOGIN`, in the same shape
   as a change's line, the client's address and then what it did. Without it

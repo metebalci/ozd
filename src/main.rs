@@ -9,7 +9,7 @@
 //!         [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
 //!         [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
 //!         [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-//!         [--trace] [--log] [--log-file] [--log-file-probe] [--check]
+//!         [--trace] [--log-simple] [--log-file] [--log-file-probe] [--check]
 //!         [-c|--config <file>] [-h|--help]
 //! ```
 //!
@@ -58,7 +58,7 @@ const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,s
            [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
            [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
            [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-           [--trace] [--log] [--log-file] [--log-file-probe] [--check]
+           [--trace] [--log-simple] [--log-file] [--log-file-probe] [--check]
            [-c|--config <file>] [-h|--help]";
 
 /// What `-h` and `--help` print after the usage: what this is, then each
@@ -121,7 +121,7 @@ time and their host table, and passing packets between them.
                                sends.
   --trace                      print every packet, every packet passed on to
                                another host, and every drop, with why.
-  --log                        log each simple transaction answered, STATUS,
+  --log-simple                 log each simple transaction answered, STATUS,
                                TIME or UPTIME, as \"TIME from 3050 answered\".
                                A band asks STATUS of every host at each
                                (hostat), so this is asked for on its own.

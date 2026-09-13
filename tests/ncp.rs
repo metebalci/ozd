@@ -830,10 +830,10 @@ fn a_refusal_is_logged_with_its_reason() {
     );
 }
 
-/// **With `--log`, each simple transaction answered is a line of the log**
-/// (`DESIGN.md` §10), in the shape a connection's lines have: the contact,
-/// the host that asked, and `answered`. Without it there is no line, since
-/// an answer opens no connection for the log to follow.
+/// **With `--log-simple`, each simple transaction answered is a line of the
+/// log** (`DESIGN.md` §10), in the shape a connection's lines have: the
+/// contact, the host that asked, and `answered`. Without it there is no
+/// line, since an answer opens no connection for the log to follow.
 #[test]
 fn a_simple_transaction_answered_is_logged_when_asked() {
     let mut quiet = Ncp::new(0o3060);
@@ -841,11 +841,11 @@ fn a_simple_transaction_answered_is_logged_when_asked() {
     let quiet_log = Lines::hook(&mut quiet);
     quiet.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, "TIME")));
     assert_eq!(next_from(&mut quiet, 0).map(|p| p.opcode), Some(op::ANS));
-    assert_eq!(quiet_log.take(), NOTHING, "no line without --log");
+    assert_eq!(quiet_log.take(), NOTHING, "no line without --log-simple");
 
     let mut h = Ncp::new(0o3060);
     h.serve(Box::new(Time::fixed(0)));
-    h.log_answers = true;
+    h.log_simple = true;
     let log = Lines::hook(&mut h);
     h.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, "TIME")));
     assert_eq!(next_from(&mut h, 0).map(|p| p.opcode), Some(op::ANS));

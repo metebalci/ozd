@@ -77,14 +77,14 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   over, because `--name` gives its names, and a host with no Chaosnet
   address is skipped. ozd reads the file when it starts, so a change to it
   wants a restart.
-- `--log`, `--log-file` and `--log-file-probe` each add lines to the log,
-  and each works on its own. `--log` writes a line for each simple
-  transaction ozd answers, such as TIME, STATUS or UPTIME. `--log-file`
-  writes one for each file read, each directory listed and each login, with
-  the address of the machine that asked. `--log-file-probe` writes one for
-  each FILE probe, which a band makes far more often than it reads. Without
-  them, a machine's whole boot leaves one line in the log, the connection
-  it opened.
+- `--log-simple`, `--log-file` and `--log-file-probe` each add lines to the
+  log, and each works on its own. `--log-simple` writes a line for each
+  simple transaction ozd answers, such as TIME, STATUS or UPTIME.
+  `--log-file` writes one for each file read, each directory listed and each
+  login, with the address of the machine that asked. `--log-file-probe`
+  writes one for each FILE probe, which a band makes far more often than it
+  reads. Without them, a machine's whole boot leaves one line in the log,
+  the connection it opened.
 - `--listen` sets where ozd answers. Without it, ozd listens on
   `127.0.0.1:42042`, which only this host can reach. Give an address on
   your network, or `0.0.0.0`, to let other hosts reach it.

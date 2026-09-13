@@ -283,7 +283,7 @@ enum Flag {
     HostsText,
     Peer,
     Trace,
-    Log,
+    LogSimple,
     LogFile,
     LogFileProbe,
     Check,
@@ -301,7 +301,7 @@ impl Flag {
         Flag::HostsText,
         Flag::Peer,
         Flag::Trace,
-        Flag::Log,
+        Flag::LogSimple,
         Flag::LogFile,
         Flag::LogFileProbe,
         Flag::Check,
@@ -329,7 +329,7 @@ impl Flag {
             Flag::HostsText => "--hosts-text",
             Flag::Peer => "--peer",
             Flag::Trace => "--trace",
-            Flag::Log => "--log",
+            Flag::LogSimple => "--log-simple",
             Flag::LogFile => "--log-file",
             Flag::LogFileProbe => "--log-file-probe",
             Flag::Check => "--check",
@@ -350,7 +350,7 @@ impl Flag {
             Flag::Peer => Some("<addr>@<ip>[:<port>]"),
             Flag::Config => Some("<file>"),
             Flag::Trace
-            | Flag::Log
+            | Flag::LogSimple
             | Flag::LogFile
             | Flag::LogFileProbe
             | Flag::Check
@@ -482,8 +482,8 @@ impl Flags {
 pub struct Run {
     /// The site.
     pub config: Config,
-    /// What this run writes down: `--trace`, `--log`, `--log-file` and
-    /// `--log-file-probe` (`DESIGN.md` §10).
+    /// What this run writes down: `--trace`, `--log-simple`, `--log-file`
+    /// and `--log-file-probe` (`DESIGN.md` §10).
     pub logging: Logging,
     /// `--check`: check the flags and the roots, bind nothing, and exit
     /// (`DESIGN.md` §10).
@@ -498,11 +498,11 @@ pub struct Logging {
     /// `--trace`: every packet, every packet passed on, and every drop,
     /// with why --- at the daemon's clock, and not the log.
     pub trace: bool,
-    /// `--log`: a line of the log for each simple transaction answered ---
-    /// STATUS, TIME, UPTIME --- in the shape a connection's lines have,
-    /// `TIME from 3050 answered`. A band asks STATUS of every host at each
-    /// `(hostat)`, so these are asked for on their own.
-    pub transactions: bool,
+    /// `--log-simple`: a line of the log for each simple transaction
+    /// answered --- STATUS, TIME, UPTIME --- in the shape a connection's
+    /// lines have, `TIME from 3050 answered`. A band asks STATUS of every
+    /// host at each `(hostat)`, so these are asked for on their own.
+    pub simple: bool,
     /// `--log-file`: a line for each file FILE reads, each directory it
     /// lists and each `LOGIN`, beside the lines every change to a root
     /// makes.
@@ -616,7 +616,7 @@ struct Reading {
     /// Every host name given so far, this host's and every `--host`'s.
     named: Vec<Named>,
     trace: bool,
-    transactions: bool,
+    simple: bool,
     file: bool,
     file_probe: bool,
     check: bool,
@@ -649,8 +649,8 @@ impl Reading {
                 self.trace = true;
                 Ok(())
             }
-            Flag::Log => {
-                self.transactions = true;
+            Flag::LogSimple => {
+                self.simple = true;
                 Ok(())
             }
             Flag::LogFile => {
@@ -907,7 +907,7 @@ impl Reading {
         };
         let logging = Logging {
             trace: self.trace,
-            transactions: self.transactions,
+            simple: self.simple,
             file: self.file,
             file_probe: self.file_probe,
         };

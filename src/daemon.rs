@@ -36,11 +36,11 @@ impl Daemon {
     /// The daemon for the site `config` gives: its socket bound at
     /// `config.listen`, its NCP at `config.address`, and what it serves.
     /// `logging` is what this run writes down: `--trace` for the link and
-    /// the NCP both, `--log` for the NCP's answers, and `--log-file` and
-    /// `--log-file-probe` for FILE
-    /// (`DESIGN.md` §10). A socket that cannot be bound is the error, and
-    /// then nothing is served. `tree` is the roots as the startup checked
-    /// them, which FILE serves (`DESIGN.md` §6).
+    /// the NCP both, `--log-simple` for the NCP's answers, and `--log-file`
+    /// and `--log-file-probe` for FILE (`DESIGN.md` §10). A socket that
+    /// cannot be bound is the error, and then nothing is served. `tree` is
+    /// the roots as the startup checked them, which FILE serves
+    /// (`DESIGN.md` §6).
     pub fn new(config: &Config, tree: Arc<Tree>, logging: Logging) -> io::Result<Daemon> {
         let meters = Arc::new(Meters::default());
         let mut link = Link::bind(config, meters.clone())?;
@@ -50,7 +50,7 @@ impl Daemon {
         // (`DESIGN.md` §10); `trace` stays the packets.
         ncp.log = Some(Arc::new(|line: &str| log::event(line)));
         ncp.trace = logging.trace;
-        ncp.log_answers = logging.transactions;
+        ncp.log_simple = logging.simple;
         for service in services(config, &meters, &tree, logging) {
             ncp.serve(service);
         }
