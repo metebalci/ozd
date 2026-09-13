@@ -140,6 +140,7 @@ fn the_modules_example_is_read_whole() {
                 host(0o3051, &["MIT-LISPM-2", "LM2"], Some("LISPM")),
             ],
             peers: vec![Peer { address: 0o3040, endpoint: at("192.0.2.5:42042") }],
+            hosts_text: None,
         }
     );
 }

@@ -191,6 +191,12 @@ pub struct Config {
     /// and not a socket to bind; not `0.0.0.0` or `::`, which are every
     /// interface and no host; and not port 0, which nothing can be sent to.
     pub peers: Vec<Peer>,
+    /// `--hosts-text <file>`, at most once: a band's own host table,
+    /// `sys/site/hosts.text`, whose hosts HOSTAB answers for beside the
+    /// `--host`s (`crate::hosts_text`). The path as given; the file is read
+    /// at startup, as the roots are checked then, and its hosts go before
+    /// the flags' own ([`Config::add_hosts`]).
+    pub hosts_text: Option<PathBuf>,
 }
 
 /// One `--root` (`DESIGN.md` §6).
@@ -274,6 +280,7 @@ enum Flag {
     Listen,
     Root,
     Host,
+    HostsText,
     Peer,
     Trace,
     Check,
@@ -282,12 +289,13 @@ enum Flag {
 }
 
 impl Flag {
-    const ALL: [Flag; 10] = [
+    const ALL: [Flag; 11] = [
         Flag::Address,
         Flag::Name,
         Flag::Listen,
         Flag::Root,
         Flag::Host,
+        Flag::HostsText,
         Flag::Peer,
         Flag::Trace,
         Flag::Check,
@@ -312,6 +320,7 @@ impl Flag {
             Flag::Listen => "--listen",
             Flag::Root => "--root",
             Flag::Host => "--host",
+            Flag::HostsText => "--hosts-text",
             Flag::Peer => "--peer",
             Flag::Trace => "--trace",
             Flag::Check => "--check",
@@ -328,6 +337,7 @@ impl Flag {
             Flag::Listen => Some("<endpoint>"),
             Flag::Root => Some("<path>[,ro] or <name>=<path>[,ro]"),
             Flag::Host => Some("<addr>,<NAME>[,<NAME>...][,system=<TYPE>]"),
+            Flag::HostsText => Some("<file>"),
             Flag::Peer => Some("<addr>@<ip>[:<port>]"),
             Flag::Config => Some("<file>"),
             Flag::Trace | Flag::Check | Flag::Help => None,
@@ -496,6 +506,48 @@ impl Config {
     pub fn parse(text: &str) -> Result<Config, Error> {
         Ok(Run::new(&Flags::default(), &Flags::file(text)?)?.config)
     }
+
+    /// The hosts of a band's own host table, `--hosts-text`, put **before**
+    /// the flags' own so that a `--host` adds to the site's table rather
+    /// than being buried in it; or why one of them cannot be served.
+    ///
+    /// The rules are `--host`'s (the module documentation), across the two
+    /// together and within the table itself: **an address is one host**, and
+    /// not this host's, whose names are `--name`'s; and **a name is one
+    /// host's**, ignoring case, since HOSTAB finds a name that way and would
+    /// otherwise answer two hosts for it.
+    pub fn add_hosts(&mut self, hosts: Vec<Host>) -> Result<(), String> {
+        let mut merged = hosts;
+        merged.append(&mut self.hosts);
+        // **This host's own line is passed over.** A site's table holds
+        // every host of the site, this one among them, and here its names
+        // are `--name`'s and its address `--address`'s: the line is what
+        // this host already answers for, not a second host, and refusing it
+        // would refuse every site its own table.
+        merged.retain(|h| h.address != self.address);
+        let mut addresses = vec![self.address];
+        let mut names = self.names.clone();
+        for host in &merged {
+            let what = host.names.first().map_or("a host", String::as_str);
+            if addresses.contains(&host.address) {
+                return Err(format!(
+                    "{what} is at {:o}, where another host is already; one host an address",
+                    host.address
+                ));
+            }
+            addresses.push(host.address);
+            for name in &host.names {
+                if names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                    return Err(format!(
+                        "{name} names another host already, and HOSTAB finds a name ignoring case"
+                    ));
+                }
+                names.push(name.clone());
+            }
+        }
+        self.hosts = merged;
+        Ok(())
+    }
 }
 
 /// A host name given, and where: so that a later one can name it when it
@@ -522,6 +574,8 @@ struct Reading {
     roots: Vec<(Root, Place)>,
     hosts: Vec<(Host, Place)>,
     peers: Vec<(Peer, Place)>,
+    /// `--hosts-text`: the file a band's own host table is in.
+    hosts_text: Option<(PathBuf, Place)>,
     /// Every host name given so far, this host's and every `--host`'s.
     named: Vec<Named>,
     trace: bool,
@@ -549,6 +603,7 @@ impl Reading {
             Flag::Listen => self.listen(here, value),
             Flag::Root => self.root(here, value),
             Flag::Host => self.host(i, here, value),
+            Flag::HostsText => self.host_table(here, value),
             Flag::Peer => self.peer(here, value),
             Flag::Trace => {
                 self.trace = true;
@@ -716,6 +771,20 @@ impl Reading {
         Ok(())
     }
 
+    /// `--hosts-text`: the file, once. Nothing of it is read here --- the
+    /// flags touch no disk (the module documentation) --- so nothing of the
+    /// path is checked but that there is one.
+    fn host_table(&mut self, here: Place, value: &str) -> Result<(), String> {
+        if let Some((_, p)) = &self.hosts_text {
+            return Err(format!("once only, and given {} already", on(*p, here)));
+        }
+        if value.trim().is_empty() {
+            return Err("wants the file a band's own host table is in".to_string());
+        }
+        self.hosts_text = Some((PathBuf::from(value), here));
+        Ok(())
+    }
+
     /// `words` as host names given by the `i`th flag read, `by`, at `here`,
     /// each recorded so that no later name can be it; or the first that is
     /// refused. None has an `=`: [`names_and_system`] has taken those as
@@ -782,6 +851,7 @@ impl Reading {
             roots: self.roots.into_iter().map(|(r, _)| r).collect(),
             hosts: self.hosts.into_iter().map(|(h, _)| h).collect(),
             peers: self.peers.into_iter().map(|(p, _)| p).collect(),
+            hosts_text: self.hosts_text.map(|(path, _)| path),
         };
         Ok(Run { config, trace: self.trace, check: self.check })
     }

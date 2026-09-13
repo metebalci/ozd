@@ -11,6 +11,7 @@ pub mod address;
 pub mod chudp;
 pub mod config;
 pub mod daemon;
+pub mod hosts_text;
 pub mod lispm;
 pub mod log;
 pub mod ncp;

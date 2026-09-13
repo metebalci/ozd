@@ -362,7 +362,8 @@ ozd serves six protocols (`PROTOCOLS.md`).
   `now × 60 / 10⁹`, which wraps at 32 bits after about 828 days.
 - **FILE** follows `sys/doc/chfile.text`, with the containment of §6.
 - **HOSTAB** looks up each line that the client sends, ignoring case,
-  among this host's names and every `--host`'s names. For a match, it
+  among this host's names, every `--host`'s names, and the names of every
+  host of the table `--hosts-text` names (§8). For a match, it
   answers with one `NAME` line per name, the official name first, the
   `CHAOS` address in octal, and a `SYSTEM-TYPE` line if the host's flag
   gives one (for this host, the one on `--name`), and then an EOF. For no
@@ -395,6 +396,8 @@ file of flags:
 --root tree=/path/to/system-100-0/sys,ro
 # the site's host table, for HOSTAB
 --host 3050,MIT-LISPM-1,LM1,system=LISPM
+# the band's own host table, whose hosts HOSTAB answers for as well
+--hosts-text /srv/lispm/sys/site/hosts.text
 # an endpoint that is fixed; the rest are learned
 --peer 3040@192.0.2.5
 ```
@@ -409,6 +412,20 @@ either kind read-only. `--peer` is `<address>@<ip>[:<port>]`, with port
 The host table and the endpoints are separate. A `--host` is what HOSTAB
 tells, and a `--peer` is where packets go. A machine needs neither to be
 served, but it needs a `--host` to be found by name.
+
+**The band's own host table.** `--hosts-text <file>` names
+`sys/site/hosts.text`, the file a site already keeps for its machines, and
+HOSTAB answers for the hosts in it as well. Its `HOST` lines are read as the
+band's own generator reads them (`GENERATE-HOST-TABLE-2`,
+`sys/network/chaos/chsaux.lisp`): the official name, the first Chaosnet
+address in octal, the system type, and the nicknames in brackets. A `NET`
+line, a comment and a blank are skipped, and so is a host with no Chaosnet
+address, such as the ARPANET entries of `sys/site/extra.hosts`. An address
+that is not one is refused, naming its line. This host's own line is passed
+over, because its names are `--name`'s, so a site can name the table it
+keeps without editing itself out of it. The table's hosts come before the
+`--host`s, and each name and each address is still one host's. The file is
+read at startup, with the roots, so a change to it wants a restart.
 
 **The file of flags, `.ozdrc`.** `-c|--config <file>` names the file,
 which must then exist. Without it, ozd uses the file that `OZD_RC`

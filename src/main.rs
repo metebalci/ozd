@@ -8,8 +8,8 @@
 //! ozd [--address <addr>] [--name <NAME>[,<NAME>...][,system=<TYPE>]]
 //!         [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
 //!         [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
-//!         [--peer <addr>@<ip>[:<port>]] [--trace] [--check]
-//!         [-c|--config <file>] [-h|--help]
+//!         [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
+//!         [--trace] [--check] [-c|--config <file>] [-h|--help]
 //! ```
 //!
 //! The site is flags (`ozd::config`), on the command line or in a file
@@ -37,6 +37,7 @@
 
 use ozd::config::{Error, Flags, Place, Run};
 use ozd::daemon::Daemon;
+use ozd::hosts_text;
 use ozd::log;
 use ozd::roots::Tree;
 use std::io::ErrorKind;
@@ -55,8 +56,8 @@ const RC_NAMED: &str = "OZD_RC";
 const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,system=<TYPE>]]
            [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
            [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
-           [--peer <addr>@<ip>[:<port>]] [--trace] [--check]
-           [-c|--config <file>] [-h|--help]";
+           [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
+           [--trace] [--check] [-c|--config <file>] [-h|--help]";
 
 /// What `-h` and `--help` print after the usage: what this is, then each
 /// flag in the order the usage gives them, then the file of flags and how
@@ -101,6 +102,14 @@ time and their host table, and passing packets between them.
                                3050,MIT-LISPM-1,LM1,system=LISPM. The flag
                                can come more than once, a host a flag, and
                                never at this host's address.
+  --hosts-text <file>          a band's own host table, sys/site/hosts.text,
+                               whose hosts HOSTAB answers for as well: the
+                               site writes a host once, where its bands read
+                               it, and a --host adds what that file does not
+                               hold. Its HOST lines are read, a host with no
+                               Chaosnet address is skipped, and every other
+                               line is; the file is read at startup, so a
+                               change to it wants a restart.
   --peer <addr>@<ip>[:<port>]  a host whose endpoint is fixed, so that a
                                packet does not move it: its address and an
                                IP address, 3040@192.0.2.5, at 42042 unless
@@ -169,8 +178,21 @@ fn main() {
              owns its roots and nothing else (DESIGN.md §6)",
         );
     }
-    let Run { config, trace, check } =
+    let Run { mut config, trace, check } =
         Run::new(&typed, &file).unwrap_or_else(|e| refused(&e, read.as_deref()));
+    // A band's own host table, where `--hosts-text` names one: its hosts go
+    // before the flags' own, and it is read here, with the startup's other
+    // checks, so that `--check` covers it and a table that cannot be read
+    // stops the daemon rather than quietly leaving HOSTAB half a site.
+    if let Some(path) = config.hosts_text.clone() {
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| fail(&format!("--hosts-text {}: {e}", path.display())));
+        let hosts =
+            hosts_text::parse(&text).unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
+        config
+            .add_hosts(hosts)
+            .unwrap_or_else(|e| fail(&format!("--hosts-text {}: {e}", path.display())));
+    }
     // The roots: each canonicalised, a directory, not `/`, writable unless
     // `,ro`, and inside no other; a base directory a mount covers is warned
     // of (`DESIGN.md` §6). `--check` runs these and stops there, having

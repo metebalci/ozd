@@ -70,6 +70,13 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
 - `--host` adds a machine to the host table that HOSTAB answers from.
   Bands whose own table does not know the machine can then find it by
   name. Each further machine needs its own address and its own `--host`.
+- `--hosts-text` names a band's own host table, such as
+  `/srv/lispm/sys/site/hosts.text`, and HOSTAB answers for the hosts in it
+  as well. A site that already keeps that file for its machines then writes
+  each host once instead of twice. This host's own line in it is passed
+  over, because `--name` gives its names, and a host with no Chaosnet
+  address is skipped. ozd reads the file when it starts, so a change to it
+  wants a restart.
 - `--listen` sets where ozd answers. Without it, ozd listens on
   `127.0.0.1:42042`, which only this host can reach. Give an address on
   your network, or `0.0.0.0`, to let other hosts reach it.

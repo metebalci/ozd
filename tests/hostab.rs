@@ -176,7 +176,19 @@ struct Asking {
 
 impl Asking {
     fn new(site: &str) -> Asking {
-        let site = Config::parse(site).expect("the site's flags");
+        Asking::of(Config::parse(site).expect("the site's flags"))
+    }
+
+    /// The same site, with the hosts of a band's own host table before the
+    /// flags' own, as `--hosts-text` puts them (`DESIGN.md` §8).
+    fn with_table(site: &str, table: &str) -> Asking {
+        let mut site = Config::parse(site).expect("the site's flags");
+        let hosts = ozd::hosts_text::parse(table).expect("the table");
+        site.add_hosts(hosts).expect("the table's hosts");
+        Asking::of(site)
+    }
+
+    fn of(site: Config) -> Asking {
         let mut server = Ncp::new(site.address);
         let hostab = Hostab::new(site.address, &site.names, site.system.as_deref(), &site.hosts);
         server.serve(Box::new(hostab));
@@ -542,4 +554,38 @@ fn the_client_closing_ends_the_connection() {
     site.user.send(Out::Close("Aborted".into()));
     site.shuttle();
     assert_eq!(site.connections(), (0, 0), "aborted");
+}
+
+/// **A host of the band's own table is answered as a `--host` is**
+/// (`DESIGN.md` §7, §8). A site keeps its machines in `sys/site/hosts.text`
+/// for its bands; `--hosts-text` reads that file, so the site writes them
+/// once, and a `--host` adds what the file does not hold --- `cbridge`, for
+/// one, which is no band's business.
+#[test]
+fn a_host_of_the_bands_own_table_is_answered() {
+    let table = "\
+;;; -*- Mode:Fundamental;Base:8 -*-
+
+NET CHAOS,\t7
+HOST MIT-LISPM-3,\tCHAOS 3052,USER,LISPM,LISPM,[LM3]
+HOST MIT-LISPM-4,\tCHAOS 3053,USER,LISPM,LISPM
+";
+    let site = "--address 3060\n--name MIT-OZ,OZ\n--root /srv/lispm\n--host 3040,BRIDGE-1\n";
+    let mut asking = Asking::with_table(site, table);
+    for asked in ["MIT-LISPM-3", "lm3"] {
+        let answer = asking.ask(asked);
+        assert_eq!(
+            answer,
+            lines(&["NAME MIT-LISPM-3", "NAME LM3", "CHAOS 3052", "SYSTEM-TYPE LISPM"]),
+            "asked {asked}"
+        );
+        let host = define_host(&answer).expect("a host");
+        assert_eq!(host.name, "MIT-LISPM-3");
+        assert_eq!(host.chaos, [0o3052]);
+        assert!(finds(asked, &host));
+    }
+    let want = lines(&["NAME MIT-LISPM-4", "CHAOS 3053", "SYSTEM-TYPE LISPM"]);
+    assert_eq!(asking.ask("MIT-LISPM-4"), want);
+    assert_eq!(asking.ask("BRIDGE-1"), lines(&["NAME BRIDGE-1", "CHAOS 3040"]), "and the flags'");
+    assert_eq!(asking.ask("MIT-OZ"), lines(&["NAME MIT-OZ", "NAME OZ", "CHAOS 3060"]), "and this");
 }
