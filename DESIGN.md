@@ -70,6 +70,7 @@ src/
   lib.rs            the modules
   main.rs           arguments, startup, the loop
   config.rs         the flags and the file of them, checked (§8)
+  hosts_text.rs     a band's own host table, read as HOSTAB's (§8)
   daemon.rs         the daemon: the link, the NCP, the services, turn (§4)
   log.rs            one line an event on stderr, stamped in UTC (§10)
   address.rs        parse_address
@@ -80,6 +81,8 @@ src/
   lispm.rs          the Lisp Machine character set
   service/
     status.rs  time.rs  file.rs  hostab.rs  name.rs
+examples/
+  ask.rs            asks a host for STATUS, TIME and UPTIME over CHUDP
 ```
 
 **`ncp`** is Chaosnet's connection layer, the equivalent of TCP. It

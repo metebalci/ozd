@@ -100,6 +100,27 @@ anything. `--trace` prints every packet, and `--help` describes each
 flag. ozd refuses to run as root, and it logs to stderr, one line per
 event.
 
+To check that a running ozd answers, run the example that comes with its
+source, from this directory. It asks a host for STATUS, TIME and UPTIME
+over CHUDP, as a Lisp Machine would, and prints the answers:
+
+```sh
+cargo run --example ask 127.0.0.1:42042 3060
+```
+
+```text
+asking 3060 at 127.0.0.1:42042, from 3376
+STATUS  MIT-OZ
+TIME    2026-09-13T13:24:58Z (+0 s from this host)
+UPTIME  0d 1h 6m 45s
+```
+
+The first argument is where ozd listens, by name or IP address, and the
+second is its Chaos address in octal, 3060 unless given. The example sends
+from an address of its own on the same subnet, host 376, which ozd learns
+as it learns any machine's. If one of your machines has that address, give
+another as a third argument.
+
 Each machine names ozd as its CHUDP peer. This example runs a machine
 with [muir](https://github.com/metebalci/muir), a CADR simulator, on the
 same computer as ozd:
