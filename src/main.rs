@@ -9,7 +9,7 @@
 //!         [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
 //!         [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
 //!         [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-//!         [--trace] [--log-access] [--log-probe] [--check]
+//!         [--trace] [--log] [--log-file] [--log-file-probe] [--check]
 //!         [-c|--config <file>] [-h|--help]
 //! ```
 //!
@@ -58,7 +58,7 @@ const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,s
            [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
            [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
            [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-           [--trace] [--log-access] [--log-probe] [--check]
+           [--trace] [--log] [--log-file] [--log-file-probe] [--check]
            [-c|--config <file>] [-h|--help]";
 
 /// What `-h` and `--help` print after the usage: what this is, then each
@@ -121,12 +121,16 @@ time and their host table, and passing packets between them.
                                sends.
   --trace                      print every packet, every packet passed on to
                                another host, and every drop, with why.
-  --log-access                 log what is served, not only what is changed:
-                               a line for each file read, each directory
-                               listed and each LOGIN, with the client's
-                               address, as the lines for a write or a delete
-                               have. A band's boot is a few hundred lines.
-  --log-probe                  log each PROBE as well. A band probes far
+  --log                        log each simple transaction answered, STATUS,
+                               TIME or UPTIME, as \"TIME from 3050 answered\".
+                               A band asks STATUS of every host at each
+                               (hostat), so this is asked for on its own.
+  --log-file                   log what FILE serves, not only what it
+                               changes: a line for each file read, each
+                               directory listed and each LOGIN, with the
+                               client's address, as a write's line has it.
+                               A band's boot is a few hundred lines.
+  --log-file-probe             log each FILE PROBE as well. A band probes far
                                more often than it reads, and serves no file
                                by it, so it is asked for on its own.
   --check                      check the flags and the roots, then exit, 0

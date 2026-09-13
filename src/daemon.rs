@@ -36,7 +36,8 @@ impl Daemon {
     /// The daemon for the site `config` gives: its socket bound at
     /// `config.listen`, its NCP at `config.address`, and what it serves.
     /// `logging` is what this run writes down: `--trace` for the link and
-    /// the NCP both, and `--log-access` and `--log-probe` for FILE
+    /// the NCP both, `--log` for the NCP's answers, and `--log-file` and
+    /// `--log-file-probe` for FILE
     /// (`DESIGN.md` §10). A socket that cannot be bound is the error, and
     /// then nothing is served. `tree` is the roots as the startup checked
     /// them, which FILE serves (`DESIGN.md` §6).
@@ -49,6 +50,7 @@ impl Daemon {
         // (`DESIGN.md` §10); `trace` stays the packets.
         ncp.log = Some(Arc::new(|line: &str| log::event(line)));
         ncp.trace = logging.trace;
+        ncp.log_answers = logging.transactions;
         for service in services(config, &meters, &tree, logging) {
             ncp.serve(service);
         }
@@ -122,7 +124,7 @@ impl Daemon {
 /// - NAME, saying that nobody is logged in;
 /// - FILE, from the roots the startup checked (`DESIGN.md` §6), each of
 ///   its changes to a root a line of the log, and what it serves as well
-///   where `--log-access` and `--log-probe` ask for it (§10).
+///   where `--log-file` and `--log-file-probe` ask for it (§10).
 fn services(
     config: &Config,
     meters: &Arc<Meters>,
@@ -130,8 +132,8 @@ fn services(
     logging: Logging,
 ) -> Vec<Box<dyn Service>> {
     let mut file = File::new(tree.clone(), Some(Arc::new(|line: &str| log::event(line))));
-    file.log_access = logging.access;
-    file.log_probe = logging.probe;
+    file.log_file = logging.file;
+    file.log_file_probe = logging.file_probe;
     vec![
         Box::new(Status::new(&config.names[0], (config.address >> 8) as u8, meters.clone())),
         Box::new(Time::new()),

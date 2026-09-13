@@ -283,15 +283,16 @@ enum Flag {
     HostsText,
     Peer,
     Trace,
-    LogAccess,
-    LogProbe,
+    Log,
+    LogFile,
+    LogFileProbe,
     Check,
     Config,
     Help,
 }
 
 impl Flag {
-    const ALL: [Flag; 13] = [
+    const ALL: [Flag; 14] = [
         Flag::Address,
         Flag::Name,
         Flag::Listen,
@@ -300,8 +301,9 @@ impl Flag {
         Flag::HostsText,
         Flag::Peer,
         Flag::Trace,
-        Flag::LogAccess,
-        Flag::LogProbe,
+        Flag::Log,
+        Flag::LogFile,
+        Flag::LogFileProbe,
         Flag::Check,
         Flag::Config,
         Flag::Help,
@@ -327,8 +329,9 @@ impl Flag {
             Flag::HostsText => "--hosts-text",
             Flag::Peer => "--peer",
             Flag::Trace => "--trace",
-            Flag::LogAccess => "--log-access",
-            Flag::LogProbe => "--log-probe",
+            Flag::Log => "--log",
+            Flag::LogFile => "--log-file",
+            Flag::LogFileProbe => "--log-file-probe",
             Flag::Check => "--check",
             Flag::Config => "--config",
             Flag::Help => "--help",
@@ -346,7 +349,12 @@ impl Flag {
             Flag::HostsText => Some("<file>"),
             Flag::Peer => Some("<addr>@<ip>[:<port>]"),
             Flag::Config => Some("<file>"),
-            Flag::Trace | Flag::LogAccess | Flag::LogProbe | Flag::Check | Flag::Help => None,
+            Flag::Trace
+            | Flag::Log
+            | Flag::LogFile
+            | Flag::LogFileProbe
+            | Flag::Check
+            | Flag::Help => None,
         }
     }
 }
@@ -474,8 +482,8 @@ impl Flags {
 pub struct Run {
     /// The site.
     pub config: Config,
-    /// What this run writes down: `--trace`, `--log-access` and
-    /// `--log-probe` (`DESIGN.md` §10).
+    /// What this run writes down: `--trace`, `--log`, `--log-file` and
+    /// `--log-file-probe` (`DESIGN.md` §10).
     pub logging: Logging,
     /// `--check`: check the flags and the roots, bind nothing, and exit
     /// (`DESIGN.md` §10).
@@ -490,14 +498,19 @@ pub struct Logging {
     /// `--trace`: every packet, every packet passed on, and every drop,
     /// with why --- at the daemon's clock, and not the log.
     pub trace: bool,
-    /// `--log-access`: a line of the log for each file read, each
-    /// directory listed and each `LOGIN`, beside the lines every change to
-    /// a root makes.
-    pub access: bool,
-    /// `--log-probe`: a line for each `PROBE` as well. A band probes far
+    /// `--log`: a line of the log for each simple transaction answered ---
+    /// STATUS, TIME, UPTIME --- in the shape a connection's lines have,
+    /// `TIME from 3050 answered`. A band asks STATUS of every host at each
+    /// `(hostat)`, so these are asked for on their own.
+    pub transactions: bool,
+    /// `--log-file`: a line for each file FILE reads, each directory it
+    /// lists and each `LOGIN`, beside the lines every change to a root
+    /// makes.
+    pub file: bool,
+    /// `--log-file-probe`: a line for each FILE `PROBE`. A band probes far
     /// more often than it reads, and serves no file by it, so it is asked
     /// for on its own.
-    pub probe: bool,
+    pub file_probe: bool,
 }
 
 impl Run {
@@ -603,8 +616,9 @@ struct Reading {
     /// Every host name given so far, this host's and every `--host`'s.
     named: Vec<Named>,
     trace: bool,
-    access: bool,
-    probe: bool,
+    transactions: bool,
+    file: bool,
+    file_probe: bool,
     check: bool,
 }
 
@@ -635,12 +649,16 @@ impl Reading {
                 self.trace = true;
                 Ok(())
             }
-            Flag::LogAccess => {
-                self.access = true;
+            Flag::Log => {
+                self.transactions = true;
                 Ok(())
             }
-            Flag::LogProbe => {
-                self.probe = true;
+            Flag::LogFile => {
+                self.file = true;
+                Ok(())
+            }
+            Flag::LogFileProbe => {
+                self.file_probe = true;
                 Ok(())
             }
             Flag::Check => {
@@ -887,7 +905,12 @@ impl Reading {
             peers: self.peers.into_iter().map(|(p, _)| p).collect(),
             hosts_text: self.hosts_text.map(|(path, _)| path),
         };
-        let logging = Logging { trace: self.trace, access: self.access, probe: self.probe };
+        let logging = Logging {
+            trace: self.trace,
+            transactions: self.transactions,
+            file: self.file,
+            file_probe: self.file_probe,
+        };
         Ok(Run { config, logging, check: self.check })
     }
 }

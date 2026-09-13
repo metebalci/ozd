@@ -224,12 +224,16 @@ pub struct Ncp {
     /// ECHO from 3050 closed, host down: nothing heard for 180 s
     /// ```
     ///
-    /// The last is [`HOST_DOWN_NS`]. Nothing is logged for a simple
-    /// transaction, which makes no connection and is how STATUS is asked,
-    /// over and over; nor for a BRD let fall. A contact name and a reason
+    /// The last is [`HOST_DOWN_NS`]. A simple transaction makes no
+    /// connection, and is how STATUS is asked, over and over, so it is
+    /// logged only where [`Ncp::log_answers`] asks for it, as `TIME from
+    /// 3050 answered`. Nothing is logged for a BRD let fall. A contact name and a reason
     /// come off the network, so a control character in either is written as
     /// its escape, and a line stays one line. Unset, nothing is formatted.
     pub log: Option<crate::log::Hook>,
+    /// `--log`: each simple transaction answered is a line of [`Ncp::log`]
+    /// too. Off unless set.
+    pub log_answers: bool,
 }
 
 impl Ncp {
@@ -244,6 +248,7 @@ impl Ncp {
             trace: false,
             window: 8,
             log: None,
+            log_answers: false,
         }
     }
 
@@ -417,6 +422,11 @@ impl Ncp {
             Response::Answer(data) => {
                 let ans = self.packet(op::ANS, from, 0, p.number, p.number, data);
                 self.send(ans);
+                if self.log_answers
+                    && let Some(log) = &self.log
+                {
+                    log(&line(&name, false, from.0, format_args!("answered")));
+                }
             }
             Response::Refuse(reason) => {
                 self.refuse(from, p.number, &name, reason);

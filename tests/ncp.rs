@@ -830,6 +830,28 @@ fn a_refusal_is_logged_with_its_reason() {
     );
 }
 
+/// **With `--log`, each simple transaction answered is a line of the log**
+/// (`DESIGN.md` §10), in the shape a connection's lines have: the contact,
+/// the host that asked, and `answered`. Without it there is no line, since
+/// an answer opens no connection for the log to follow.
+#[test]
+fn a_simple_transaction_answered_is_logged_when_asked() {
+    let mut quiet = Ncp::new(0o3060);
+    quiet.serve(Box::new(Time::fixed(0)));
+    let quiet_log = Lines::hook(&mut quiet);
+    quiet.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, "TIME")));
+    assert_eq!(next_from(&mut quiet, 0).map(|p| p.opcode), Some(op::ANS));
+    assert_eq!(quiet_log.take(), NOTHING, "no line without --log");
+
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Time::fixed(0)));
+    h.log_answers = true;
+    let log = Lines::hook(&mut h);
+    h.receive(0, &arriving(&rfc((0o3050, 0o21), 0o3060, 1, "TIME")));
+    assert_eq!(next_from(&mut h, 0).map(|p| p.opcode), Some(op::ANS));
+    assert_eq!(log.take(), ["TIME from 3050 answered"]);
+}
+
 /// **A connection opened from this end is logged when the OPN comes
 /// back**, not when its RFC goes: until then nothing is open. With a log on
 /// each of two NCPs, one's [`Ncp::connect`] and the other's service, each

@@ -145,21 +145,21 @@ pub struct File {
     time: Option<u32>,
     /// Where each change to a root is reported, if anywhere.
     log: Option<LogHook>,
-    /// `--log-access`: report what is served as well as what is changed
+    /// `--log-file`: report what is served as well as what is changed
     /// --- each file read, each directory listed, each `LOGIN`
     /// (`DESIGN.md` §10).
-    pub log_access: bool,
-    /// `--log-probe`: report each `PROBE` too.
-    pub log_probe: bool,
+    pub log_file: bool,
+    /// `--log-file-probe`: report each `PROBE` too.
+    pub log_file_probe: bool,
 }
 
 impl File {
     /// A service over `tree`, answering **every** host that reaches it
     /// (`DESIGN.md` §6). Each change to a root is reported through `log`,
-    /// if given; what is served is reported too where [`File::log_access`]
-    /// and [`File::log_probe`] say so.
+    /// if given; what is served is reported too where [`File::log_file`]
+    /// and [`File::log_file_probe`] say so.
     pub fn new(tree: Arc<Tree>, log: Option<LogHook>) -> File {
-        File { tree, time: None, log, log_access: false, log_probe: false }
+        File { tree, time: None, log, log_file: false, log_file_probe: false }
     }
 
     /// Dates by `universal` instead of the machine's clock, if given.
@@ -193,8 +193,8 @@ impl Service for File {
             self.tree.clone(),
             self.time,
             self.log.clone(),
-            self.log_access,
-            self.log_probe,
+            self.log_file,
+            self.log_file_probe,
             from.0,
             version,
         )))
@@ -258,9 +258,9 @@ struct Control {
     time: Option<u32>,
     /// Where each change to a root is reported, if anywhere.
     log: Option<LogHook>,
-    /// `--log-access` and `--log-probe`, as the service was given them.
-    log_access: bool,
-    log_probe: bool,
+    /// `--log-file` and `--log-file-probe`, as the service was given them.
+    log_file: bool,
+    log_file_probe: bool,
     client: u16,
     /// The protocol version from the RFC's argument: `FILE 1` is 1. It
     /// chooses the shape of the reply to a write's `CLOSE` --- `FILE.c`
@@ -377,8 +377,8 @@ impl Control {
         tree: Arc<Tree>,
         time: Option<u32>,
         log: Option<LogHook>,
-        log_access: bool,
-        log_probe: bool,
+        log_file: bool,
+        log_file_probe: bool,
         client: u16,
         version: u32,
     ) -> Control {
@@ -386,8 +386,8 @@ impl Control {
             tree,
             time,
             log,
-            log_access,
-            log_probe,
+            log_file,
+            log_file_probe,
             client,
             version,
             user: None,
@@ -433,19 +433,19 @@ impl Control {
     }
 
     /// Reports what this session served --- a `LOGIN`, a file read, a
-    /// directory listed --- where `--log-access` asks for it (`DESIGN.md`
+    /// directory listed --- where `--log-file` asks for it (`DESIGN.md`
     /// §10).
     fn served(&self, what: &str) {
-        if self.log_access {
+        if self.log_file {
             self.note(what);
         }
     }
 
-    /// Reports a `PROBE`, where `--log-probe` asks for it: a band probes
+    /// Reports a `PROBE`, where `--log-file-probe` asks for it: a band probes
     /// far more often than it reads, and serves no file by it, so it is
     /// asked for on its own.
     fn probed(&self, what: &str) {
-        if self.log_probe {
+        if self.log_file_probe {
             self.note(what);
         }
     }

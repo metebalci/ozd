@@ -22,8 +22,9 @@
 //! control connection to `FILE 1`, a `LOGIN`, a `DATA-CONNECTION` that the
 //! server opens back to a contact this end serves, a `DIRECTORY`, whose
 //! records come down that connection until its EOF, and a `CLOSE`. It logs
-//! in as `ASK`, which a server with `--log-access` writes down. Each step
-//! waits three seconds at most.
+//! in as `ASK`, which a server with `--log-file` writes down, as `--log`
+//! writes down the three simple transactions. Each step waits three seconds
+//! at most.
 //!
 //! **It sends from a Chaos address of its own**, `<from>`, or else the
 //! asked host's subnet with host 376. A hub learns that address at this

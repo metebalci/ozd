@@ -878,7 +878,7 @@ fn the_file_service_manages_a_directory() {
     );
 }
 
-/// A service with `--log-access` on, and `--log-probe` with it where
+/// A service with `--log-file` on, and `--log-file-probe` with it where
 /// `probe` says: the same hook as [`serve_logged`], and the lines it took.
 fn serve_access(roots: Vec<Root>, probe: bool) -> (Net, Arc<Mutex<Vec<String>>>) {
     let tree = Arc::new(Tree::new(roots).unwrap());
@@ -886,18 +886,18 @@ fn serve_access(roots: Vec<Root>, probe: bool) -> (Net, Arc<Mutex<Vec<String>>>)
     let seen = log.clone();
     let hook: LogHook = Arc::new(move |line: &str| seen.lock().unwrap().push(line.to_string()));
     let mut file = File::new(tree, Some(hook));
-    file.log_access = true;
-    file.log_probe = probe;
+    file.log_file = true;
+    file.log_file_probe = probe;
     (Net::new(file), log)
 }
 
-/// **With `--log-access`, what a client reads is logged as well as what it
+/// **With `--log-file`, what a client reads is logged as well as what it
 /// changes** (`DESIGN.md` §10): its login, each file read, and each
 /// directory listed, a line each with the client's address, as the change
 /// lines have. A `PROBE` opens nothing and is not among them.
 #[test]
 fn the_access_lines_are_logged_when_asked() {
-    let s = Scratch::new("log-access");
+    let s = Scratch::new("log-file");
     let root = s.dir("base");
     std::fs::write(root.join("read.text"), "a file\n").unwrap();
     let (mut n, log) = serve_access(vec![base(&root)], false);
@@ -922,7 +922,7 @@ fn the_access_lines_are_logged_when_asked() {
     );
 }
 
-/// **`--log-probe` adds the probes.** A band probes far more often than it
+/// **`--log-file-probe` adds the probes.** A band probes far more often than it
 /// reads --- before a read, and through a compile --- and a probe serves no
 /// file, so it is a flag of its own.
 #[test]

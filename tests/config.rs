@@ -343,8 +343,9 @@ fn a_flag_without_its_value_is_refused() {
         misused_after(&format!("{flag}   \n"), 4, &format!("{flag} wants <"));
     }
     misused_after("--trace yes\n", 4, "--trace takes no value");
-    misused_after("--log-access yes\n", 4, "--log-access takes no value");
-    misused_after("--log-probe yes\n", 4, "--log-probe takes no value");
+    misused_after("--log yes\n", 4, "--log takes no value");
+    misused_after("--log-file yes\n", 4, "--log-file takes no value");
+    misused_after("--log-file-probe yes\n", 4, "--log-file-probe takes no value");
 }
 
 /// **`--address`, `--name` and a `--root` are required**: with none, the
@@ -614,8 +615,9 @@ fn every_flag_can_be_given_on_the_command_line() {
         "--peer",
         "3040@192.0.2.5",
         "--trace",
-        "--log-access",
-        "--log-probe",
+        "--log",
+        "--log-file",
+        "--log-file-probe",
         "--check",
     ];
     let file = "--address 3060\n--name MIT-OZ,OZ,system=UNIX\n--listen 192.0.2.10\n\
@@ -623,10 +625,20 @@ fn every_flag_can_be_given_on_the_command_line() {
                 --host 3050,MIT-LISPM-1,LM1,system=LISPM\n--peer 3040@192.0.2.5\n";
     let r = run(&typed, "").unwrap();
     assert_eq!(r.config, Config::parse(file).unwrap());
-    assert!(r.logging.trace && r.logging.access && r.logging.probe && r.check);
+    assert!(
+        r.logging.trace
+            && r.logging.transactions
+            && r.logging.file
+            && r.logging.file_probe
+            && r.check
+    );
     let r = run(&[], LEAST).unwrap();
     assert!(
-        !r.logging.trace && !r.logging.access && !r.logging.probe && !r.check,
+        !r.logging.trace
+            && !r.logging.transactions
+            && !r.logging.file
+            && !r.logging.file_probe
+            && !r.check,
         "none of them unless given"
     );
 }
@@ -727,8 +739,8 @@ fn trace_may_be_in_a_file() {
 /// it serves.
 #[test]
 fn the_log_flags_may_be_in_a_file() {
-    let r = run(&[], &format!("{LEAST}--log-access\n--log-probe\n")).unwrap();
-    assert!(r.logging.access && r.logging.probe && !r.logging.trace);
+    let r = run(&[], &format!("{LEAST}--log\n--log-file\n--log-file-probe\n")).unwrap();
+    assert!(r.logging.transactions && r.logging.file && r.logging.file_probe && !r.logging.trace);
 }
 
 /// **`--check` and `-h`/`--help` are the command line's**, and in a file a

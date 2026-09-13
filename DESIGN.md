@@ -522,13 +522,17 @@ a System 100 site with them on one command line.
   every FILE operation that changes a root (write, rename, delete,
   create-directory, create-link and change-properties), with its
   pathname; and errors.
-- **`--log-access`** adds what is served to what is changed: a line for
+- **`--log`** adds a line for each simple transaction answered, STATUS,
+  TIME or UPTIME, in the shape of a connection's lines: `TIME from 3050
+  answered`. A band asks STATUS of every host at each `(hostat)`, so it is
+  asked for on its own.
+- **`--log-file`** adds what FILE serves to what it changes: a line for
   each file read, each directory listed and each `LOGIN`, in the same shape
   as a change's line, the client's address and then what it did. Without it
   a band's whole boot leaves one line, the connection it opened.
-- **`--log-probe`** adds a line for each `PROBE`. A band probes far more
-  often than it reads, before a read and through a compile, and serves no
-  file by it, so it is asked for on its own.
+- **`--log-file-probe`** adds a line for each FILE `PROBE`. A band probes
+  far more often than it reads, before a read and through a compile, and
+  serves no file by it, so it is asked for on its own.
 - **`--trace`** prints every packet, every packet passed on, and every
   drop.
 - **`--check`** reads the flags and the file of flags, runs the startup
@@ -573,7 +577,8 @@ clock that it sets.
    with its comments, the command line winning over the file, the search
    order, and each refusal with its line. A band's own host table is read
    as HOSTAB's beside them (`tests/hosts_text.rs`), and what the log flags
-   add is asserted where FILE is (`tests/file.rs`).
+   add is asserted where FILE and the NCP are (`tests/file.rs`,
+   `tests/ncp.rs`).
 3. **The link and the hub.** An unknown host's endpoint is learned and
    answered. A fixed endpoint is not moved by a packet. A datagram with
    this host's own address as its source is dropped. A packet from one
