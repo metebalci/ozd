@@ -105,7 +105,7 @@ source, from this directory. It asks a host for STATUS, TIME and UPTIME
 over CHUDP, as a Lisp Machine would, and prints the answers:
 
 ```sh
-cargo run --example ask 127.0.0.1:42042 3060
+cargo run --example ask 3060@127.0.0.1:42042
 ```
 
 ```text
@@ -115,11 +115,11 @@ TIME    2026-09-13T13:24:58Z (+0 s from this host)
 UPTIME  0d 1h 6m 45s
 ```
 
-The first argument is where ozd listens, by name or IP address, and the
-second is its Chaos address in octal, 3060 unless given. The example sends
-from an address of its own on the same subnet, host 376, which ozd learns
-as it learns any machine's. If one of your machines has that address, give
-another as a third argument.
+The argument names ozd as `--peer` names a peer: its Chaos address, then
+where it listens, by name or IP address, at port 42042 unless one is
+given. The example sends from an address of its own on the same subnet,
+host 376, which ozd learns as it learns any machine's. If one of your
+machines has that address, give another as a second argument.
 
 Each machine names ozd as its CHUDP peer. This example runs a machine
 with [muir](https://github.com/metebalci/muir), a CADR simulator, on the
