@@ -9,8 +9,9 @@
 //!         [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
 //!         [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
 //!         [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-//!         [--trace] [--log-simple] [--log-file] [--log-file-probe] [--check]
-//!         [-c|--config <file>] [-h|--help]
+//!         [--tcp <endpoint>,<CONTACT>@<addr>]
+//!         [--trace] [--log-simple] [--log-file] [--log-file-probe] [--log-tcp]
+//!         [--check] [-c|--config <file>] [-h|--help]
 //! ```
 //!
 //! The site is flags (`ozd::config`), on the command line or in a file
@@ -58,8 +59,9 @@ const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,s
            [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
            [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
            [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-           [--trace] [--log-simple] [--log-file] [--log-file-probe] [--check]
-           [-c|--config <file>] [-h|--help]";
+           [--tcp <endpoint>,<CONTACT>@<addr>]
+           [--trace] [--log-simple] [--log-file] [--log-file-probe] [--log-tcp]
+           [--check] [-c|--config <file>] [-h|--help]";
 
 /// What `-h` and `--help` print after the usage: what this is, then each
 /// flag in the order the usage gives them, then the file of flags and how
@@ -119,6 +121,18 @@ time and their host table, and passing packets between them.
                                than once, a peer an address; every other
                                endpoint is learned from the packets a host
                                sends.
+  --tcp <endpoint>,<CONTACT>@<addr>
+                               a TCP listener whose every connection is
+                               carried to a Chaosnet stream: from this host
+                               to CONTACT at the host of this subnet at
+                               addr, bytes both ways, as
+                               127.0.0.1:10000,TELNET@3050. Carried to
+                               TELNET it is a Lisp top level with no login,
+                               for whoever reaches the port. The endpoint is
+                               --listen's but with a port, a bare port on
+                               the loopback. The flag can come more than
+                               once, a listener an endpoint; nothing listens
+                               without it.
   --trace                      print every packet, every packet passed on to
                                another host, and every drop, with why.
   --log-simple                 log each simple transaction answered, STATUS,
@@ -134,6 +148,9 @@ time and their host table, and passing packets between them.
   --log-file-probe             log each FILE PROBE as well. A band probes far
                                more often than it reads, and serves no file
                                by it, so it is asked for on its own.
+  --log-tcp                    log each --tcp connection: a line when it
+                               opens, with where the client is, and one
+                               when it closes, with who closed it.
   --check                      check the flags and the roots, then exit, 0
                                if all is well and 1 if not; binds nothing and
                                changes nothing.
@@ -235,8 +252,8 @@ fn main() {
     // the first's endpoint stops here, and the temporaries of the writes
     // the first is making stay where they are.
     let tree = Arc::new(tree);
-    let mut daemon = Daemon::new(&config, tree.clone(), logging)
-        .unwrap_or_else(|e| fail(&format!("--listen {}: {e}", config.listen)));
+    let mut daemon =
+        Daemon::new(&config, tree.clone(), logging).unwrap_or_else(|e| fail(&e.to_string()));
     // A daemon killed mid-write leaves a FILE temporary: each is removed
     // before FILE can make another, the loop not having turned, and
     // nothing else is touched.

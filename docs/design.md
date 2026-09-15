@@ -81,6 +81,7 @@ src/
   roots.rs          the tree FILE serves: roots, resolve, readonly (§6)
   chudp.rs          the frame, and the link and switch (§5)
   ncp.rs            the NCP
+  tcp.rs            TCP listeners, each connection carried to a stream (§8)
   lispm.rs          the Lisp Machine character set
   service/
     status.rs  time.rs  file.rs  hostab.rs  name.rs
@@ -129,6 +130,7 @@ same first index only one time in 65,472.
 start   config → startup checks (§6) → bind → Ncp with its services
         → stale temporaries removed (§6)
 loop    now ← nanoseconds since start, from Instant
+        each TCP connection waiting at a --tcp listener → Ncp::connect (§8)
         wait for one datagram, at most 100 ms → the link (§5)
         while Ncp::transmit(now) gives a buffer → Link::send(buffer)
 ```
@@ -426,6 +428,8 @@ file of flags:
 --hosts-text /srv/lispm/sys/site/hosts.text
 # an endpoint that is fixed; the rest are learned
 --peer 3040@192.0.2.5
+# a TCP listener carried to TELNET at a machine; nothing listens without one
+--tcp 127.0.0.1:10000,TELNET@3050
 ```
 
 `--address` and `--name` are required, and each may be given only once,
@@ -438,6 +442,37 @@ with port 42042 unless one is given. A path cannot contain a comma.
 The host table and the endpoints are separate. A `--host` is what HOSTAB
 tells, and a `--peer` is where packets go. A machine needs neither to be
 served, but it needs a `--host` to be found by name.
+
+**A TCP listener, `--tcp <endpoint>,<CONTACT>@<addr>`.** ozd listens on
+the endpoint, and carries each TCP connection it takes to a Chaosnet
+stream: an RFC from this host's own address to `CONTACT` at the host at
+`addr`, then bytes both ways (`tcp.rs`). It is not TELNET's in
+particular; TELNET into a Lisp top level is its first use. The flag may
+be given more than once, one listener an endpoint.
+
+- **Nothing listens without it**, a bare port is on the loopback, and each
+  listener names its one contact. Carried to TELNET, a connection is a
+  Lisp top level with no login for whoever reaches the port, so SUPDUP or
+  EVAL are reachable only where a listener names them.
+- **The endpoint** is an IP literal with a port, or a port alone on the
+  loopback; a TCP listener has no default port. **The host** is a host of this host's subnet and not
+  this host, since this host routes nothing (§5); its endpoint is the
+  one the link has, learned or fixed by a `--peer`.
+- **The client's bytes** are read when the NCP polls the connection's
+  session, which it does whenever nothing on the connection is
+  unreceipted: at most one packet's worth, 488 bytes, a poll. What is not
+  read waits in TCP, which holds a fast client back, and a keystroke waits
+  at most one turn of the loop (§4).
+- **The contact's bytes** are written to the client as they arrive, and a
+  client that reads slower is given up once a megabyte waits for it.
+- **Ending.** The client closing its end is an EOF and then a CLS, each
+  sent once what went before is receipted. The Chaosnet connection
+  ending, by the contact's CLS, a refusal, or the host being given up
+  after three minutes of silence (§4), closes the TCP connection.
+- **The log.** With `--log-tcp`, a TCP connection writes a line when it
+  opens, with where the client is, and one when it closes, with who closed
+  it (§10). The NCP's own lines for the stream are written as they are
+  for any connection.
 
 **The band's own host table.** `--hosts-text <file>` names
 `sys/site/hosts.text`, the file a site already keeps for its machines, and
@@ -574,6 +609,11 @@ a System 100 site with them on one command line.
 - **`--log-file-probe`** adds a line for each FILE `PROBE`. A band probes
   far more often than it reads, before a read and through a compile, and
   serves no file by it, so it is asked for on its own.
+- **`--log-tcp`** adds two lines for each `--tcp` connection: `TCP from
+  127.0.0.1:54321 to TELNET at 3050 (MIT-LISPM-1) opened` when it is taken,
+  and the same with `closed by the client`, `closed, the client is gone`,
+  `closed, the client is not reading` or `closed: <reason>` when it ends.
+  Nothing is written for what passes between.
 - **`--trace`** prints every packet, every packet passed on, and every
   drop.
 - **`--check`** reads the flags and the file of flags, runs the startup
@@ -644,6 +684,12 @@ clock that it sets.
 7. **FILE**, with a scripted client, and with two clients at once.
 8. **HOSTAB** and **NAME**, each with a scripted client taken from the
    machine's own user end.
+9. **`--tcp`**, with a TCP client and a test host serving a stream
+   contact: nothing listens without the flag, a bare port binds the
+   loopback, bytes go both ways in packets of at most 488 bytes, the
+   client closing and the contact closing each end the other side, a
+   refused contact and a host given up close the client, and two clients
+   are two streams.
 
 **The acceptance test** is done by hand. ozd runs with the System 100
 site that the README configures, its `tree` mount pointing at the

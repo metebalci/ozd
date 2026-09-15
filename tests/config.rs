@@ -14,7 +14,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use ozd::config::{Config, Error, Flags, Host, Peer, Place, Root, Run};
+use ozd::config::{Config, Error, Flags, Host, Peer, Place, Root, Run, Tcp};
 use support::ozd;
 
 /// The least a file of flags can be: an address, a name and a root, on
@@ -141,6 +141,7 @@ fn the_modules_example_is_read_whole() {
             ],
             peers: vec![Peer { address: 0o3040, endpoint: at("192.0.2.5:42042") }],
             hosts_text: None,
+            tcps: vec![],
         }
     );
 }
@@ -307,6 +308,59 @@ fn a_peer_is_an_address_and_an_endpoint() {
     ]
     .map(|(address, endpoint)| Peer { address, endpoint: at(endpoint) });
     assert_eq!(config.peers, want);
+}
+
+/// **`--tcp` carries a TCP listener to a stream**,
+/// `<endpoint>,<CONTACT>@<addr>`: the endpoint as `--listen` takes one, a
+/// bare port on the loopback; a contact name; and a host of this host's
+/// subnet, in octal or as subnet:host (`docs/design.md` §8). It may come
+/// more than once, and without it nothing listens.
+#[test]
+fn a_tcp_listener_is_an_endpoint_a_contact_and_a_host() {
+    assert_eq!(with("").tcps, [], "nothing listens without --tcp");
+    let config = with(
+        "--tcp 127.0.0.1:10000,TELNET@3050\n--tcp 10001,EVAL@6:51\n--tcp [::1]:10002,TELNET@3052\n",
+    );
+    let want = [
+        ("127.0.0.1:10000", "TELNET", 0o3050),
+        ("127.0.0.1:10001", "EVAL", 0o3051),
+        ("[::1]:10002", "TELNET", 0o3052),
+    ]
+    .map(|(listen, contact, host)| Tcp {
+        listen: at(listen),
+        contact: contact.to_string(),
+        host,
+    });
+    assert_eq!(config.tcps, want);
+}
+
+/// **A `--tcp` is refused for what is wrong with it**, at its line: its
+/// shape; an endpoint with no port, since a TCP listener has no default
+/// one, or a name, which is not resolved; a contact that is no contact
+/// name; an address that is none; a host of another subnet, which this host
+/// does not reach, and this host itself; and a second listener on one
+/// endpoint.
+#[test]
+fn a_tcp_listener_is_refused_for_what_is_wrong_with_it() {
+    for (value, says) in [
+        ("10000", "wants <endpoint>,<CONTACT>@<addr>"),
+        ("10000,TELNET", "wants <endpoint>,<CONTACT>@<addr>"),
+        ("192.0.2.10,TELNET@3050", "a port"),
+        ("::1,TELNET@3050", "a port"),
+        ("localhost:10000,TELNET@3050", "a name is not resolved"),
+        ("10000,@3050", "a contact name"),
+        ("10000,TEL NET@3050", "a contact name"),
+        ("10000,TELNET@9", "not an address"),
+        ("10000,TELNET@4401", "another subnet"),
+        ("10000,TELNET@3060", "this host"),
+    ] {
+        refused_after(&format!("--tcp {value}\n"), 4, says);
+    }
+    refused_after(
+        "--tcp 10000,TELNET@3050\n--tcp 127.0.0.1:10000,EVAL@3051\n",
+        5,
+        "listens there already",
+    );
 }
 
 /// **A `--host` and a `--peer` at one address are one host, named and
@@ -614,19 +668,28 @@ fn every_flag_can_be_given_on_the_command_line() {
         "3050,MIT-LISPM-1,LM1,system=LISPM",
         "--peer",
         "3040@192.0.2.5",
+        "--tcp",
+        "10000,TELNET@3050",
         "--trace",
         "--log-simple",
         "--log-file",
         "--log-file-probe",
+        "--log-tcp",
         "--check",
     ];
     let file = "--address 3060\n--name MIT-OZ,OZ,system=UNIX\n--listen 192.0.2.10\n\
                 --root /srv/lispm\n--root tree=/path/to/system-100-0/sys,ro\n\
-                --host 3050,MIT-LISPM-1,LM1,system=LISPM\n--peer 3040@192.0.2.5\n";
+                --host 3050,MIT-LISPM-1,LM1,system=LISPM\n--peer 3040@192.0.2.5\n\
+                --tcp 10000,TELNET@3050\n";
     let r = run(&typed, "").unwrap();
     assert_eq!(r.config, Config::parse(file).unwrap());
     assert!(
-        r.logging.trace && r.logging.simple && r.logging.file && r.logging.file_probe && r.check
+        r.logging.trace
+            && r.logging.simple
+            && r.logging.file
+            && r.logging.file_probe
+            && r.logging.tcp
+            && r.check
     );
     let r = run(&[], LEAST).unwrap();
     assert!(
@@ -634,6 +697,7 @@ fn every_flag_can_be_given_on_the_command_line() {
             && !r.logging.simple
             && !r.logging.file
             && !r.logging.file_probe
+            && !r.logging.tcp
             && !r.check,
         "none of them unless given"
     );

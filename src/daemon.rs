@@ -6,11 +6,12 @@
 //!
 //! What the link has for this host goes to [`Ncp::receive`], and every
 //! buffer [`Ncp::transmit`] gives goes to [`Link::send`] --- the pump,
-//! `docs/design.md` §4, none of it protocol.
+//! `docs/design.md` §4, none of it protocol. Before that, each connection
+//! waiting at a `--tcp` listener is carried to a stream (`crate::tcp`).
 
 use crate::chudp::Link;
 use crate::config::{Config, Logging};
-use crate::log::{self, Names};
+use crate::log::{self, Hook, Names};
 use crate::ncp::{Ncp, Service};
 use crate::roots::Tree;
 use crate::service::file::File;
@@ -18,32 +19,42 @@ use crate::service::hostab::Hostab;
 use crate::service::name::Name;
 use crate::service::status::{Meters, Status};
 use crate::service::time::{Time, Uptime};
+use crate::tcp::{Carrier, Listener};
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 /// This host: its link --- the socket, the endpoints, the switch --- its NCP
-/// with what `services` gives it to serve, and the meters the link
-/// counts into and STATUS reads.
+/// with what `services` gives it to serve, the meters the link counts into
+/// and STATUS reads, and its `--tcp` listeners.
 pub struct Daemon {
     link: Link,
     ncp: Ncp,
     meters: Arc<Meters>,
+    /// Each `--tcp`, bound; none without one (`docs/design.md` §8).
+    listeners: Vec<Listener>,
+    /// The site's host table, for the lines a TCP connection makes.
+    names: Arc<Names>,
+    /// `--log-tcp`: where each TCP connection's opening and closing are
+    /// written; none unless asked for.
+    tcp_log: Option<Hook>,
 }
 
 impl Daemon {
     /// The daemon for the site `config` gives: its socket bound at
     /// `config.listen`, its NCP at `config.address`, and what it serves.
     /// `logging` is what this run writes down: `--trace` for the link and
-    /// the NCP both, `--log-simple` for the NCP's answers, and `--log-file`
-    /// and `--log-file-probe` for FILE (`docs/design.md` §10). A socket that
-    /// cannot be bound is the error, and then nothing is served. `tree` is
-    /// the roots as the startup checked them, which FILE serves
-    /// (`docs/design.md` §6).
+    /// the NCP both, `--log-simple` for the NCP's answers, `--log-file`
+    /// and `--log-file-probe` for FILE, and `--log-tcp` for `--tcp`'s
+    /// connections (`docs/design.md` §10). A socket or a `--tcp` listener
+    /// that cannot be bound is the error, naming its flag, and then nothing
+    /// is served. `tree` is the roots as the startup checked them, which
+    /// FILE serves (`docs/design.md` §6).
     pub fn new(config: &Config, tree: Arc<Tree>, logging: Logging) -> io::Result<Daemon> {
         let meters = Arc::new(Meters::default());
-        let mut link = Link::bind(config, meters.clone())?;
+        let mut link = Link::bind(config, meters.clone())
+            .map_err(|e| io::Error::new(e.kind(), format!("--listen {}: {e}", config.listen)))?;
         link.trace = logging.trace;
         let mut ncp = Ncp::new(config.address);
         // Each connection opened, refused and closed, as a line of the log
@@ -57,13 +68,29 @@ impl Daemon {
         for service in services(config, &meters, &tree, logging, &names) {
             ncp.serve(service);
         }
-        Ok(Daemon { link, ncp, meters })
+        let listeners = config
+            .tcps
+            .iter()
+            .map(|t| {
+                Listener::bind(t)
+                    .map_err(|e| io::Error::new(e.kind(), format!("--tcp {}: {e}", t.listen)))
+            })
+            .collect::<io::Result<Vec<_>>>()?;
+        let tcp_log: Option<Hook> =
+            if logging.tcp { Some(Arc::new(|line: &str| log::event(line))) } else { None };
+        Ok(Daemon { link, ncp, meters, listeners, names, tcp_log })
     }
 
     /// Where the socket is bound, as the system bound it: a `listen` at
     /// port 0 is the port the system picked.
     pub fn at(&self) -> SocketAddr {
         self.link.at()
+    }
+
+    /// Where each `--tcp` listener is bound, as the system bound it, in the
+    /// order given; none without `--tcp`.
+    pub fn tcp_at(&self) -> Vec<SocketAddr> {
+        self.listeners.iter().map(Listener::at).collect()
     }
 
     /// What the link has counted, which STATUS answers with (`docs/design.md`
@@ -82,6 +109,13 @@ impl Daemon {
     /// unanswered.
     pub fn ncp(&mut self) -> &mut Ncp {
         &mut self.ncp
+    }
+
+    /// Where the lines `--log-tcp` asks for go, for the TCP connections
+    /// taken from now on: none for none. A test collects them this way, as
+    /// it collects the NCP's through [`Ncp::log`].
+    pub fn set_tcp_log(&mut self, log: Option<Hook>) {
+        self.tcp_log = log;
     }
 
     /// One turn of the loop at `now`, nanoseconds on the daemon's clock:
@@ -104,11 +138,48 @@ impl Daemon {
     /// a `now` up to `wait` old, and what is sent in answer can go again up
     /// to that much early --- by as much as the wait makes one late.
     pub fn turn(&mut self, now: u64, wait: Duration) {
+        self.accept(now);
         if let Some(framed) = self.link.receive(now, wait) {
             self.ncp.receive(now, &framed);
         }
         while let Some(buffer) = self.ncp.transmit(now) {
             self.link.send(now, &buffer);
+        }
+    }
+
+    /// Every TCP connection waiting at a `--tcp` listener, each carried to
+    /// a stream from this host to the listener's contact (`crate::tcp`).
+    /// None waits: a listener with nothing waiting says so at once. The
+    /// client's bytes go when the NCP next polls its carrier, at the end of
+    /// this turn and every turn after, so a keystroke waits at most one
+    /// turn's wait (`docs/design.md` §4). A listener's own error is always a
+    /// line of the log; a connection's opening and closing are lines only
+    /// with `--log-tcp`.
+    fn accept(&mut self, now: u64) {
+        for l in &self.listeners {
+            loop {
+                match l.accept() {
+                    Ok(Some((stream, from))) => {
+                        let head = format!(
+                            "TCP from {from} to {} at {}",
+                            l.contact,
+                            self.names.host(l.host)
+                        );
+                        let log = self.tcp_log.clone().map(|hook| (hook, head));
+                        match Carrier::new(stream, log) {
+                            Ok(carrier) => {
+                                self.ncp.connect(now, l.host, &l.contact, Box::new(carrier));
+                            }
+                            Err(e) => log::event(format_args!("TCP from {from}: {e}")),
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        log::event(format_args!("--tcp {}: {e}", l.at()));
+                        break;
+                    }
+                }
+            }
         }
     }
 }

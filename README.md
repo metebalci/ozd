@@ -78,21 +78,29 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   over, because `--name` gives its names, and a host with no Chaosnet
   address is skipped. ozd reads the file when it starts, so a change to it
   wants a restart.
-- `--log-simple`, `--log-file` and `--log-file-probe` each add lines to the
-  log, and each works on its own. `--log-simple` writes a line for each
-  simple transaction ozd answers, such as TIME, STATUS or UPTIME.
+- `--log-simple`, `--log-file`, `--log-file-probe` and `--log-tcp` each add
+  lines to the log, and each works on its own. `--log-simple` writes a line
+  for each simple transaction ozd answers, such as TIME, STATUS or UPTIME.
   `--log-file` writes one for each file read, each directory listed and each
   login, with the address of the machine that asked. `--log-file-probe`
   writes one for each FILE probe, which a band makes far more often than it
-  reads. Without them, a machine's whole boot leaves one line in the log,
-  the connection it opened. A line names a machine by its address and by its
-  name in the host table, or `(?)` when the table does not have it.
+  reads. `--log-tcp` writes one when a `--tcp` connection opens and one when
+  it closes. Without them, a machine's whole boot leaves one line in the
+  log, the connection it opened. A line names a machine by its address and
+  by its name in the host table, or `(?)` when the table does not have it.
 - `--listen` sets where ozd answers. Without it, ozd listens on
   `127.0.0.1:42042`, which only this host can reach. Give an address on
   your network, or `0.0.0.0`, to let other hosts reach it.
 - `--peer <addr>@<ip>` fixes the endpoint of a host that must not move,
   such as `cbridge`. ozd learns every other endpoint from the packets
   that hosts send.
+- `--tcp <endpoint>,<CONTACT>@<addr>` makes ozd listen on a TCP port and
+  carry each connection to a Chaosnet stream at a machine of its subnet.
+  For example, `--tcp 127.0.0.1:10000,TELNET@3050` lets
+  `nc 127.0.0.1 10000` reach the Lisp top level of the machine at 3050,
+  once ozd has heard from that machine. A bare port listens on the
+  loopback. Nothing listens without the flag, and each listener names one
+  contact. See Security before using it.
 
 The same flags, one per line, can also go in a file of flags. ozd reads
 the file that `-c` names. Without `-c`, it reads the file that `OZD_RC`
@@ -181,6 +189,12 @@ only this host can. With a network address or `0.0.0.0`, every host
 that can reach that address can. ozd has no TLS and does no routing. At
 a site that joins the Global Chaosnet through `cbridge`, every host that
 `cbridge` lets through can reach ozd, FILE included.
+
+A `--tcp` listener hands out whatever its contact is. Carried to TELNET,
+it is a Lisp top level with no login, for anyone who can reach the TCP
+port. So a listener binds the loopback unless you name an address, and
+it reaches only the one contact it names. Name a network address only on
+a segment you trust as much as the machine itself.
 
 Clients can reach the files in the roots and nothing else. A pathname
 cannot climb out of its root. ozd follows a symbolic link only while the

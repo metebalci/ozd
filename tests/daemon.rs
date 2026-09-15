@@ -588,6 +588,8 @@ fn help_is_printed_on_stdout_and_exits_0() {
             "--root",
             "--host",
             "--peer",
+            "--tcp",
+            "--log-tcp",
             "--trace",
             "--check",
             "-c, --config",

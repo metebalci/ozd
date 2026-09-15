@@ -28,8 +28,8 @@
 //! root's path ends at its first comma, and what follows must be `ro`.
 //! What each flag takes is on the field it fills: [`Config::address`],
 //! [`Config::names`], [`Config::listen`], [`Config::roots`],
-//! [`Config::hosts`], [`Config::peers`]; `--trace` and `--check` are the
-//! run's, [`Run`].
+//! [`Config::hosts`], [`Config::peers`], [`Config::tcps`]; `--trace` and
+//! `--check` are the run's, [`Run`].
 //!
 //! **The command line has the last word.** A flag it gives leaves every
 //! line of that flag out of the file; the file's
@@ -52,8 +52,10 @@
 //! ([`Place`]): a value that is not one --- an address [`parse_address`]
 //! refuses, an endpoint that is not an IP literal, a root path that is not
 //! absolute, a part of `--name` or `--host` with `=` other than one
-//! `system=` with a type; an `--address`, `--name` or `--listen` given
-//! twice, a second base, and a mount's name twice; an address that would be
+//! `system=` with a type; a `--tcp` with no port, a contact that is no
+//! contact name, or a host that is this one or of another subnet; an
+//! `--address`, `--name` or `--listen` given twice, a second base, a
+//! mount's name twice, and a second `--tcp` on one endpoint; an address that would be
 //! two answers, a host name given twice, a system type that is not upper
 //! case, and a name, a system type or a mount's name that is not printable
 //! ASCII (below); and, with no place, a required flag missing ---
@@ -197,6 +199,24 @@ pub struct Config {
     /// at startup, as the roots are checked then, and its hosts go before
     /// the flags' own ([`Config::add_hosts`]).
     pub hosts_text: Option<PathBuf>,
+    /// `--tcp <endpoint>,<CONTACT>@<addr>`, once a listener: a TCP listener
+    /// whose every connection is carried to a Chaosnet stream, from this
+    /// host to `CONTACT` at the host at `addr` (`crate::tcp`,
+    /// `docs/design.md` §8), in the order given. **Nothing listens without
+    /// one**: carried to TELNET, a connection is a Lisp top level with no
+    /// login, for whoever reaches the port.
+    ///
+    /// - **The endpoint** is an IP literal as `--listen` takes one, but with
+    ///   a port, since a TCP listener has no default one; a bare port is on
+    ///   the loopback, so that no other host reaches it unless an address is
+    ///   named. Port 0 is one the system picks, as a test wants. One
+    ///   listener an endpoint.
+    /// - **The contact** is one contact name, printable ASCII with no blank
+    ///   (AIM-628 §3.2), and is exactly what is reached: SUPDUP or EVAL only
+    ///   where a listener names it.
+    /// - **The host** is a host of this host's subnet, and not this host,
+    ///   since this host routes nothing (`docs/design.md` §5).
+    pub tcps: Vec<Tcp>,
 }
 
 /// One `--root` (`docs/design.md` §6).
@@ -233,6 +253,17 @@ pub struct Peer {
     pub address: u16,
     /// Where its packets go, which a packet from it does not move.
     pub endpoint: SocketAddr,
+}
+
+/// One `--tcp`: a TCP listener carried to a stream ([`Config::tcps`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tcp {
+    /// Where it listens.
+    pub listen: SocketAddr,
+    /// The contact name its connections are carried to.
+    pub contact: String,
+    /// The host of this subnet the contact is at.
+    pub host: u16,
 }
 
 /// Where a flag was given.
@@ -282,17 +313,19 @@ enum Flag {
     Host,
     HostsText,
     Peer,
+    Tcp,
     Trace,
     LogSimple,
     LogFile,
     LogFileProbe,
+    LogTcp,
     Check,
     Config,
     Help,
 }
 
 impl Flag {
-    const ALL: [Flag; 14] = [
+    const ALL: [Flag; 16] = [
         Flag::Address,
         Flag::Name,
         Flag::Listen,
@@ -300,10 +333,12 @@ impl Flag {
         Flag::Host,
         Flag::HostsText,
         Flag::Peer,
+        Flag::Tcp,
         Flag::Trace,
         Flag::LogSimple,
         Flag::LogFile,
         Flag::LogFileProbe,
+        Flag::LogTcp,
         Flag::Check,
         Flag::Config,
         Flag::Help,
@@ -328,10 +363,12 @@ impl Flag {
             Flag::Host => "--host",
             Flag::HostsText => "--hosts-text",
             Flag::Peer => "--peer",
+            Flag::Tcp => "--tcp",
             Flag::Trace => "--trace",
             Flag::LogSimple => "--log-simple",
             Flag::LogFile => "--log-file",
             Flag::LogFileProbe => "--log-file-probe",
+            Flag::LogTcp => "--log-tcp",
             Flag::Check => "--check",
             Flag::Config => "--config",
             Flag::Help => "--help",
@@ -348,11 +385,13 @@ impl Flag {
             Flag::Host => Some("<addr>,<NAME>[,<NAME>...][,system=<TYPE>]"),
             Flag::HostsText => Some("<file>"),
             Flag::Peer => Some("<addr>@<ip>[:<port>]"),
+            Flag::Tcp => Some("<endpoint>,<CONTACT>@<addr>"),
             Flag::Config => Some("<file>"),
             Flag::Trace
             | Flag::LogSimple
             | Flag::LogFile
             | Flag::LogFileProbe
+            | Flag::LogTcp
             | Flag::Check
             | Flag::Help => None,
         }
@@ -482,8 +521,8 @@ impl Flags {
 pub struct Run {
     /// The site.
     pub config: Config,
-    /// What this run writes down: `--trace`, `--log-simple`, `--log-file`
-    /// and `--log-file-probe` (`docs/design.md` §10).
+    /// What this run writes down: `--trace`, `--log-simple`, `--log-file`,
+    /// `--log-file-probe` and `--log-tcp` (`docs/design.md` §10).
     pub logging: Logging,
     /// `--check`: check the flags and the roots, bind nothing, and exit
     /// (`docs/design.md` §10).
@@ -512,6 +551,10 @@ pub struct Logging {
     /// more often than it reads, and serves no file by it, so it is asked
     /// for on its own.
     pub file_probe: bool,
+    /// `--log-tcp`: a line when a `--tcp` connection opens, with where the
+    /// client is, and one when it closes, with who closed it; nothing for
+    /// what passes between.
+    pub tcp: bool,
 }
 
 impl Run {
@@ -612,6 +655,9 @@ struct Reading {
     roots: Vec<(Root, Place)>,
     hosts: Vec<(Host, Place)>,
     peers: Vec<(Peer, Place)>,
+    /// Each `--tcp`, with its value, so that a refusal made once every flag
+    /// is read can name it.
+    tcps: Vec<(Tcp, Place, String)>,
     /// `--hosts-text`: the file a band's own host table is in.
     hosts_text: Option<(PathBuf, Place)>,
     /// Every host name given so far, this host's and every `--host`'s.
@@ -620,6 +666,7 @@ struct Reading {
     simple: bool,
     file: bool,
     file_probe: bool,
+    tcp_log: bool,
     check: bool,
 }
 
@@ -646,6 +693,7 @@ impl Reading {
             Flag::Host => self.host(i, here, value),
             Flag::HostsText => self.host_table(here, value),
             Flag::Peer => self.peer(here, value),
+            Flag::Tcp => self.tcp(here, value),
             Flag::Trace => {
                 self.trace = true;
                 Ok(())
@@ -660,6 +708,10 @@ impl Reading {
             }
             Flag::LogFileProbe => {
                 self.file_probe = true;
+                Ok(())
+            }
+            Flag::LogTcp => {
+                self.tcp_log = true;
                 Ok(())
             }
             Flag::Check => {
@@ -824,6 +876,33 @@ impl Reading {
         Ok(())
     }
 
+    /// `--tcp`: its endpoint, its contact and its host, and one listener an
+    /// endpoint. Whether the host is of this host's subnet, and not this
+    /// host, is [`Reading::finish`]'s, once `--address` is sure to be read.
+    fn tcp(&mut self, here: Place, value: &str) -> Result<(), String> {
+        const WANTS: &str = "wants <endpoint>,<CONTACT>@<addr>: where to listen, the contact name, and the host of this subnet it is at";
+        let (endpoint, reached) = value.split_once(',').ok_or(WANTS)?;
+        let (contact, word) = reached.rsplit_once('@').ok_or(WANTS)?;
+        let listen = tcp_at(endpoint)?;
+        if contact.is_empty() || !contact.chars().all(|c| c.is_ascii_graphic()) {
+            return Err(format!(
+                "{contact:?} is not a contact name, which is printable ASCII with no blank"
+            ));
+        }
+        let host = address_of(word).map_err(|e| format!("{word}: {e}"))?;
+        if listen.port() != 0
+            && let Some((_, p, _)) = self.tcps.iter().find(|(t, _, _)| t.listen == listen)
+        {
+            return Err(format!("{listen} listens there already, by the --tcp {}", on(*p, here)));
+        }
+        self.tcps.push((
+            Tcp { listen, contact: contact.to_string(), host },
+            here,
+            value.to_string(),
+        ));
+        Ok(())
+    }
+
     /// `--hosts-text`: the file, once. Nothing of it is read here --- the
     /// flags touch no disk (the module documentation) --- so nothing of the
     /// path is checked but that there is one.
@@ -896,6 +975,27 @@ impl Reading {
                 "no --root: FILE serves a root that is named and nothing else, and there is no default; one is required, {WHERE}"
             )));
         }
+        for (tcp, place, value) in &self.tcps {
+            let refused = |what: String| Error {
+                place: Some(*place),
+                usage: false,
+                message: format!("--tcp {value}: {what}"),
+            };
+            if tcp.host == address {
+                return Err(refused(format!(
+                    "{:o} is this host, and a stream from this host to itself is none",
+                    tcp.host
+                )));
+            }
+            if tcp.host >> 8 != address >> 8 {
+                return Err(refused(format!(
+                    "{:o} is on another subnet, {:o}, and this host routes nothing: a host of subnet {:o}",
+                    tcp.host,
+                    tcp.host >> 8,
+                    address >> 8
+                )));
+            }
+        }
         let config = Config {
             address,
             names,
@@ -905,12 +1005,14 @@ impl Reading {
             hosts: self.hosts.into_iter().map(|(h, _)| h).collect(),
             peers: self.peers.into_iter().map(|(p, _)| p).collect(),
             hosts_text: self.hosts_text.map(|(path, _)| path),
+            tcps: self.tcps.into_iter().map(|(t, _, _)| t).collect(),
         };
         let logging = Logging {
             trace: self.trace,
             simple: self.simple,
             file: self.file,
             file_probe: self.file_probe,
+            tcp: self.tcp_log,
         };
         Ok(Run { config, logging, check: self.check })
     }
@@ -1008,4 +1110,22 @@ fn peer_endpoint(word: &str) -> Option<SocketAddr> {
     word.parse::<SocketAddr>()
         .ok()
         .or_else(|| word.parse::<IpAddr>().ok().map(|ip| SocketAddr::new(ip, PORT)))
+}
+
+/// A `--tcp` listener's endpoint: address and port, or a bare port on the
+/// loopback. No bare address, since a TCP listener has no default port, and
+/// no name, which is not resolved.
+fn tcp_at(word: &str) -> Result<SocketAddr, String> {
+    if let Ok(at) = word.parse::<SocketAddr>() {
+        return Ok(at);
+    }
+    if let Ok(port) = word.parse::<u16>() {
+        return Ok(SocketAddr::new(LISTEN.ip(), port));
+    }
+    if word.parse::<IpAddr>().is_ok() {
+        return Err(format!(
+            "{word} wants a port: a TCP listener has none by default, as 127.0.0.1:10000, [::1]:10000 or a bare port on the loopback"
+        ));
+    }
+    Err(format!("{word} is not a port or IP address:port; a name is not resolved"))
 }

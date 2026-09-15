@@ -45,7 +45,7 @@ means it was not read. In the ozd column, ✓ means that ozd serves it.
 | `DUMP-ROUTING-TABLE` | RFC/ANS | ✓ | ✓ | not needed |
 | `NAME` | stream | ✓ | ✓ | ✓ |
 | `FINGER` | RFC/ANS | ✓ | ✓ | between machines, none here |
-| `TELNET` | stream | ✓ | ✓ | wanted, not this project |
+| `TELNET` | stream | ✓ | ✓ | carried to from TCP, `--tcp` |
 | `SUPDUP` | stream | **no** | ✓ | not this project |
 | `MAIL` | stream | refuses | | not needed |
 | `EXPAND-MAILING-LIST` | stream | **no** | ✓ | not needed |
@@ -224,7 +224,7 @@ character, the full name in 22 columns, what the selected window is
 idle time, and the terminal's location. What those fields hold with
 nobody logged in has not been read.
 
-## Not this project
+## Carried to from TCP
 
 ### TELNET
 
@@ -238,13 +238,16 @@ The machine serves TELNET (registered `chsaux.lisp:1254`) and has a user
 end (`window/telnet-code.lisp`, `window/telnet-front-hack.lisp`). So
 whether a Lisp Machine "has telnet" is a question about the other end:
 
-- **Into the machine** needs a Chaosnet TELNET user end on Unix, or a
-  gateway from TCP telnet to Chaosnet TELNET. It can be a CHUDP peer of
-  the machine directly, or reach the machine through ozd, the subnet's
-  switch.
+- **Into the machine** needs a Unix end that opens a Chaosnet stream to
+  TELNET. ozd is one: a `--tcp` listener carries each TCP connection it
+  takes to a stream from ozd to the machine's TELNET, bytes both ways
+  (`docs/design.md` §8), so that `nc` on the Unix host reaches a Lisp top
+  level.
 - **Out of the machine, to Unix** needs a Chaosnet TELNET server on
   Unix. That server would be a login shell for a client that does not
   authenticate, and ozd does not provide one.
+
+## Not this project
 
 ### SUPDUP
 
