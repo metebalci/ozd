@@ -116,7 +116,7 @@ fn a_datagram_from_this_hosts_own_address_is_dropped() {
 /// switch stands in for the cable, and a cable does not change a frame: no
 /// forwarding count, no new trailer, the datagram as it came (`DESIGN.md` §5). So a
 /// packet as no NCP here would write it --- a forwarding count of 3, and a
-/// check word that is not the hardware's --- reaches the other host with
+/// check word that is not the checksum --- reaches the other host with
 /// both, and the other host's answer comes back the same way.
 #[test]
 fn a_packet_from_one_host_to_another_is_passed_on_byte_for_byte() {
@@ -131,7 +131,7 @@ fn a_packet_from_one_host_to_another_is_passed_on_byte_for_byte() {
     let [_, sent_before, _, _] = meters(&d);
     let p = Packet { forward: 3, ..rfc(LM1, LM2, "TIME") };
     let sent = chudp::wrap(&p.to_buffer(LM2), LM1, 0o12345).expect("a frame");
-    assert!(!chudp::unwrap(&sent).unwrap().check_ok, "not the hardware's check word");
+    assert!(!chudp::unwrap(&sent).unwrap().check_ok, "not the checksum");
     lm1.send_bytes(&sent);
     settle(&mut d, &mut [&mut lm1, &mut lm2], 10);
     assert_eq!(lm2.heard.first(), Some(&sent), "LM2 has it as LM1 sent it, byte for byte");

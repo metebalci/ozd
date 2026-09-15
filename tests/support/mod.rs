@@ -28,7 +28,7 @@ use ozd::config::Config;
 use ozd::daemon::Daemon;
 use ozd::lispm;
 use ozd::ncp::{Ncp, Out, Session, op};
-use ozd::packet::{self, Framed, Packet};
+use ozd::packet::{Framed, Packet};
 use ozd::roots::Tree;
 use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
@@ -61,25 +61,25 @@ pub const SECOND: u64 = 1_000_000_000;
 
 // --- packets ---------------------------------------------------------------
 
-/// A buffer with the source and check word the CADR's hardware would add
-/// to it: the check word is the hardware's, so `check_ok`.
+/// A buffer with the source and checksum a CHUDP peer puts in its trailer,
+/// so `check_ok`.
 fn framed(buffer: Vec<u16>, source: u16) -> Framed {
     let mut over = buffer.clone();
     over.push(source);
-    let check = packet::check_word(&over);
+    let check = chudp::checksum(&over);
     Framed { buffer, source, check, check_ok: true }
 }
 
 /// A packet as the link would hand it to the NCP: the buffer its sender
 /// wrote, cable destination last, and the trailer's source and check word
-/// --- the check word the CADR's hardware would have made, so `check_ok`.
+/// --- the checksum, so `check_ok`.
 pub fn arriving(p: &Packet) -> Framed {
     framed(p.to_buffer(p.dest), p.source)
 }
 
-/// `p` as a CHUDP datagram from `source`, as that host's interface would
-/// put it on a cable: at the cable destination `p.dest`, with `source` and
-/// the hardware's check word in the trailer.
+/// `p` as a CHUDP datagram from `source`, as that host would send it: at
+/// the cable destination `p.dest`, with `source` and the checksum in the
+/// trailer.
 pub fn datagram(p: &Packet, source: u16) -> Vec<u8> {
     let f = framed(p.to_buffer(p.dest), source);
     chudp::wrap(&f.buffer, f.source, f.check).expect("a frame")
@@ -267,7 +267,7 @@ impl TestHost {
     /// One turn at `now`: every datagram the socket has, kept in
     /// [`TestHost::heard`] and handed to the NCP through `unwrap`; then
     /// everything the NCP has to send, through `wrap` with this host's
-    /// address and the hardware's check word, to the switch. How many
+    /// address and the checksum, to the switch. How many
     /// datagrams moved.
     pub fn turn(&mut self, now: u64) -> usize {
         let mut moved = 0;

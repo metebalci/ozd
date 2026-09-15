@@ -16,17 +16,17 @@
 
 use ozd::lispm::{self, NEWLINE};
 use ozd::ncp::{Ncp, Out, Session};
-use ozd::packet::{self, Framed, Packet};
+use ozd::packet::{Framed, Packet};
 use ozd::service::name::Name;
 use std::sync::{Arc, Mutex};
 
-/// A packet as the link would hand it to the NCP, with the check word the
-/// CADR's hardware would have made; `tests/ncp.rs` has the same.
+/// A packet as the link would hand it to the NCP, with the checksum a
+/// CHUDP peer puts in the trailer; `tests/ncp.rs` has the same.
 fn arriving(p: &Packet) -> Framed {
     let buffer = p.to_buffer(p.dest);
     let mut over = buffer.clone();
     over.push(p.source);
-    let check = packet::check_word(&over);
+    let check = ozd::chudp::checksum(&over);
     Framed { buffer, source: p.source, check, check_ok: true }
 }
 

@@ -10,10 +10,10 @@
 //! Chaosnet, does not.
 //!
 //! Two halves. The frame: the constants, [`Order`], [`PACKET_ORDER`],
-//! [`TRAILER_ORDER`], [`wrap`] and [`unwrap`], with an **unverified** mark
-//! wherever the reading is not settled. Then [`Link`], the link and the
-//! switch: the socket, the table of endpoints, and a packet for another host
-//! of the subnet passed on untouched (`DESIGN.md` §5).
+//! [`TRAILER_ORDER`], [`checksum`], [`wrap`] and [`unwrap`]. Then [`Link`],
+//! the link and the switch: the socket, the table of endpoints, and a
+//! packet for another host of the subnet passed on untouched (`DESIGN.md`
+//! §5).
 //!
 //! ## The frame
 //!
@@ -38,40 +38,50 @@
 //! 24 + n      2  check
 //! ```
 //!
-//! An odd byte count is padded to a whole word here, the cable carrying
-//! whole words; [`unwrap`] finds the trailer from the end of the
-//! datagram rather than from the count, so a peer that does not pad is
-//! read all the same. Which a peer does is **unverified**.
+//! An odd byte count is padded to a whole word here, as `cbridge` pads
+//! it; [`unwrap`] finds the trailer from the end of the datagram rather
+//! than from the count, so a peer that does not pad is read all the same.
 //!
 //! `version = 1` and `function = 1`, for "here is a Chaos packet", which
 //! is described as the only function defined. The default port is 42042.
 //! Read from the Wireshark dissector published at
 //! `gist.github.com/ams/6bde1da514479e27c9f70c161b5537c1` and the
 //! protocol page at `chaosnet.net/protocol`, cross-read against the
-//! Computer History Wiki's Chaosnet page. **Not** from
+//! Computer History Wiki's Chaosnet page, and settled against a running
+//! `cbridge`, observed by its log and a capture (below). **Not** from
 //! `bictorv/chaosnet-bridge`, the reference implementation, whose author
 //! forbids language models to read or process it; that is the author's
 //! decision about the author's own work and it is kept here.
 //!
 //! [`crate::packet::Packet`] is the eight header words and the data, and
 //! a [`Framed`] is its buffer, cable destination last, with the source
-//! and the check word the hardware adds --- which is the hardware
-//! trailer, in the trailer's own order. What this module adds is the
-//! four-byte wrapper and, with the link, the socket.
+//! and the check word --- the hardware trailer, with CHUDP's checksum
+//! where the CADR's hardware put its CRC. What this module adds is the
+//! four-byte wrapper, the checksum and, with the link, the socket.
 //!
-//! ## Byte order, which is **unverified**
+//! ## `cbridge`'s convention
 //!
-//! [`PACKET_ORDER`] and [`TRAILER_ORDER`] say it, and are the only place
-//! a word becomes bytes; the protocol's author has said a version 2 may
-//! differ from version 1 in nothing but byte order, so that should be
-//! two constants to change rather than an audit of the packing.
-//! [`VERSION`] is checked on receipt for the same reason: an unknown
-//! version is refused with its number rather than parsed as this one.
+//! CHUDP is `cbridge`'s convention, and this follows it so as to work
+//! with it: every word in network order, the trailer's too, and the
+//! trailer's third word an Internet checksum ([`PACKET_ORDER`],
+//! [`TRAILER_ORDER`], [`checksum`]). A `cbridge` run on 2026-09-15 showed
+//! each: it read a frame in the other order byte-swapped, refused one
+//! carrying the CADR's CRC as a bad checksum, and its own frames, pinned
+//! in `tests/frame.rs`, are read here and written back byte for byte. The
+//! protocol page says `cbridge` sends least significant byte first; the
+//! running `cbridge` does not.
+//!
+//! [`PACKET_ORDER`] and [`TRAILER_ORDER`] are the only place a word
+//! becomes bytes; the protocol's author has said a version 2 may differ
+//! from version 1 in nothing but byte order, so that would be two
+//! constants to change rather than an audit of the packing. [`VERSION`]
+//! is checked on receipt for the same reason: an unknown version is
+//! refused with its number rather than parsed as this one.
 
 use crate::config::Config;
 use crate::log;
 use crate::ncp::op_name;
-use crate::packet::{Framed, MAX_DATA, Packet, check_word};
+use crate::packet::{Framed, MAX_DATA, Packet};
 use crate::service::status::Meters;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -136,57 +146,58 @@ impl Order {
             Order::Big => u16::from_be_bytes(pair),
         }
     }
-
-    /// The word a lone trailing byte makes: it is the half that comes
-    /// first, and the other half is not there.
-    fn odd(self, b: u8) -> u16 {
-        match self {
-            Order::Little => b as u16,
-            Order::Big => (b as u16) << 8,
-        }
-    }
 }
 
-/// How the Chaos packet's own 16-bit words are laid out: least
-/// significant byte first.
+/// How the Chaos packet's own 16-bit words are laid out: most significant
+/// byte first, which is network order.
 ///
-/// **Unverified.** The protocol's own documentation says so in as many
-/// words, and says of it "I'm really sorry about this, and might develop
-/// version 2 of the protocol with the only change being big-endian byte
-/// order"; the Wireshark dissector reads its 16-bit fields in a way that
-/// appears big-endian, and the two are reconciled by [`TRAILER_ORDER`]
-/// below rather than by either being wrong. What it also fits: AIM-628
-/// §3.6 puts "the first 8-bit byte in a 16-bit word ... in the
-/// arithmetically least-significant position", so the data bytes of a
-/// packet come out of a little-endian frame in the order they were
-/// written and out of a big-endian one swapped in pairs.
+/// `cbridge`'s, as it runs: a frame sent least significant byte first was
+/// "bogus" to it, its source address byte-swapped and its opcode 0, and
+/// the same frame in network order was taken. The protocol page says the
+/// opposite, and the running `cbridge` is what a site works with. The data
+/// is packed as AIM-628 §3.6 has it, "the first 8-bit byte in a 16-bit
+/// word ... in the arithmetically least-significant position"
+/// ([`Packet::words`]), so in network order each pair of data bytes goes
+/// out swapped: `cbridge` sends its own name, `cbtest`, as `bcetts`.
 ///
-/// What would settle it: a capture of a live exchange, or one
-/// interoperation. The wrong order fails loudly on the first packet ---
-/// an absurd 12-bit data count against the datagram's length, and
-/// addresses that match nothing configured --- so it does not fail
-/// quietly.
-pub const PACKET_ORDER: Order = Order::Little;
+/// The wrong order fails loudly on the first packet --- an absurd 12-bit
+/// data count against the datagram's length, and addresses that match
+/// nothing configured --- so it does not fail quietly.
+pub const PACKET_ORDER: Order = Order::Big;
 
-/// How the hardware trailer's three words are laid out: network order.
+/// How the hardware trailer's three words are laid out: network order,
+/// as the packet's are.
 ///
-/// **Unverified.** The reading is that CHUDP is a mixed frame: the
-/// packet's own words least significant byte first, and the trailer in
-/// network order. That is what reconciles the protocol's own
-/// documentation with the Wireshark dissector ([`PACKET_ORDER`]), and it
-/// is belief and not knowledge.
-///
-/// What would settle it: the same capture or interoperation. One whole
-/// packet's bytes are pinned in `tests/frame.rs`, so a correction is a
-/// change to these two constants and to that one test.
+/// `cbridge` read a trailer sent least significant byte first with its
+/// source byte-swapped, and one in network order right.
 pub const TRAILER_ORDER: Order = Order::Big;
+
+/// The check word a CHUDP trailer carries: the Internet checksum, the one's
+/// complement of the one's complement sum of `words`, so that they and it
+/// sum to all ones.
+///
+/// `words` is the buffer as written --- header, data, cable destination
+/// --- and then the source, which are the trailer's first two words. The
+/// protocol page names an Internet checksum, and `cbridge` checks it: a
+/// frame whose words do not sum right it refuses as "Bad checksum",
+/// printing the checksum it made. It is not the CADR's own check word, the
+/// 9401's CRC on its cable ([`crate::packet::check_word`]).
+pub fn checksum(words: &[u16]) -> u16 {
+    let mut sum = 0u32;
+    for &w in words {
+        sum += w as u32;
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    !(sum as u16)
+}
 
 /// A frame as it would stand on a cable, as a CHUDP datagram.
 ///
 /// `buffer` is the buffer the software wrote, its last word the cable
-/// destination, and `source` and `check` are the two words the hardware
-/// added --- which is exactly [`Framed`]. `None` if there is not even a
-/// destination word to put in the trailer.
+/// destination, and `source` and `check` are the trailer's other two
+/// words, the sender's address and its [`checksum`] --- which is exactly
+/// [`Framed`]. `None` if there is not even a destination word to put in
+/// the trailer.
 pub fn wrap(buffer: &[u16], source: u16, check: u16) -> Option<Vec<u8>> {
     let (&dest, words) = buffer.split_last()?;
     let mut out = Vec::with_capacity(HEADER + buffer.len() * 2 + TRAILER);
@@ -202,21 +213,16 @@ pub fn wrap(buffer: &[u16], source: u16, check: u16) -> Option<Vec<u8>> {
 
 /// The frame back out of a datagram, as a cable would have handed it to
 /// an interface: the buffer with the cable destination last, and the
-/// source and check word the far side's hardware added.
+/// trailer's source and check word.
 ///
-/// `check_ok` is that check word against the one the CADR's own
-/// hardware would have made for these words, [`check_word`]. **Nothing
-/// is dropped on it**: what a CHUDP peer puts in the trailer's third
-/// word is unverified --- the hardware trailer's is the 9401's CRC-16,
-/// and the trailer has also been described as carrying an Internet
-/// checksum --- so this reports the answer and leaves the packet alone.
-/// A trace of a run against a real peer settles it --- `--trace`
-/// (`DESIGN.md` §10) --- and until
-/// then a mismatch on a packet for this host is traced and not dropped
-/// (`DESIGN.md` §5).
+/// `check_ok` is that check word against the [`checksum`] of these words.
+/// **Nothing is dropped on it**: a mismatch on a packet for this host is
+/// traced and the packet handled (`DESIGN.md` §5), since UDP carries a
+/// checksum of its own, and a peer that puts something else there is
+/// still understood.
 ///
-/// The data is a whole number of 16-bit words on the cable, and this
-/// takes both a peer that pads an odd byte count to a word and one that
+/// The data is a whole number of 16-bit words, and this takes both a peer
+/// that pads an odd byte count to a word, as `cbridge` does, and one that
 /// does not: the trailer is found from the end of the datagram, so where
 /// it starts is not a guess, and the length is then held to one of the
 /// two.
@@ -249,7 +255,9 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
         .chunks(2)
         .map(|c| match c {
             [_, _] => PACKET_ORDER.word(c),
-            _ => PACKET_ORDER.odd(c[0]),
+            // A lone last byte is the last data byte without its pad: the
+            // low half of its word, whatever the order (AIM-628 §3.6).
+            _ => c[0] as u16,
         })
         .collect();
     let trailer = &datagram[datagram.len() - TRAILER..];
@@ -259,7 +267,7 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
     buffer.push(dest);
     let mut over = buffer.clone();
     over.push(source);
-    let check_ok = check_word(&over) == check;
+    let check_ok = checksum(&over) == check;
     Ok(Framed { buffer, source, check, check_ok })
 }
 
@@ -300,11 +308,11 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
 /// for byte, as a cable does not change a frame --- no forwarding count,
 /// no new trailer. That is what makes this a switch and not a bridge, and
 /// why nothing goes to another subnet: there is no routing to decide
-/// where. A check word that is not the hardware's is traced and the
-/// packet handled all the same (`DESIGN.md` §5).
+/// where. A check word that is not the checksum is traced and the packet
+/// handled all the same (`DESIGN.md` §5).
 ///
 /// **Sending this host's own** ([`Link::send`]): [`wrap`] with this host's
-/// address and the hardware's check word, to the destination's endpoint,
+/// address and the [`checksum`], to the destination's endpoint,
 /// or once to every distinct endpoint for a destination of 0. A
 /// destination with no endpoint is dropped, and counted.
 ///
@@ -429,7 +437,7 @@ impl Link {
             return None;
         };
         let (source, opcode) = (f.source, p.opcode);
-        let odd = if f.check_ok { "" } else { ", its check word not the hardware's" };
+        let odd = if f.check_ok { "" } else { ", its check word not the checksum" };
         let op = op_name(opcode);
         self.traced(now, format_args!("from {from}: {source:o} -> {dest:o} {op}{odd}"));
         if source == self.address || source == 0 {
@@ -486,14 +494,14 @@ impl Link {
     }
 
     /// One of this host's own packets out: the NCP's buffer, cable
-    /// destination last, as `wrap(buffer, own address, check_word(buffer +
-    /// own address))` --- the 9401's CRC-16 (`packet::check_word`) ---
-    /// to the destination's endpoint, or once to every distinct endpoint
-    /// for 0. A destination with no endpoint is dropped, and counted.
+    /// destination last, as `wrap(buffer, own address, checksum(buffer +
+    /// own address))`, to the destination's endpoint, or once to every
+    /// distinct endpoint for 0. A destination with no endpoint is dropped,
+    /// and counted.
     pub fn send(&self, now: u64, buffer: &[u16]) {
         let mut over = buffer.to_vec();
         over.push(self.address);
-        let framed = wrap(buffer, self.address, check_word(&over));
+        let framed = wrap(buffer, self.address, checksum(&over));
         let (Some(datagram), Some(&dest)) = (framed, buffer.last()) else {
             self.discard(now, format_args!("an empty buffer is no packet"));
             return;

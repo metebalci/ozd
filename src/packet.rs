@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A packet as the software lays it out, and the check word.
+//! A packet as the software lays it out, and the CADR's own check word.
 //!
 //! AIM-628 §3.5: the software header is eight 16-bit words --- operation,
 //! count, destination address and index, source address and index, packet
@@ -9,8 +9,8 @@
 //! says how the interface takes it: the eight header words, the data
 //! words, then the cable destination as the last word written, the
 //! hardware adding the source and the check word itself. A CHUDP datagram
-//! carries exactly that, the hardware's three words as its trailer
-//! ([`crate::chudp`]).
+//! carries the same, the three words as its trailer, with CHUDP's checksum
+//! where the hardware put its CRC ([`crate::chudp`]).
 
 /// The most data a packet carries, AIM-628 §3.5: "the maximum value is
 /// 488".
@@ -115,8 +115,8 @@ impl Packet {
 /// That is not read off a document: it is the one arrangement that
 /// reproduces the word a simulation of the board's netlist produced for a
 /// packet it looped back (`tests/frame.rs`, `the_check_word_is_the_boards`),
-/// and is **unverified** against a board. It is what this host puts in a
-/// CHUDP trailer.
+/// and is **unverified** against a board. It is not what a CHUDP trailer
+/// carries, which is [`crate::chudp::checksum`].
 pub fn check_word(words: &[u16]) -> u16 {
     let mut r = 0u32; // stage k in bit k
     for &w in words {
@@ -134,7 +134,7 @@ pub fn check_word(words: &[u16]) -> u16 {
 }
 
 /// A packet as a CHUDP datagram delivers it: the buffer its sender wrote,
-/// and the two words the sender's hardware would have added.
+/// and the trailer's other two words, the sender's address and check word.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Framed {
     /// The buffer as the software would read it back: the words as

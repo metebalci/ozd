@@ -620,10 +620,9 @@ fn a_full_table_takes_no_more_connections() {
     assert_eq!(h.connections(), made, "no connection past the table's end");
 }
 
-/// **A bad check word does not lose the packet.** What a CHUDP peer puts in
-/// the trailer's third word is unverified (`chudp::unwrap`), and UDP
-/// carries a checksum of its own, so a mismatch is traced and the packet
-/// handled (`DESIGN.md` §5).
+/// **A bad check word does not lose the packet.** One that is not CHUDP's
+/// checksum is traced and the packet handled (`chudp::unwrap`), since UDP
+/// carries a checksum of its own (`DESIGN.md` §5).
 #[test]
 fn a_bad_check_word_is_still_handled() {
     let mut h = Ncp::new(0o3060);

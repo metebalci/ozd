@@ -40,7 +40,7 @@ use ozd::chudp::{self, PORT};
 use ozd::lispm::{self, NEWLINE};
 use ozd::log;
 use ozd::ncp::{Ncp, Out, Response, Service, Session, op};
-use ozd::packet::{self, Packet};
+use ozd::packet::Packet;
 use ozd::service::time::UNIX_EPOCH_UNIVERSAL;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs, UdpSocket};
 use std::process::exit;
@@ -177,12 +177,12 @@ fn transaction(
     None
 }
 
-/// A buffer as a CADR's interface would send it, with the check word its
-/// hardware would put in the trailer, over the buffer and the source.
+/// A buffer as a CHUDP peer sends it, with the checksum in the trailer,
+/// over the buffer and the source.
 fn send(socket: &UdpSocket, at: SocketAddr, from: u16, buffer: &[u16]) {
     let mut over = buffer.to_vec();
     over.push(from);
-    if let Some(datagram) = chudp::wrap(buffer, from, packet::check_word(&over)) {
+    if let Some(datagram) = chudp::wrap(buffer, from, chudp::checksum(&over)) {
         let _ = socket.send_to(&datagram, at);
     }
 }

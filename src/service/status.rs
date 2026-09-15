@@ -50,9 +50,9 @@
 //! abort a transmission on a collision or a busy receiver, to lose a packet
 //! in because the one before had not been read out, or to fail a CRC, on
 //! the wire or out of the packet buffer, so nought is the true count of
-//! each. A CHUDP trailer's check word is not one of them: what a peer puts
-//! there is unverified, and a mismatch is traced, not counted (`DESIGN.md`
-//! §5). What the host answers is its name, which subnet it is on, and what
+//! each. A CHUDP trailer's checksum is not one of them: a mismatch is
+//! traced, not counted (`DESIGN.md` §5). What the host answers is its name,
+//! which subnet it is on, and what
 //! its socket has seen.
 
 use crate::ncp::{Response, Service};

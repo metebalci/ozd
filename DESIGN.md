@@ -77,7 +77,7 @@ src/
   daemon.rs         the daemon: the link, the NCP, the services, turn (§4)
   log.rs            one line an event on stderr, in UTC, hosts named (§10)
   address.rs        parse_address
-  packet.rs         the packet and the check word
+  packet.rs         the packet, and the CADR's own check word
   roots.rs          the tree FILE serves: roots, resolve, readonly (§6)
   chudp.rs          the frame, and the link and switch (§5)
   ncp.rs            the NCP
@@ -182,15 +182,24 @@ switch.
   the switch: there is no forwarding count and no new trailer. This is
   what makes ozd a switch rather than a bridge, and it is why nothing
   goes to another subnet: there is no routing to decide where.
-- **The trailer's check word** on a packet for this host is compared,
-  and a mismatch is traced but never dropped. What a CHUDP peer puts in
-  that word is unverified (`chudp.rs`, `unwrap`), and UDP has a checksum
-  of its own, although over IPv4 a sender may leave it zero.
+- **The frame is `cbridge`'s.** CHUDP is `cbridge`'s convention, and ozd
+  follows it: every 16-bit word in network order, the trailer's too, and
+  the trailer's check word an Internet checksum over the words, the
+  trailer's destination and source among them (`chudp.rs`). The data is
+  packed low byte first within its words, as AIM-628 §3.6 has it, so in
+  network order each pair of data bytes goes out swapped. A running
+  `cbridge` showed all of it, and two frames it sent are pinned in
+  `tests/frame.rs`. The protocol page says `cbridge` sends least
+  significant byte first, and the running `cbridge` does not.
+- **The trailer's check word** on a packet for this host is compared with
+  the checksum, and a mismatch is traced but never dropped: UDP has a
+  checksum of its own, although over IPv4 a sender may leave it zero, and
+  a peer that puts something else there is still understood.
   `Ncp::receive` does not drop a packet for its check word either.
 - **Sending this host's own packets.** The NCP's buffer ends with the
   destination. It goes out as `wrap(buffer, own address,
-  check_word(buffer + own address))`, where the check word is the 9401's
-  CRC-16 (`packet.rs`). It goes to the destination's endpoint, or once
+  checksum(buffer + own address))`. It goes to the destination's
+  endpoint, or once
   to every distinct endpoint for a destination of 0. A packet for a
   destination with no endpoint is dropped and counted.
 - **A machine names this host as its CHUDP peer.** A machine whose CHUDP
@@ -518,15 +527,18 @@ a System 100 site with them on one command line.
   default CHUDP peer, and ozd is one more peer of `cbridge`. ozd then
   serves its services and passes nothing on, because every packet
   reaches it from `cbridge`'s endpoint, where every host is learned, and
-  nothing is sent back to the endpoint it came from (§5). The machines
-  learn their routes from the RUT packets that `cbridge` broadcasts, as
-  they would from a bridge on a cable, and a band drops a packet that it
-  has no route for before sending it (`TRANSMIT-INT-PKT`,
-  `chsncp.lisp:1928`), so ozd needs no route of its own. Two things are
-  **unverified** until this is run, because `cbridge`'s code is not
-  read: that it passes a packet between two of its CHUDP peers on one
-  subnet, and that it accepts ozd's answers, whose trailer names their
-  destination rather than `cbridge`.
+  nothing is sent back to the endpoint it came from (§5). A band drops a
+  packet it has no route for before sending it (`TRANSMIT-INT-PKT`,
+  `chsncp.lisp:1928`), so ozd needs no route of its own; the machines
+  would learn theirs from the RUT packets a bridge broadcasts. A run
+  against a `cbridge` on 2026-09-15 showed that it passes a packet between
+  two of its CHUDP peers on one subnet, raising its forwarding count by
+  one and putting its own address in the trailer's source, and that ozd's
+  answers pass back through it: a test host behind it got STATUS, TIME,
+  UPTIME and a FILE listing from ozd. Two things are still
+  **unverified**, because `cbridge`'s code is not read: a host on another
+  subnet, which the test configuration did not reach, and RUT, none of
+  which came over CHUDP in a minute.
 
 ## 10. Logging and running
 
@@ -586,11 +598,10 @@ clock that it sets.
 
 **The tests** cover:
 
-1. **The frame.** One whole packet's bytes and the check word are
-   pinned (`tests/frame.rs`). The byte order is unverified (§5). The
-   first run against another implementation, `cbridge` or `klh10`, will
-   settle it, and a correction will change two constants and those
-   tests.
+1. **The frame.** One whole packet's bytes and its checksum are pinned
+   (`tests/frame.rs`), and so are two frames a running `cbridge` sent,
+   which must read with a good checksum and be written back byte for
+   byte (§5). The CADR's own check word is pinned beside them.
 2. **The flags**: each flag, each form of `--listen`, the file of flags
    with its comments, the command line winning over the file, the search
    order, and each refusal with its line. A band's own host table is read

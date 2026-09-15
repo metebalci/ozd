@@ -164,8 +164,9 @@ Chaosnet. A site that wants that runs `cbridge`, the Chaosnet bridge, as
 its switch instead of ozd. Each machine then names `cbridge` as its
 default CHUDP peer, and ozd becomes one more peer of `cbridge`, on a port
 of its own if both run on one computer. ozd still serves the machines,
-but it passes no packets between them. This setup has not been tried yet
-(`DESIGN.md` §9).
+but it passes no packets between them. Through `cbridge`, a test host has
+reached ozd's STATUS, TIME, UPTIME and FILE; the Global Chaosnet has not
+been tried yet (`DESIGN.md` §9).
 
 ## Security
 

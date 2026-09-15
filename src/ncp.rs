@@ -843,11 +843,11 @@ impl Ncp {
     /// holds no packet is dropped.
     ///
     /// **A bad check word is not a reason to drop it.** One that is not
-    /// what the CADR's hardware would have made is printed under `trace`
-    /// and the packet handled all the same: what a CHUDP peer puts in the
-    /// trailer's third word is unverified (`chudp::unwrap`), and UDP
-    /// carries a checksum of its own --- optional over IPv4, where a sender
-    /// may leave it zero (`DESIGN.md` §5).
+    /// CHUDP's checksum is printed under `trace` and the packet handled all
+    /// the same (`chudp::unwrap`): UDP carries a checksum of its own ---
+    /// optional over IPv4, where a sender may leave it zero --- and a peer
+    /// that puts something else there is still understood (`DESIGN.md`
+    /// §5).
     pub fn receive(&mut self, now: u64, packet: &Framed) {
         let Ok((p, _)) = Packet::from_buffer(&packet.buffer) else { return };
         if p.dest != self.address && !(p.dest == 0 && p.opcode == op::BRD) {
