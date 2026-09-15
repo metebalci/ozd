@@ -325,14 +325,6 @@
       </div>
     </div>
 
-    <div class="panel tone-pink">
-      <div class="panel" style="gap:0.5rem;">
-        <div class="step-head"><h3>Joining the Global Chaosnet</h3></div>
-        <p class="small">ozd routes nothing, so it cannot take a site onto the Global Chaosnet. A site that wants that runs <code>cbridge</code>, the Chaosnet bridge, and makes it the switch instead: every machine names <code>cbridge</code> as its default CHUDP peer, and ozd becomes one more of its peers.</p>
-        <p class="small">ozd then serves files, the time and the host table as before, and passes nothing on. Every host that <code>cbridge</code> lets through can reach it, FILE included.</p>
-      </div>
-    </div>
-
     <footer class="wholine">
       <div class="label">ozd &middot; The switch</div>
       <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>04</span></div>
@@ -374,7 +366,7 @@ cargo build --release</pre>
           <div><dt>--root tree=...,ro</dt><dd>The release&rsquo;s sources, mounted read-only at <code>/tree</code>, which is where the band looks for them.</dd></div>
           <div><dt>--host, --hosts-text</dt><dd>Machines for HOSTAB to answer for, one flag each, or a band&rsquo;s own <code>hosts.text</code>, so that a band whose table lacks a machine can still find it by name.</dd></div>
           <div><dt>--listen</dt><dd>Where ozd answers. Without it, <code>127.0.0.1:42042</code>, which only this host can reach.</dd></div>
-          <div><dt>--peer &lt;addr&gt;@&lt;ip&gt;</dt><dd>The fixed endpoint of a host that must not move, such as <code>cbridge</code>. Every other endpoint is learned.</dd></div>
+          <div><dt>--peer &lt;addr&gt;@&lt;ip&gt;</dt><dd>The fixed endpoint of a host that must not move. Every other endpoint is learned.</dd></div>
           <div><dt>--log-simple, --log-file, --log-file-probe</dt><dd>More lines in the log: each simple transaction answered; each file read, directory listed and login; each FILE probe.</dd></div>
         </dl>
         <p class="small">The same flags, one per line, can go in a file of flags that <code>-c</code> names, or <code>OZD_RC</code>, or <code>.ozdrc</code>. <code>--check</code> reads the flags, checks the roots and exits, and <code>--help</code> describes each flag.</p>
