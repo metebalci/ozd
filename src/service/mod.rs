@@ -5,6 +5,7 @@
 
 pub mod file;
 pub mod hostab;
+pub mod mini;
 pub mod name;
 pub mod status;
 pub mod time;

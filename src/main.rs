@@ -10,8 +10,8 @@
 //!         [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
 //!         [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
 //!         [--tcp <endpoint>,<CONTACT>@<addr>]
-//!         [--trace] [--log-simple] [--log-file] [--log-file-probe] [--log-tcp]
-//!         [--check] [-c|--config <file>] [-h|--help]
+//!         [--trace] [--log-simple] [--log-file] [--log-file-probe]
+//!         [--log-mini] [--log-tcp] [--check] [-c|--config <file>] [-h|--help]
 //! ```
 //!
 //! The site is flags (`ozd::config`), on the command line or in a file
@@ -60,8 +60,8 @@ const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,s
            [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
            [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
            [--tcp <endpoint>,<CONTACT>@<addr>]
-           [--trace] [--log-simple] [--log-file] [--log-file-probe] [--log-tcp]
-           [--check] [-c|--config <file>] [-h|--help]";
+           [--trace] [--log-simple] [--log-file] [--log-file-probe]
+           [--log-mini] [--log-tcp] [--check] [-c|--config <file>] [-h|--help]";
 
 /// What `-h` and `--help` print after the usage: what this is, then each
 /// flag in the order the usage gives them, then the file of flags and how
@@ -148,6 +148,9 @@ time and their host table, and passing packets between them.
   --log-file-probe             log each FILE PROBE as well. A band probes far
                                more often than it reads, and serves no file
                                by it, so it is asked for on its own.
+  --log-mini                   log each MINI open: a line for each file a
+                               cold load reads, and one for each it is
+                               refused, with the reason.
   --log-tcp                    log each --tcp connection: a line when it
                                opens, with where the client is, and one
                                when it closes, with who closed it.

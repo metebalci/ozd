@@ -1634,7 +1634,7 @@ impl Session for Control {
 /// are an operation invalid for a directory or for a link --- what this
 /// is. The two are told apart by a second `symlink_metadata`, which opens
 /// nothing either; every other refusal comes back as the tree gave it.
-fn openable(place: &Place) -> Result<Option<std::fs::Metadata>, Refusal> {
+pub(crate) fn openable(place: &Place) -> Result<Option<std::fs::Metadata>, Refusal> {
     place.metadata().map_err(|refusal| match std::fs::symlink_metadata(&place.path) {
         Ok(m) if !m.is_file() && !m.is_dir() => wrong_kind(),
         _ => refusal,
@@ -1653,14 +1653,14 @@ fn described(place: &Place) -> Option<std::fs::Metadata> {
 }
 
 /// The name as the user end will see it: the pathname it asked for.
-fn truename(pathname: &str, directory: bool) -> String {
+pub(crate) fn truename(pathname: &str, directory: bool) -> String {
     let t = pathname.trim_end_matches('/');
     if directory { format!("{t}/") } else { t.to_string() }
 }
 
 /// `MM/DD/YY HH:MM:SS`, the form `PARSE-DIRECTORY-DATE-PROPERTY` reads
 /// fastest, from the file's modification time, in UTC.
-fn date(meta: &std::fs::Metadata) -> String {
+pub(crate) fn date(meta: &std::fs::Metadata) -> String {
     let secs = meta
         .modified()
         .ok()

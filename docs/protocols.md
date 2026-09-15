@@ -22,6 +22,8 @@ numbers. Paths marked **(304)** are under System 304's
   on `SERVER-ALIST` by an `ADD-INITIALIZATION`, and most of their user
   ends.
 - `network/chaos/chsncp.lisp` is the NCP, which answers STATUS itself.
+- `cold/mini.lisp` is a cold load's MINI, and `cold/minisr.mid` is MIT's
+  server for it.
 - `network/chaos/chuse.lisp`, `io1/conver.lisp`, `sys2/band.lisp`,
   `tape/`, `window/` and `file/server.lisp` hold the rest.
 - `site/site.lisp` says which hosts a band calls for what.
@@ -41,6 +43,7 @@ means it was not read. In the ozd column, ✓ means that ozd serves it.
 | `TIME` | RFC/ANS | ✓ | ✓ | ✓ |
 | `UPTIME` | RFC/ANS | ✓ | ✓ | ✓ |
 | `FILE` | stream | ✓ | ✓ | ✓ |
+| `MINI` | stream | **no** | ✓ | ✓ |
 | `HOSTAB` | stream | **no** | ✓ | ✓ |
 | `DUMP-ROUTING-TABLE` | RFC/ANS | ✓ | ✓ | not needed |
 | `NAME` | stream | ✓ | ✓ | ✓ |
@@ -144,6 +147,59 @@ pathname outside the tree. The machine turns `FNF`, `ATF` and `ATD` into
 `QFILE-PROCESS-ERROR-NEW` (`network/chaos/qfile.lisp:300`).
 
 `docs/design.md` §6 describes how ozd keeps FILE inside its roots.
+
+### MINI
+
+MINI is a stream that only reads files. A cold load reads the rest of
+the system through it before it has an NCP or a FILE client. `MAKE-COLD`
+(`cold/coldut.lisp:1194`) writes a cold load of the files in
+`COLD-LOAD-FILE-LIST` (`sys/sysdcl.lisp:461`), `cold/mini` among them.
+`QLD` (`sys/ltop.lisp:885`) then loads the inner system through MINI,
+with FILE's client `network/chaos/qfile` among it (`sys/sysdcl.lisp:554`).
+The machine's user end is `cold/mini.lisp`, which drives the Chaos
+interface without the NCP. MIT's server is `cold/minisr.mid`, a TOPS-20
+program. System 304 adds one in Lisp that a person starts by hand,
+`network/chaos/mini-server.lisp` **(304)**. Neither release puts MINI on
+`SERVER-ALIST`.
+
+The RFC carries `MINI LISPM `: the contact, a user and an empty password
+(`cold/mini.lisp:37`). The machine then opens one file at a time on the
+one connection, and it never closes the connection. The opcodes are the
+ones in the server's own header (`cold/minisr.mid:7`):
+
+| step | sender | opcode | data |
+|---|---|---|---|
+| open for characters | machine | `200` | the file name |
+| open for 16-bit binary | machine | `201` | the file name |
+| win | server | `202` | the truename, `215`, the date |
+| lose | server | `203` | a message, `215` |
+| characters | server | `200` | the file |
+| binary | server | `300` | the file in 16-bit words |
+| end of file | server | `EOF` | nothing |
+
+- **The machine splits a reply at its first newline**
+  (`cold/mini.lisp:113`), so a reply without one signals an error in the
+  cold load. The server writes the date as `MM/DD/YY HH:MM:SS`
+  (`cold/minisr.mid:184`, `:363`), and the machine drops its leading zero
+  (`cold/mini.lisp:116`).
+- **The whole file is read.** The fasloader stops before the end, and the
+  machine reads on to the EOF to stay in phase (`MINI-CLOSE`, `:295`).
+- **The machine offers a window of one packet**, and it receipts each
+  packet it takes with an STS (`MINI-SEND-STS`, `:90`). It passes over a
+  packet that is out of sequence with an STS (`:197`). It sends an open
+  again, with the same packet number, when no reply comes (`:99`). A CLS
+  or a LOS ends the load with "Connection broken" (`:191`).
+- **Its index is 1 after every boot**, because `MINI-LOCAL-INDEX` starts
+  unbound (`:60`, `:72`).
+- **The file names are pathnames on the file host**, as the cold-load
+  builder stored them (`:STRING-FOR-MINI`, `cold/coldut.lisp:1256`). For a
+  host's pathname that is the host's own string for it
+  (`io/file/pathnm.lisp:483`).
+- **Where the machine sends is fixed when `cold/mini.lisp` is compiled.**
+  System 100's names 3060, OZ, in its source (`cold/mini.lisp:31`). System
+  304's takes the address of the host that `SYS:` translates to at that
+  moment (`GET-INTERESTING-CHAOSNET-ADDRESSES`, **(304)**
+  `cold/mini.lisp:28`).
 
 ### HOSTAB
 

@@ -84,7 +84,7 @@ src/
   tcp.rs            TCP listeners, each connection carried to a stream (§8)
   lispm.rs          the Lisp Machine character set
   service/
-    status.rs  time.rs  file.rs  hostab.rs  name.rs
+    status.rs  time.rs  file.rs  mini.rs  hostab.rs  name.rs
 examples/
   ask.rs            asks a host for STATUS, TIME and UPTIME over CHUDP
 ```
@@ -374,7 +374,7 @@ wins as a whole, and no file is ever half one and half the other.
 
 ## 7. Services
 
-ozd serves six protocols (`docs/protocols.md`).
+ozd serves seven protocols (`docs/protocols.md`).
 
 - **STATUS** answers with the official name and one block for this
   host's subnet. Its meters are counted at the socket and shared with
@@ -389,6 +389,14 @@ ozd serves six protocols (`docs/protocols.md`).
 - **UPTIME** answers with the sixtieths of a second since start,
   `now × 60 / 10⁹`, which wraps at 32 bits after about 828 days.
 - **FILE** follows `sys/doc/chfile.text`, with the containment of §6.
+- **MINI** answers each open on its connection with the whole file: a
+  `202` with the truename and the date, the file in packets, and an EOF;
+  or a `203` with a message (`docs/protocols.md`, MINI). It resolves a
+  name as FILE resolves one for reading, with the containment of §6, so a
+  cold load reads the same roots that its band later reads through FILE.
+  A machine rebooted within three minutes of its last MINI connection
+  sends its RFC from the same index, 1, and the RFC is discarded as a
+  duplicate until that connection is given up (§4).
 - **HOSTAB** looks up each line that the client sends, ignoring case,
   among this host's names, every `--host`'s names, and the names of every
   host of the table `--hosts-text` names (§8). For a match, it
@@ -609,6 +617,11 @@ a System 100 site with them on one command line.
 - **`--log-file-probe`** adds a line for each FILE `PROBE`. A band probes
   far more often than it reads, before a read and through a compile, and
   serves no file by it, so it is asked for on its own.
+- **`--log-mini`** adds a line for each MINI open, in the shape of a
+  connection's lines: `MINI from 3050 (MIT-LISPM-1) read
+  /tree/sys/sys2/defsel.qfasl` for a file sent, or `MINI from 3050
+  (MIT-LISPM-1) refused /x: File not found` for an open refused, which is
+  where a cold load stops.
 - **`--log-tcp`** adds two lines for each `--tcp` connection: `TCP from
   127.0.0.1:54321 to TELNET at 3050 (MIT-LISPM-1) opened` when it is taken,
   and the same with `closed by the client`, `closed, the client is gone`,
@@ -690,6 +703,12 @@ clock that it sets.
    client closing and the contact closing each end the other side, a
    refused contact and a host given up close the client, and two clients
    are two streams.
+10. **MINI**, with a scripted machine end that lays out `cold/mini.lisp`'s
+    packets itself: a compiled file as its truename, its date and its
+    words; a text file in the machine's character set; one file after
+    another on one connection; a lose with its newline for a missing
+    file, a pathname outside the root, a directory and a FIFO, the
+    connection staying open; and an open sent again answered once.
 
 **The acceptance test** is done by hand. ozd runs with the System 100
 site that the README configures, its `tree` mount pointing at the

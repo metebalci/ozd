@@ -12,7 +12,7 @@ addressed to. Several machines can share one ozd, each naming it
 as its CHUDP peer, just as MIT had one associated machine for many Lisp
 Machines.
 
-ozd serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME, and it passes
+ozd serves STATUS, TIME, UPTIME, FILE, MINI, HOSTAB and NAME, and it passes
 packets between the machines on its subnet. The design is in
 `docs/design.md`. Every protocol a Lisp Machine speaks is described in
 `docs/protocols.md`, together with where each fact comes from, and CHUDP's
@@ -78,14 +78,15 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   over, because `--name` gives its names, and a host with no Chaosnet
   address is skipped. ozd reads the file when it starts, so a change to it
   wants a restart.
-- `--log-simple`, `--log-file`, `--log-file-probe` and `--log-tcp` each add
-  lines to the log, and each works on its own. `--log-simple` writes a line
+- `--log-simple`, `--log-file`, `--log-file-probe`, `--log-mini` and
+  `--log-tcp` each add lines to the log, and each works on its own. `--log-simple` writes a line
   for each simple transaction ozd answers, such as TIME, STATUS or UPTIME.
   `--log-file` writes one for each file read, each directory listed and each
   login, with the address of the machine that asked. `--log-file-probe`
   writes one for each FILE probe, which a band makes far more often than it
-  reads. `--log-tcp` writes one when a `--tcp` connection opens and one when
-  it closes. Without them, a machine's whole boot leaves one line in the
+  reads. `--log-mini` writes one for each file a cold load reads through
+  MINI, and one for each it is refused. `--log-tcp` writes one when a
+  `--tcp` connection opens and one when it closes. Without them, a machine's whole boot leaves one line in the
   log, the connection it opened. A line names a machine by its address and
   by its name in the host table, or `(?)` when the table does not have it.
 - `--listen` sets where ozd answers. Without it, ozd listens on
@@ -167,6 +168,13 @@ Some CHUDP implementations send a packet only to a peer that is named
 for its destination. A machine like that must also name every other
 machine's address at ozd's endpoint, so that packets between the
 machines pass through ozd (`docs/design.md` §9).
+
+A cold load reads the rest of its system through MINI, before it has
+FILE, from the address that its `cold/mini.lisp` was compiled with.
+System 100's names 3060, so an ozd at 3060 serves it as it is. System
+304's takes the address of the host that `SYS:` translated to when it was
+compiled, so a cold load built from files compiled against ozd reads
+from ozd (`docs/protocols.md`, MINI).
 
 ozd does no routing, so it cannot connect a site to the Global
 Chaosnet. A site that wants that runs `cbridge`, the Chaosnet bridge, as
