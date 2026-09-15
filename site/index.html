@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ozd &mdash; the associated machine for a site of MIT CADR Lisp Machines</title>
-<meta name="description" content="ozd is the host a site's Lisp Machines ask for their files, the time and their host table. It serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME over CHUDP and passes packets between the machines of its subnet. Written in Rust, with no dependencies.">
+<meta name="description" content="ozd is the host a site's Lisp Machines ask for their files, the time and their host table. It serves STATUS, TIME, UPTIME, FILE, MINI, HOSTAB and NAME over CHUDP, passes packets between the machines of its subnet, and carries a TCP connection to a machine's TELNET. Written in Rust, with no dependencies.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -124,12 +124,13 @@
         <span class="eyebrow">Contents</span>
         <ol class="toc">
           <li><a href="#what"><span class="tag">WHAT</span><span class="nm">What it is</span><span class="no">02</span></a></li>
-          <li><a href="#services"><span class="tag">SERVE</span><span class="nm">Six services</span><span class="no">03</span></a></li>
+          <li><a href="#services"><span class="tag">SERVE</span><span class="nm">Seven services</span><span class="no">03</span></a></li>
           <li><a href="#switch"><span class="tag">PLAN</span><span class="nm">The switch</span><span class="no">04</span></a></li>
           <li><a href="#run"><span class="tag">DO IT</span><span class="nm">Build and run</span><span class="no">05</span></a></li>
-          <li><a href="#security"><span class="tag">SAFE</span><span class="nm">Who can reach it</span><span class="no">06</span></a></li>
-          <li><a href="#service"><span class="tag">DAEMON</span><span class="nm">As a service</span><span class="no">07</span></a></li>
-          <li><a href="#colophon"><span class="tag">END</span><span class="nm">Colophon</span><span class="no">08</span></a></li>
+          <li><a href="#tcp"><span class="tag">CARRY</span><span class="nm">Into the machine</span><span class="no">06</span></a></li>
+          <li><a href="#security"><span class="tag">SAFE</span><span class="nm">Who can reach it</span><span class="no">07</span></a></li>
+          <li><a href="#service"><span class="tag">DAEMON</span><span class="nm">As a service</span><span class="no">08</span></a></li>
+          <li><a href="#colophon"><span class="tag">END</span><span class="nm">Colophon</span><span class="no">09</span></a></li>
         </ol>
         <p class="small push">The long form of all of it is in the repository: the <a href="https://github.com/metebalci/ozd#readme">README</a> and <a href="https://github.com/metebalci/ozd/blob/main/docs/protocols.md">every protocol</a>.</p>
       </nav>
@@ -173,12 +174,12 @@
     </footer>
   </section>
 
-  <!-- --------------------------------------------------- six services -->
-  <section id="services" aria-label="Six services">
+  <!-- ------------------------------------------------- seven services -->
+  <section id="services" aria-label="Seven services">
     <div class="panel bare">
       <span class="eyebrow">Serve</span>
-      <h2 class="title t-l">Six services</h2>
-      <p class="small" style="margin-top:0.4rem;">Four because a machine does not finish booting without them, and two because a band calls them at its associated machine. A simple transaction is one request and one answer; a stream is a connection.</p>
+      <h2 class="title t-l">Seven services</h2>
+      <p class="small" style="margin-top:0.4rem;">Four because a machine does not finish booting without them, one because a cold load does not, and two because a band calls them at its associated machine. A simple transaction is one request and one answer; a stream is a connection.</p>
     </div>
 
     <div class="panels two serve-split">
@@ -193,6 +194,7 @@
               <tr><td class="contact">TIME</td><td class="kind">simple transaction</td><td>The universal time, from the system clock</td><td>When it wants the date, from the site&rsquo;s time servers</td></tr>
               <tr><td class="contact">UPTIME</td><td class="kind">simple transaction</td><td>How long ozd has been up</td><td><code>(uptime)</code></td></tr>
               <tr><td class="contact">FILE</td><td class="kind">stream</td><td>The files in its roots, to read, write, rename and delete</td><td>For its sources and its users&rsquo; files, from the file host its site names</td></tr>
+              <tr><td class="contact">MINI</td><td class="kind">stream</td><td>The same files, read only, one after another</td><td><code>(si:qld)</code>, in a cold load that has no FILE yet</td></tr>
               <tr><td class="contact">HOSTAB</td><td class="kind">stream</td><td>A host&rsquo;s names, address and system type</td><td>When it meets a host name that its own table lacks</td></tr>
               <tr><td class="contact">NAME</td><td class="kind">stream</td><td>That nobody is logged in</td><td><code>(finger)</code> with no host</td></tr>
             </tbody>
@@ -210,8 +212,35 @@
       </div>
     </div>
 
+    <div class="panels two">
+      <div class="panel tone">
+        <p class="say">Cold-loaded, I have a reader, an evaluator and a fasloader, and no FILE yet. <code>(si:qld)</code> reads the rest of me through MINI.</p>
+        <p class="say r">One file at a time, on one connection that you never close. Each file goes whole, and then an EOF.</p>
+        <p class="small push">A cold load sends to the address that its <code>cold/mini.lisp</code> was compiled with. System 100&rsquo;s names 3060, OZ, so an ozd at 3060 serves it as it is. System 304&rsquo;s takes the host that <code>SYS:</code> translated to when it was compiled.</p>
+      </div>
+
+      <div class="panel">
+        <p class="cap light">What goes over a MINI connection, as MIT&rsquo;s own server, <code>cold/minisr.mid</code>, lists it:</p>
+        <div class="tablewrap">
+          <table style="min-width:18rem;">
+            <thead>
+              <tr><th scope="col">Opcode</th><th scope="col">From</th><th scope="col">What it carries</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>200</code> <code>201</code></td><td>the machine</td><td>An open, for characters or for binary, with the file name</td></tr>
+              <tr><td><code>202</code></td><td>ozd</td><td>The truename, a newline and the file&rsquo;s date</td></tr>
+              <tr><td><code>203</code></td><td>ozd</td><td>Why the file cannot be read, and a newline</td></tr>
+              <tr><td><code>200</code> <code>300</code></td><td>ozd</td><td>The file, as characters or as 16-bit words</td></tr>
+              <tr><td><code>EOF</code></td><td>ozd</td><td>The end of the file; the next open may follow</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small push">MINI finds a file as FILE does when it reads one, so nothing outside the roots is read.</p>
+      </div>
+    </div>
+
     <footer class="wholine">
-      <div class="label">ozd &middot; Six services</div>
+      <div class="label">ozd &middot; Seven services</div>
       <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>03</span></div>
     </footer>
   </section>
@@ -262,7 +291,7 @@
 
     <figure class="panel">
       <div class="scroll">
-        <svg viewBox="0 0 1000 396" role="img" aria-label="Three Lisp Machines, at 3050, 3051 and more, each connect over CHUDP on UDP port 42042 to ozd at 3060, the switch of one subnet, which serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME. FILE serves two roots: a writable base root, the users' homes, served as /, and a read-only mount of the release's sources at /tree.">
+        <svg viewBox="0 0 1000 396" role="img" aria-label="Three Lisp Machines, at 3050, 3051 and more, each connect over CHUDP on UDP port 42042 to ozd at 3060, the switch of one subnet, which serves STATUS, TIME, UPTIME, FILE, MINI, HOSTAB and NAME. FILE and MINI serve two roots: a writable base root, the users' homes, served as /, and a read-only mount of the release's sources at /tree. A TCP client, such as nc, reaches a --tcp listener and is carried to TELNET at a machine.">
           <rect class="d-box" x="20" y="24" width="210" height="76"/>
           <text class="d-t" x="125" y="56" text-anchor="middle">Lisp Machine</text>
           <text class="d-n" x="125" y="78" text-anchor="middle">3050, MIT-LISPM-1</text>
@@ -282,10 +311,11 @@
           <text class="d-n" x="520" y="190" text-anchor="middle">3060, MIT-OZ</text>
           <text class="d-s" x="520" y="212" text-anchor="middle">the switch of one subnet</text>
           <text class="d-n" x="520" y="240" text-anchor="middle">STATUS TIME UPTIME</text>
-          <text class="d-n" x="520" y="258" text-anchor="middle">FILE HOSTAB NAME</text>
+          <text class="d-n" x="520" y="258" text-anchor="middle">FILE MINI HOSTAB NAME</text>
 
           <path class="d-line" d="M640,176 L690,176 L690,72 L740,72 M690,176 L740,176"/>
           <text class="d-s" x="682" y="128" text-anchor="end">FILE</text>
+          <text class="d-s" x="682" y="144" text-anchor="end">MINI</text>
           <rect class="d-box" x="740" y="30" width="240" height="84"/>
           <text class="d-t" x="860" y="58" text-anchor="middle">base root, writable</text>
           <text class="d-s" x="860" y="78" text-anchor="middle">the users' homes, served as /</text>
@@ -295,9 +325,16 @@
           <text class="d-s" x="860" y="182" text-anchor="middle">the release's sources, at /tree</text>
           <text class="d-n" x="860" y="204" text-anchor="middle">--root tree=...,ro</text>
 
+          <path class="d-line" d="M640,250 L690,250 L690,322 L740,322"/>
+          <text class="d-s" x="682" y="292" text-anchor="end">TCP</text>
+          <rect class="d-box" x="740" y="280" width="240" height="84"/>
+          <text class="d-t" x="860" y="308" text-anchor="middle">a TCP client, such as nc</text>
+          <text class="d-s" x="860" y="328" text-anchor="middle">carried to TELNET at a machine</text>
+          <text class="d-n" x="860" y="350" text-anchor="middle">--tcp 10000,TELNET@3050</text>
+
         </svg>
       </div>
-      <figcaption class="cap long">Every machine names ozd as its default CHUDP peer. ozd learns each host&rsquo;s endpoint from the packets it sends, as an Ethernet switch learns where each host is, and <code>--peer</code> fixes one that must not move. FILE serves one tree: a base root, and roots mounted at its top level, each read-only or not.</figcaption>
+      <figcaption class="cap long">Every machine names ozd as its default CHUDP peer. ozd learns each host&rsquo;s endpoint from the packets it sends, as an Ethernet switch learns where each host is, and <code>--peer</code> fixes one that must not move. FILE and MINI serve one tree: a base root, and roots mounted at its top level, each read-only or not. A <code>--tcp</code> listener carries a TCP client to a machine&rsquo;s stream through the same switch.</figcaption>
     </figure>
 
     <div class="panels two">
@@ -367,7 +404,8 @@ cargo build --release</pre>
           <div><dt>--host, --hosts-text</dt><dd>Machines for HOSTAB to answer for, one flag each, or a band&rsquo;s own <code>hosts.text</code>, so that a band whose table lacks a machine can still find it by name.</dd></div>
           <div><dt>--listen</dt><dd>Where ozd answers. Without it, <code>127.0.0.1:42042</code>, which only this host can reach.</dd></div>
           <div><dt>--peer &lt;addr&gt;@&lt;ip&gt;</dt><dd>The fixed endpoint of a host that must not move. Every other endpoint is learned.</dd></div>
-          <div><dt>--log-simple, --log-file, --log-file-probe</dt><dd>More lines in the log: each simple transaction answered; each file read, directory listed and login; each FILE probe.</dd></div>
+          <div><dt>--tcp 10000,TELNET@3050</dt><dd>A TCP port that ozd carries to a Chaosnet stream at a machine of its subnet. Nothing listens without it (<a href="#tcp">Into the machine</a>).</dd></div>
+          <div><dt>--log-simple, --log-file, --log-file-probe, --log-mini, --log-tcp</dt><dd>More lines in the log: each simple transaction answered; each file read, directory listed and login; each FILE probe; each MINI open; each TCP connection opened and closed.</dd></div>
         </dl>
         <p class="small">The same flags, one per line, can go in a file of flags that <code>-c</code> names, or <code>OZD_RC</code>, or <code>.ozdrc</code>. <code>--check</code> reads the flags, checks the roots and exits, and <code>--help</code> describes each flag.</p>
       </div>
@@ -398,6 +436,46 @@ FILE    / holds 2 directories and 1 file</pre>
     </footer>
   </section>
 
+  <!-- ------------------------------------------------- into the machine -->
+  <section id="tcp" aria-label="Into the machine">
+    <div class="panel bare">
+      <span class="eyebrow">Carry</span>
+      <h2 class="title t-l">Into the machine</h2>
+      <p class="small" style="margin-top:0.4rem;">A <code>--tcp</code> listener takes TCP connections on the Unix side and carries each one to a Chaosnet stream at a machine. TELNET comes first.</p>
+    </div>
+
+    <div class="panels two">
+      <div class="panel tone">
+        <p class="say">I serve TELNET. What I lack is a Unix end to reach me from.</p>
+        <p class="say r">Every machine already names me as its peer. So I listen on a TCP port, and carry what comes in to your TELNET.</p>
+        <svg class="chara" viewBox="0 0 290 180" style="width:62%; align-self:center; margin-top:auto;" role="img" aria-label="CADR and OZ, side by side">
+          <use href="#cadr-body" y="30"/><use href="#face-happy" y="30"/>
+          <use href="#oz" x="165"/>
+        </svg>
+      </div>
+
+      <div class="panel">
+        <div class="step-head"><span class="step-num">1</span><h3>Listen</h3></div>
+<pre class="term cmd">target/release/ozd ... --tcp 10000,TELNET@3050</pre>
+        <p class="small">A bare port binds the loopback and nothing else. Each connection ozd takes there becomes a stream from ozd to TELNET at 3050, with the bytes going both ways. The machine must be on ozd&rsquo;s subnet, and ozd must have heard from it.</p>
+        <div class="step-head"><span class="step-num">2</span><h3>Connect</h3></div>
+<pre class="term cmd">nc 127.0.0.1 10000</pre>
+        <p class="small">This reaches the Lisp top level of the machine at 3050. When either end closes, the other is closed too.</p>
+        <p class="small push">Nothing here is TELNET&rsquo;s in particular: <code>--tcp &lt;endpoint&gt;,&lt;CONTACT&gt;@&lt;addr&gt;</code> names any stream contact, one for each listener, and may be given more than once. <code>--log-tcp</code> writes a line when a connection opens and one when it closes.</p>
+      </div>
+
+      <div class="panel ink wide">
+        <p class="say">A TELNET connection is a Lisp top level with no login, for whoever reaches the port.</p>
+        <p class="small">So nothing listens without <code>--tcp</code>, a bare port binds only the loopback, and each listener names its one contact, so that SUPDUP or EVAL is never reachable by accident. Name another address only where every host that can reach it may use the machine.</p>
+      </div>
+    </div>
+
+    <footer class="wholine">
+      <div class="label">ozd &middot; Into the machine</div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>06</span></div>
+    </footer>
+  </section>
+
   <!-- --------------------------------------------------------- security -->
   <section id="security" aria-label="Who can reach it">
     <div class="panel bare">
@@ -417,7 +495,7 @@ FILE    / holds 2 directories and 1 file</pre>
       <div class="panel">
         <p class="cap">What ozd holds to</p>
         <p class="small">A pathname cannot climb out of its root: <code>..</code> and <code>.</code> are refused, not normalised. A symbolic link is followed only while it stays inside its own root, and a directory from elsewhere is mounted with <code>--root &lt;name&gt;=&lt;path&gt;</code>, never linked in.</p>
-        <p class="small">Anything that is not a regular file or a directory is refused, and a <code>,ro</code> root refuses every write before the disk is touched. ozd refuses to run as root, and needs no privilege: 42042 is an ordinary UDP port.</p>
+        <p class="small">Anything that is not a regular file or a directory is refused, and a <code>,ro</code> root refuses every write before the disk is touched. ozd refuses to run as root, and needs no privilege: 42042 is an ordinary UDP port. It opens a TCP port only for a <code>--tcp</code>, and only on the loopback unless an address is named.</p>
         <p class="cap">What the operator holds to</p>
         <ol class="rules">
           <li><b>The roots belong to ozd&rsquo;s own user, and nobody else writes to them.</b> A hard link inside a root to a file outside it looks like an ordinary file, and so does a bind mount. If only ozd&rsquo;s user can write to a root, neither can appear there.</li>
@@ -428,7 +506,7 @@ FILE    / holds 2 directories and 1 file</pre>
 
     <footer class="wholine">
       <div class="label">ozd &middot; Who can reach it</div>
-      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>06</span></div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>07</span></div>
     </footer>
   </section>
 
@@ -457,7 +535,7 @@ FILE    / holds 2 directories and 1 file</pre>
 
     <footer class="wholine">
       <div class="label">ozd &middot; As a service</div>
-      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>07</span></div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>08</span></div>
     </footer>
   </section>
 
@@ -470,7 +548,7 @@ FILE    / holds 2 directories and 1 file</pre>
 
     <div class="panels two end-split">
       <div class="colophon">
-        <p>Every fact about a protocol is read from the Lisp Machine&rsquo;s own manual and sources: AIM-628, <code>sys/man/chaos.text</code>, <code>sys/doc/chfile.text</code> and the machine&rsquo;s network code. <a href="https://github.com/metebalci/ozd/blob/main/docs/protocols.md">docs/protocols.md</a> says where each one was read.</p>
+        <p>Every fact about a protocol is read from the Lisp Machine&rsquo;s own manual and sources: AIM-628, <code>sys/man/chaos.text</code>, <code>sys/doc/chfile.text</code> and the machine&rsquo;s network and cold-load code. <a href="https://github.com/metebalci/ozd/blob/main/docs/protocols.md">docs/protocols.md</a> says where each one was read.</p>
         <p>ozd is written in Rust with <a href="https://claude.com/claude-code">Claude Code</a>, and has no crate dependencies.</p>
         <p><b>&copy; 2026 Mete Balci.</b> ozd is <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0-or-later</a>.</p>
         <p>The drawing style, the palette, the panels and CADR are Cold Boot&rsquo;s, a manga-style zine about the CADR by the same author, under CC BY-SA 4.0. OZ is drawn for this page in the same hand, and muir-fpga&rsquo;s board for muir-fpga&rsquo;s own site.</p>
@@ -490,7 +568,7 @@ FILE    / holds 2 directories and 1 file</pre>
 
     <footer class="wholine">
       <div class="label">ozd &middot; Colophon</div>
-      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>08</span></div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>09</span></div>
     </footer>
   </section>
 
