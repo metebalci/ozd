@@ -191,6 +191,7 @@ switch.
   `cbridge` showed all of it, and two frames it sent are pinned in
   `tests/frame.rs`. The protocol page says `cbridge` sends least
   significant byte first, and the running `cbridge` does not.
+  `docs/chudp.md` describes the framing in full, with examples.
 - **The trailer's check word** on a packet for this host is compared with
   the checksum, and a mismatch is traced but never dropped: UDP has a
   checksum of its own, although over IPv4 a sender may leave it zero, and

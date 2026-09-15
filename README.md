@@ -15,7 +15,8 @@ Machines.
 ozd serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME, and it passes
 packets between the machines on its subnet. The design is in
 `DESIGN.md`. Every protocol a Lisp Machine speaks is described in
-`PROTOCOLS.md`, together with where each fact comes from.
+`PROTOCOLS.md`, together with where each fact comes from, and CHUDP's
+framing, byte by byte, in `docs/chudp.md`.
 
 ## Build
 
