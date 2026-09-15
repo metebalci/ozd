@@ -231,7 +231,7 @@
 
     <figure class="panel">
       <div class="scroll">
-        <svg viewBox="0 0 1000 420" role="img" aria-label="Three Lisp Machines, at 3050, 3051 and more, each connect over CHUDP on UDP port 42042 to ozd at 3060, the hub of one subnet, which serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME. FILE serves two roots: a writable base root, the users' homes, served as /, and a read-only mount of the release's sources at /tree. Below, ozd has cbridge as a peer with a fixed endpoint, drawn dashed, the way to the Global Chaosnet, only at a site that wants it.">
+        <svg viewBox="0 0 1000 396" role="img" aria-label="Three Lisp Machines, at 3050, 3051 and more, each connect over CHUDP on UDP port 42042 to ozd at 3060, the hub of one subnet, which serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME. FILE serves two roots: a writable base root, the users' homes, served as /, and a read-only mount of the release's sources at /tree.">
           <rect class="d-box" x="20" y="24" width="210" height="76"/>
           <text class="d-t" x="125" y="56" text-anchor="middle">Lisp Machine</text>
           <text class="d-n" x="125" y="78" text-anchor="middle">3050, MIT-LISPM-1</text>
@@ -264,14 +264,6 @@
           <text class="d-s" x="860" y="182" text-anchor="middle">the release's sources, at /tree</text>
           <text class="d-n" x="860" y="204" text-anchor="middle">--root tree=...,ro</text>
 
-          <path class="d-line" d="M520,274 L520,338 L740,338"/>
-          <text class="d-s" x="630" y="330" text-anchor="middle">a peer, its endpoint fixed</text>
-          <rect class="d-dash" x="740" y="296" width="240" height="84"/>
-          <text class="d-t" x="860" y="324" text-anchor="middle">cbridge</text>
-          <text class="d-s" x="860" y="344" text-anchor="middle">to the Global Chaosnet</text>
-          <text class="d-n" x="860" y="366" text-anchor="middle">--peer 3040@192.0.2.5</text>
-          <rect class="d-ring" x="726" y="282" width="268" height="112"/>
-          <text class="d-s" x="860" y="412" text-anchor="middle">only at a site that wants it</text>
         </svg>
       </div>
       <figcaption class="cap long">Every machine names ozd as its default CHUDP peer. ozd learns each host&rsquo;s endpoint from the packets it sends, as a switch learns where each host is, and <code>--peer</code> fixes one that must not move. FILE serves one tree: a base root, and roots mounted at its top level, each read-only or not.</figcaption>
@@ -289,7 +281,8 @@
               <tr><td><code>3060</code>, this host</td><td>answers it</td></tr>
               <tr><td><code>0</code>, a broadcast</td><td>answers it, and passes it to every endpoint but its sender&rsquo;s</td></tr>
               <tr><td><code>3051</code>, another machine</td><td>passes it on, byte for byte</td></tr>
-              <tr><td><code>4401</code>, another subnet</td><td>drops it, as it drops a host not yet heard from</td></tr>
+              <tr><td><code>3052</code>, a host not yet heard from</td><td>drops it, having nowhere to send it</td></tr>
+              <tr><td><code>4401</code>, another subnet</td><td>drops it: ozd routes nothing</td></tr>
             </tbody>
           </table>
         </div>
@@ -297,7 +290,15 @@
 
       <div class="panel">
         <p class="small">Unlike a switch, ozd drops a packet for a host it has not heard from yet, rather than sending it to every host.</p>
-        <p class="small">It is a hub and not a bridge: no forwarding count, no routing, and nothing to another subnet. A site that wants the Global Chaosnet runs <code>cbridge</code> beside ozd, and a machine that wants it names <code>cbridge</code> as a peer of its own.</p>
+        <p class="small">It is a hub and not a bridge: no forwarding count, no routing, and nothing to another subnet.</p>
+      </div>
+    </div>
+
+    <div class="panel tone-pink">
+      <div class="panel" style="gap:0.5rem;">
+        <div class="step-head"><h3>Joining the Global Chaosnet</h3></div>
+        <p class="small">ozd routes nothing, so it cannot take a site onto the Global Chaosnet. A site that wants that runs <code>cbridge</code>, the Chaosnet bridge, and makes it the hub instead: every machine names <code>cbridge</code> as its default CHUDP peer, and ozd becomes one more of its peers.</p>
+        <p class="small">ozd then serves files, the time and the host table as before, and passes nothing on. Every host that <code>cbridge</code> lets through can reach it, FILE included.</p>
       </div>
     </div>
 

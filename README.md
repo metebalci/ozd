@@ -159,6 +159,14 @@ for its destination. A machine like that must also name every other
 machine's address at ozd's endpoint, so that packets between the
 machines pass through ozd (`DESIGN.md` §9).
 
+ozd does no routing, so it cannot connect a site to the Global
+Chaosnet. A site that wants that runs `cbridge`, the Chaosnet bridge, as
+its hub instead of ozd. Each machine then names `cbridge` as its default
+CHUDP peer, and ozd becomes one more peer of `cbridge`, on a port of its
+own if both run on one computer. ozd still serves the machines, but it
+passes no packets between them. This setup has not been tried yet
+(`DESIGN.md` §9).
+
 ## Security
 
 ozd is meant for a trusted network segment, and it does not
@@ -168,8 +176,9 @@ rename and delete files in every root that is not marked `,ro`. `LOGIN`
 accepts any name and only records it; it is never a credential. So the
 address that ozd listens on decides who can use it. Without `--listen`,
 only this host can. With a network address or `0.0.0.0`, every host
-that can reach that address can. ozd has no TLS and does no routing. A
-site that wants to join the Global Chaosnet runs `cbridge` next to it.
+that can reach that address can. ozd has no TLS and does no routing. At
+a site that joins the Global Chaosnet through `cbridge`, every host that
+`cbridge` lets through can reach ozd, FILE included.
 
 Clients can reach the files in the roots and nothing else. A pathname
 cannot climb out of its root. ozd follows a symbolic link only while the

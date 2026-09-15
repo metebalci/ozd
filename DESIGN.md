@@ -9,10 +9,11 @@ themselves, and the README says how to build, run and secure ozd.
 ozd is one process with one thread, one UDP socket and one loop. It is
 the **hub** of one subnet. The hosts on the subnet name it as their
 CHUDP peer, it passes packets between them as a cable would, and it
-answers its own services.
+answers its own services. A site that wants the Global Chaosnet makes
+`cbridge` its hub instead, and ozd is then one of its peers (§9).
 
 ```text
-hosts on the subnet: Lisp Machines, cbridge
+hosts on the subnet: Lisp Machines
     │  CHUDP over UDP
 chudp::Link       the socket, the endpoints, the checks;
     │             a packet for another host passed on, untouched
@@ -509,9 +510,21 @@ a System 100 site with them on one command line.
   and the machines take 42043, 42044 and so on (see the README).
 - **On several hosts**, give `--listen` an address on the segment, or
   `0.0.0.0`, and have each machine name that address as its peer.
-- **The Global Chaosnet** cannot be reached through the hub, which
-  passes nothing to another subnet. A machine that wants it has
-  `cbridge` as a peer of its own for those addresses.
+- **The Global Chaosnet** cannot be reached through ozd's hub, which
+  passes nothing to another subnet. A site that wants it makes
+  `cbridge` its hub instead: every machine names `cbridge` as its
+  default CHUDP peer, and ozd is one more peer of `cbridge`. ozd then
+  serves its services and passes nothing on, because every packet
+  reaches it from `cbridge`'s endpoint, where every host is learned, and
+  nothing is sent back to the endpoint it came from (§5). The machines
+  learn their routes from the RUT packets that `cbridge` broadcasts, as
+  they would from a bridge on a cable, and a band drops a packet that it
+  has no route for before sending it (`TRANSMIT-INT-PKT`,
+  `chsncp.lisp:1928`), so ozd needs no route of its own. Two things are
+  **unverified** until this is run, because `cbridge`'s code is not
+  read: that it passes a packet between two of its CHUDP peers on one
+  subnet, and that it accepts ozd's answers, whose trailer names their
+  destination rather than `cbridge`.
 
 ## 10. Logging and running
 
