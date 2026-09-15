@@ -241,7 +241,7 @@ whether a Lisp Machine "has telnet" is a question about the other end:
 - **Into the machine** needs a Chaosnet TELNET user end on Unix, or a
   gateway from TCP telnet to Chaosnet TELNET. It can be a CHUDP peer of
   the machine directly, or reach the machine through ozd, the subnet's
-  hub.
+  switch.
 - **Out of the machine, to Unix** needs a Chaosnet TELNET server on
   Unix. That server would be a login shell for a client that does not
   authenticate, and ozd does not provide one.
@@ -295,7 +295,7 @@ server would be a login shell, as a TELNET server would be.
 These protocols go from one Lisp Machine to another. ozd neither sends
 nor receives them. For them to arrive, a site needs a path between the
 two machines: either the machines are peered directly, or ozd passes the
-packets between them as its subnet's hub, without reading them
+packets between them as its subnet's switch, without reading them
 (`DESIGN.md` §5).
 
 ### FINGER

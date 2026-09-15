@@ -694,7 +694,7 @@ fn a_packet_for_no_connection_draws_a_los() {
 /// error: `RECEIVE-BRD` calls `(HANDLE-RFC-PKT PKT NIL)`, and
 /// `HANDLE-RFC-PKT` sends "No server for this contact name" only "if
 /// CLS-ON-ERROR-P is T" (`sys/network/chaos/chsncp.lisp:1588`, `:1613`).
-/// A hub hears every machine's broadcasts; a refusal to each would go back
+/// A switch hears every machine's broadcasts; a refusal to each would go back
 /// to every one of them. An RFC for the same contact is still refused.
 #[test]
 fn a_broadcast_nobody_serves_draws_nothing() {

@@ -39,7 +39,7 @@
 //!
 //! - 1, every datagram received;
 //! - 2, every datagram sent, this host's own and those passed on as the
-//!   subnet's hub;
+//!   subnet's switch;
 //! - 7, those rejected for their length;
 //! - 8, those rejected for anything else.
 //!

@@ -177,7 +177,6 @@ code { font-family: var(--mono); font-size: var(--fs-mono); font-weight: 400; wh
 /* Uneven splits, as classes rather than inline styles: an inline style would
    outrank the narrow-screen rule below and keep two columns on a phone. */
 .serve-split { grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr); }
-.hub-split { grid-template-columns: minmax(0, 2.6fr) minmax(0, 1fr); }
 .end-split { grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr); }
 
 /* ---------------------------------------------------------------- panels */
@@ -467,7 +466,7 @@ td.kind { font-family: var(--mono); font-size: var(--fs-mono-small); white-space
 .scroll svg { display: block; width: 100%; min-width: 720px; height: auto; }
 
 .d-box  { fill: none; stroke: currentColor; stroke-width: 1.5; }
-.d-hub  { fill: var(--spot-tint); stroke: currentColor; stroke-width: 3; }
+.d-switch  { fill: var(--spot-tint); stroke: currentColor; stroke-width: 3; }
 .d-lit  { fill: var(--spot-tint); stroke: currentColor; stroke-width: 1.5; }
 /* A small drawing inside a panel, which scales with the panel rather than
    scrolling, and stops growing before its lettering does. */

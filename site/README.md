@@ -7,9 +7,9 @@ are written by hand, with no build step and no generator.
 - `index.html` is the page. Its drawings are inline SVG, defined once at
   the top of the file and placed with `<use>`. CADR's body, face and waving
   arm are Cold Boot's own parts, from the manga-style zine about the CADR
-  by the same author. OZ is drawn for this page in the same hand. The hub
-  diagram is inline SVG as well, drawn in its own viewBox units so that it
-  scales with its box.
+  by the same author. OZ is drawn for this page in the same hand. The
+  switch diagram is inline SVG as well, drawn in its own viewBox units so
+  that it scales with its box.
 - `style.css` is the stylesheet. It has ink and paper with one spot color,
   the size tokens that every `font-size` comes from, and no dark mode.
 - `fonts/` holds the three families, served from here rather than from

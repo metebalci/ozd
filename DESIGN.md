@@ -7,10 +7,12 @@ themselves, and the README says how to build, run and secure ozd.
 ## 1. The shape of it
 
 ozd is one process with one thread, one UDP socket and one loop. It is
-the **hub** of one subnet. The hosts on the subnet name it as their
-CHUDP peer, it passes packets between them as a cable would, and it
-answers its own services. A site that wants the Global Chaosnet makes
-`cbridge` its hub instead, and ozd is then one of its peers (§9).
+the **switch** of one subnet. The hosts on the subnet name it as their
+CHUDP peer, and it passes each packet to the host that the packet's
+trailer names, at the endpoint learned from that host's own packets, as
+an Ethernet switch does. It also answers its own services. A site that
+wants the Global Chaosnet makes `cbridge` its switch instead, and ozd is
+then one of its peers (§9).
 
 ```text
 hosts on the subnet: Lisp Machines
@@ -77,7 +79,7 @@ src/
   address.rs        parse_address
   packet.rs         the packet and the check word
   roots.rs          the tree FILE serves: roots, resolve, readonly (§6)
-  chudp.rs          the frame, and the link and hub (§5)
+  chudp.rs          the frame, and the link and switch (§5)
   ncp.rs            the NCP
   lispm.rs          the Lisp Machine character set
   service/
@@ -97,8 +99,8 @@ contact name.
 A BRD for a contact that no service takes is dropped silently rather
 than refused with a CLS. The machine's own NCP does the same
 (`RECEIVE-BRD`, `chsncp.lisp:1613`, with `CLS-ON-ERROR-P` nil, `:1588`).
-A hub sees every broadcast on the subnet, so it must not answer the ones
-it does not serve (`tests/ncp.rs`).
+A switch sees every broadcast on the subnet, so it must not answer the
+ones it does not serve (`tests/ncp.rs`).
 
 **A connection's index** has two parts. Its low ten bits are a slot in
 the connection table, and the six bits above them are that slot's
@@ -143,10 +145,10 @@ most 100 ms late against its 500 ms interval.
   file therefore moves at the rate at which the other end acknowledges
   packets.
 
-## 5. The link and the hub
+## 5. The link and the switch
 
 `chudp::Link` owns the socket and the table of endpoints, and it is the
-hub.
+switch.
 
 - **It binds what `--listen` says**: a port, an address, or an address
   and a port. A bare port is on the loopback. Without `--listen`, it
@@ -177,9 +179,9 @@ hub.
        from: the packet is dropped.
 - **A packet passed on is not changed.** The datagram goes out byte for
   byte as it came in. A cable does not change a frame, and neither does
-  the hub: there is no forwarding count and no new trailer. This is what
-  makes ozd a hub rather than a bridge, and it is why nothing goes to
-  another subnet: there is no routing to decide where.
+  the switch: there is no forwarding count and no new trailer. This is
+  what makes ozd a switch rather than a bridge, and it is why nothing
+  goes to another subnet: there is no routing to decide where.
 - **The trailer's check word** on a packet for this host is compared,
   and a mismatch is traced but never dropped. What a CHUDP peer puts in
   that word is unverified (`chudp.rs`, `unwrap`), and UDP has a checksum
@@ -194,7 +196,7 @@ hub.
 - **A machine names this host as its CHUDP peer.** A machine whose CHUDP
   sends a unicast packet only to a peer named for its destination must
   also name every other machine of the subnet at this host's endpoint.
-  Otherwise its packets for them never reach the hub (§9).
+  Otherwise its packets for them never reach the switch (§9).
 
 ## 6. Containment
 
@@ -510,9 +512,9 @@ a System 100 site with them on one command line.
   and the machines take 42043, 42044 and so on (see the README).
 - **On several hosts**, give `--listen` an address on the segment, or
   `0.0.0.0`, and have each machine name that address as its peer.
-- **The Global Chaosnet** cannot be reached through ozd's hub, which
+- **The Global Chaosnet** cannot be reached through ozd's switch, which
   passes nothing to another subnet. A site that wants it makes
-  `cbridge` its hub instead: every machine names `cbridge` as its
+  `cbridge` its switch instead: every machine names `cbridge` as its
   default CHUDP peer, and ozd is one more peer of `cbridge`. ozd then
   serves its services and passes nothing on, because every packet
   reaches it from `cbridge`'s endpoint, where every host is learned, and
@@ -595,13 +597,13 @@ clock that it sets.
    as HOSTAB's beside them (`tests/hosts_text.rs`), and what the log flags
    add is asserted where FILE and the NCP are (`tests/file.rs`,
    `tests/ncp.rs`).
-3. **The link and the hub.** An unknown host's endpoint is learned and
-   answered. A fixed endpoint is not moved by a packet. A datagram with
-   this host's own address as its source is dropped. A packet from one
-   test host to another reaches it byte for byte. A broadcast reaches
-   every test host except its sender, and it is answered here. A packet
-   for another subnet, or for a host not yet heard from, reaches nobody.
-   Nothing is sent back to the endpoint that a packet came from.
+3. **The link and the switch.** An unknown host's endpoint is learned
+   and answered. A fixed endpoint is not moved by a packet. A datagram
+   with this host's own address as its source is dropped. A packet from
+   one test host to another reaches it byte for byte. A broadcast
+   reaches every test host except its sender, and it is answered here. A
+   packet for another subnet, or for a host not yet heard from, reaches
+   nobody. Nothing is sent back to the endpoint that a packet came from.
 4. **STATUS** over loopback, with its meters counting what the test
    sent.
 5. **TIME** within a second of the system clock, and **UPTIME** at 600

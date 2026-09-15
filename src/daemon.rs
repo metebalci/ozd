@@ -23,7 +23,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// This host: its link --- the socket, the endpoints, the hub --- its NCP
+/// This host: its link --- the socket, the endpoints, the switch --- its NCP
 /// with what `services` gives it to serve, and the meters the link
 /// counts into and STATUS reads.
 pub struct Daemon {

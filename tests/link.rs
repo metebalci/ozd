@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The link and the hub (`DESIGN.md` §5), over loopback: a daemon and test
+//! The link and the switch (`DESIGN.md` §5), over loopback: a daemon and test
 //! hosts, each on a socket of its own, and every datagram a real one.
 //!
 //! What is learned and what is fixed; what is dropped before anything
-//! else, and counted; and the hub --- a packet for another host of the
+//! else, and counted; and the switch --- a packet for another host of the
 //! subnet passed on as it came, a broadcast to every host but its sender,
 //! and nothing to another subnet, to a host not yet heard from, or back
 //! where it came from.
@@ -113,8 +113,8 @@ fn a_datagram_from_this_hosts_own_address_is_dropped() {
 }
 
 /// **A packet from one host to another is passed on byte for byte.** The
-/// hub is the cable, and the cable does not change a frame: no forwarding
-/// count, no new trailer, the datagram as it came (`DESIGN.md` §5). So a
+/// switch stands in for the cable, and a cable does not change a frame: no
+/// forwarding count, no new trailer, the datagram as it came (`DESIGN.md` §5). So a
 /// packet as no NCP here would write it --- a forwarding count of 3, and a
 /// check word that is not the hardware's --- reaches the other host with
 /// both, and the other host's answer comes back the same way.
@@ -142,7 +142,7 @@ fn a_packet_from_one_host_to_another_is_passed_on_byte_for_byte() {
     assert_eq!(a.data, [0x78, 0x56, 0x34, 0x12], "LM2's time, not this host's");
     // LM1's NCP did not send that RFC, so it has no connection for the
     // answer and says so with a LOS (AIM-628 §4.2), which reaches LM2 the
-    // same way: everything between the two goes through the hub.
+    // same way: everything between the two goes through the switch.
     let after: Vec<u8> = lm2.packets()[1..].iter().map(|p| p.opcode).collect();
     assert_eq!(after, [op::LOS], "and then LM1's LOS");
     assert_eq!(meters(&d)[1] - sent_before, 3, "each passed on, and counted as sent");
@@ -150,7 +150,7 @@ fn a_packet_from_one_host_to_another_is_passed_on_byte_for_byte() {
 
 /// **A broadcast reaches every host but its sender, and is answered
 /// here.** On one cable every host hears every broadcast; over CHUDP the
-/// hub makes it so, passing the datagram on to every endpoint but the one
+/// switch makes it so, passing the datagram on to every endpoint but the one
 /// it came from, and taking it itself (`DESIGN.md` §5).
 /// A BRD for TIME is then answered by every host that serves TIME, this
 /// one among them (AIM-628 §4.5).
@@ -183,7 +183,7 @@ fn a_broadcast_reaches_every_host_but_its_sender_and_is_answered_here() {
 }
 
 /// **A packet for another subnet, or for a host not yet heard from,
-/// reaches nobody.** The hub passes on within its subnet and routes
+/// reaches nobody.** The switch passes on within its subnet and routes
 /// nothing: a host of another subnet is answered where it was heard from,
 /// but nothing is passed on to it; and a host with no endpoint has
 /// nowhere to be passed on to. Both are dropped, and counted (`DESIGN.md`

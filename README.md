@@ -6,8 +6,9 @@ table (see System 100's `sys/site/site.lisp`). ozd is OZ as a daemon.
 
 ozd is the associated machine for a site of MIT CADR Lisp Machines. It
 is one host on one Chaosnet subnet, reached over UDP. It serves the
-machines their files, the time and their host table, and it passes
-packets between them. Several machines can share one ozd, each naming it
+machines their files, the time and their host table, and it is the
+switch of their subnet: it passes each packet to the machine it is
+addressed to. Several machines can share one ozd, each naming it
 as its CHUDP peer, just as MIT had one associated machine for many Lisp
 Machines.
 
@@ -161,10 +162,10 @@ machines pass through ozd (`DESIGN.md` §9).
 
 ozd does no routing, so it cannot connect a site to the Global
 Chaosnet. A site that wants that runs `cbridge`, the Chaosnet bridge, as
-its hub instead of ozd. Each machine then names `cbridge` as its default
-CHUDP peer, and ozd becomes one more peer of `cbridge`, on a port of its
-own if both run on one computer. ozd still serves the machines, but it
-passes no packets between them. This setup has not been tried yet
+its switch instead of ozd. Each machine then names `cbridge` as its
+default CHUDP peer, and ozd becomes one more peer of `cbridge`, on a port
+of its own if both run on one computer. ozd still serves the machines,
+but it passes no packets between them. This setup has not been tried yet
 (`DESIGN.md` §9).
 
 ## Security

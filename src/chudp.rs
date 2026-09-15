@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Chaosnet over UDP: the frame, and the link and the hub.
+//! Chaosnet over UDP: the frame, and the link and the switch.
 //!
 //! CHUDP puts one Chaosnet packet in one UDP datagram behind a four-byte
 //! header, and it is what `cbridge`, `usim`, `klh10` and the live
@@ -12,7 +12,7 @@
 //! Two halves. The frame: the constants, [`Order`], [`PACKET_ORDER`],
 //! [`TRAILER_ORDER`], [`wrap`] and [`unwrap`], with an **unverified** mark
 //! wherever the reading is not settled. Then [`Link`], the link and the
-//! hub: the socket, the table of endpoints, and a packet for another host
+//! switch: the socket, the table of endpoints, and a packet for another host
 //! of the subnet passed on untouched (`DESIGN.md` §5).
 //!
 //! ## The frame
@@ -263,9 +263,9 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
     Ok(Framed { buffer, source, check, check_ok })
 }
 
-// --- the link and the hub ------------------------------------------------
+// --- the link and the switch ---------------------------------------------
 
-/// The link, and the hub of this host's subnet (`DESIGN.md` §5): the one
+/// The link, and the switch of this host's subnet (`DESIGN.md` §5): the one
 /// socket, the table of endpoints, and what becomes of each datagram.
 ///
 /// **Endpoints are learned**: a packet's source --- the
@@ -298,7 +298,7 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
 ///
 /// **Passed on means untouched**: the datagram goes out as it came, byte
 /// for byte, as a cable does not change a frame --- no forwarding count,
-/// no new trailer. That is what makes this a hub and not a bridge, and
+/// no new trailer. That is what makes this a switch and not a bridge, and
 /// why nothing goes to another subnet: there is no routing to decide
 /// where. A check word that is not the hardware's is traced and the
 /// packet handled all the same (`DESIGN.md` §5).

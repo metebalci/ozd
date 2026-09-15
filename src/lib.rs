@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! ozd: the associated machine for a site of CADR Lisp Machines, and
-//! the hub of their one Chaosnet subnet over UDP.
+//! the switch of their one Chaosnet subnet over UDP.
 //!
 //! `DESIGN.md` is the design, its §3 these modules, and `PROTOCOLS.md`
 //! what each protocol is.

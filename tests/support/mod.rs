@@ -248,26 +248,26 @@ pub struct TestHost {
     /// Where its socket is: the endpoint the daemon learns for it.
     pub at: SocketAddr,
     /// Where it sends everything: the daemon.
-    pub hub: SocketAddr,
+    pub switch: SocketAddr,
     /// Every datagram it has had, as it came, oldest first.
     pub heard: Vec<Vec<u8>>,
 }
 
 impl TestHost {
-    pub fn new(address: u16, hub: SocketAddr) -> TestHost {
+    pub fn new(address: u16, switch: SocketAddr) -> TestHost {
         let (socket, at) = socket();
-        TestHost { ncp: Ncp::new(address), socket, at, hub, heard: Vec::new() }
+        TestHost { ncp: Ncp::new(address), socket, at, switch, heard: Vec::new() }
     }
 
-    /// A datagram, whatever its bytes, from this host's socket to the hub.
+    /// A datagram, whatever its bytes, from this host's socket to the switch.
     pub fn send_bytes(&self, datagram: &[u8]) {
-        self.socket.send_to(datagram, self.hub).expect("a datagram goes");
+        self.socket.send_to(datagram, self.switch).expect("a datagram goes");
     }
 
     /// One turn at `now`: every datagram the socket has, kept in
     /// [`TestHost::heard`] and handed to the NCP through `unwrap`; then
     /// everything the NCP has to send, through `wrap` with this host's
-    /// address and the hardware's check word, to the hub. How many
+    /// address and the hardware's check word, to the switch. How many
     /// datagrams moved.
     pub fn turn(&mut self, now: u64) -> usize {
         let mut moved = 0;

@@ -27,7 +27,7 @@
 //! waits three seconds at most.
 //!
 //! **It sends from a Chaos address of its own**, `<from>`, or else the
-//! asked host's subnet with host 376. A hub learns that address at this
+//! asked host's subnet with host 376. A switch learns that address at this
 //! socket as it learns any peer's (`DESIGN.md` §5), so a machine that has
 //! it would have its packets sent here until it next sends one itself.
 //! Give `<from>` if one of your machines is at host 376.
