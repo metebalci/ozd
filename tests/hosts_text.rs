@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The band's own host table as HOSTAB's, `--hosts-text` (`DESIGN.md` §8):
+//! The band's own host table as HOSTAB's, `--hosts-text` (`docs/design.md` §8):
 //! `sys/site/hosts.text`, the file a site keeps for its machines, read here
 //! so that a site writes its hosts once instead of twice.
 //!
@@ -14,7 +14,7 @@
 //! address is a network's name and a number, `CHAOS 3060`, the Chaosnet's
 //! in octal (`ZWEI:PARSE-NUMBER ... 8`, `chsaux.lisp:1618`).
 //!
-//! What ozd takes of it is what HOSTAB answers with (`DESIGN.md` §7): the
+//! What ozd takes of it is what HOSTAB answers with (`docs/design.md` §7): the
 //! names, the Chaos address, and the system type. A host with no Chaos
 //! address is not one HOSTAB can answer for, and is skipped as the
 //! machine's own table skips what has no address it can reach.
@@ -127,7 +127,7 @@ HOST OZ,\tCHAOS 3060,SERVER,UNIX,VAX\t; the file host
 
 /// **A line with no system type has none**, as a `--host` without
 /// `system=` has none, and HOSTAB then sends no `SYSTEM-TYPE`
-/// (`DESIGN.md` §7). The fields after the address may be empty or missing
+/// (`docs/design.md` §7). The fields after the address may be empty or missing
 /// altogether.
 #[test]
 fn a_line_without_a_system_type_has_none() {

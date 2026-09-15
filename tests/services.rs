@@ -57,7 +57,7 @@ fn ask(h: &mut Ncp, now: u64, contact: &str) -> Packet {
 ///   `(DPB (AREF PKT (1+ J)) #o2020 (AREF PKT J))`.
 ///
 /// The meters are this host's own, counted by the link into the [`Meters`]
-/// it shares with the service (`DESIGN.md` §7), in the order MIT's own
+/// it shares with the service (`docs/design.md` §7), in the order MIT's own
 /// `SEND-STATUS` sends them (`sys/network/chaos/chsncp.lisp`): 1 received,
 /// 2 transmitted, 7 rejected for length, 8 rejected for anything else; 3 to
 /// 6 are zero.
@@ -137,7 +137,7 @@ fn status_meters_are_what_the_link_has_counted() {
 
 /// **TIME is the system clock, as universal time**: seconds since midnight
 /// GMT, 1 January 1900, least significant byte first (AIM-628 §5.8), within
-/// a second of the clock read here (`DESIGN.md` §11).
+/// a second of the clock read here (`docs/design.md` §11).
 #[test]
 fn time_is_the_system_clock_in_universal_time() {
     // 1900 to 1970: seventy years of 365 days and seventeen leap days, 1904
@@ -160,7 +160,7 @@ fn time_is_the_system_clock_in_universal_time() {
 /// after it, `sys/network/chaos/chsaux.lisp`). A server that answers in
 /// the manual's "an interval (in seconds)" has a band print a sixtieth of
 /// the real uptime. Ten seconds up is 600, exactly, at ten seconds of the
-/// test's clock (`DESIGN.md` §11), and not 10.
+/// test's clock (`docs/design.md` §11), and not 10.
 #[test]
 fn uptime_is_in_sixtieths_of_a_second() {
     let second = 1_000_000_000;
@@ -179,7 +179,7 @@ fn uptime_is_in_sixtieths_of_a_second() {
 }
 
 /// **UPTIME wraps at 32 bits**, the four bytes it has --- about 828 days of
-/// sixtieths (`DESIGN.md` §7) --- and nothing overflows on the way there,
+/// sixtieths (`docs/design.md` §7) --- and nothing overflows on the way there,
 /// even at the last nanosecond a `u64` holds.
 #[test]
 fn uptime_wraps_at_32_bits() {

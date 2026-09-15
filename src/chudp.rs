@@ -12,7 +12,7 @@
 //! Two halves. The frame: the constants, [`Order`], [`PACKET_ORDER`],
 //! [`TRAILER_ORDER`], [`checksum`], [`wrap`] and [`unwrap`]. Then [`Link`],
 //! the link and the switch: the socket, the table of endpoints, and a
-//! packet for another host of the subnet passed on untouched (`DESIGN.md`
+//! packet for another host of the subnet passed on untouched (`docs/design.md`
 //! §5).
 //!
 //! ## The frame
@@ -92,7 +92,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 /// The port CHUDP is spoken on unless the config's `listen` names another
-/// (`DESIGN.md` §5).
+/// (`docs/design.md` §5).
 pub const PORT: u16 = 42042;
 
 /// The version this speaks, and the only one it takes: a datagram
@@ -217,7 +217,7 @@ pub fn wrap(buffer: &[u16], source: u16, check: u16) -> Option<Vec<u8>> {
 ///
 /// `check_ok` is that check word against the [`checksum`] of these words.
 /// **Nothing is dropped on it**: a mismatch on a packet for this host is
-/// traced and the packet handled (`DESIGN.md` §5), since UDP carries a
+/// traced and the packet handled (`docs/design.md` §5), since UDP carries a
 /// checksum of its own, and a peer that puts something else there is
 /// still understood.
 ///
@@ -273,7 +273,7 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
 
 // --- the link and the switch ---------------------------------------------
 
-/// The link, and the switch of this host's subnet (`DESIGN.md` §5): the one
+/// The link, and the switch of this host's subnet (`docs/design.md` §5): the one
 /// socket, the table of endpoints, and what becomes of each datagram.
 ///
 /// **Endpoints are learned**: a packet's source --- the
@@ -289,7 +289,7 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
 ///
 /// 1. [`unwrap`], verbatim: length, version, function. A datagram it
 ///    refuses for its length is meter 7, `bad_bit_count`; for anything
-///    else, meter 8, `other_discarded` (`DESIGN.md` §7).
+///    else, meter 8, `other_discarded` (`docs/design.md` §7).
 /// 2. The trailer's source is this host's address, or 0: dropped, as a
 ///    frame claiming to be from this station.
 /// 3. The header's source is learned, before anything else is done with
@@ -309,7 +309,7 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
 /// no new trailer. That is what makes this a switch and not a bridge, and
 /// why nothing goes to another subnet: there is no routing to decide
 /// where. A check word that is not the checksum is traced and the packet
-/// handled all the same (`DESIGN.md` §5).
+/// handled all the same (`docs/design.md` §5).
 ///
 /// **Sending this host's own** ([`Link::send`]): [`wrap`] with this host's
 /// address and the [`checksum`], to the destination's endpoint,
@@ -330,7 +330,7 @@ pub struct Link {
     /// or at most this long. Changed only when a turn asks for another.
     waiting: Option<Duration>,
     /// Every packet, every packet passed on, and every drop with why,
-    /// printed as they go by: `--trace` (`DESIGN.md` §10).
+    /// printed as they go by: `--trace` (`docs/design.md` §10).
     pub trace: bool,
 }
 
@@ -565,7 +565,7 @@ impl Link {
 /// Whether [`unwrap`] refused `datagram` for its length --- too short for
 /// a packet, longer than any, or not the length its data count wants ---
 /// rather than for its version or its function, which it reads between
-/// the two. Meter 7 counts the first kind, meter 8 the second (`DESIGN.md`
+/// the two. Meter 7 counts the first kind, meter 8 the second (`docs/design.md`
 /// §7).
 fn refused_for_length(datagram: &[u8]) -> bool {
     let fits = (HEADER + SOFTWARE_HEADER + TRAILER..=MAX_FRAME).contains(&datagram.len());

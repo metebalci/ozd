@@ -9,7 +9,7 @@
 //! packet in flight, a connection opened from this end, a bad check word,
 //! what is not this host's, and a packet for no connection. Last, the log:
 //! the line [`Ncp::log`] is given for each connection opened, refused and
-//! closed (`DESIGN.md` §10).
+//! closed (`docs/design.md` §10).
 
 mod support;
 
@@ -469,7 +469,7 @@ fn shuttle(a: &mut Ncp, b: &mut Ncp, now: u64) {
 /// **A connection is opened from this end**, and the NCP is symmetric:
 /// one NCP's [`Ncp::connect`] and another's service are the two ends of one
 /// stream --- which is how FILE calls a user end's data connection, and how
-/// a test host opens its connections (`DESIGN.md` §11). The RFC carries the
+/// a test host opens its connections (`docs/design.md` §11). The RFC carries the
 /// contact name from an index of this end's and goes again until answered;
 /// the OPN, from the far end's own index, opens it, and the session is told;
 /// then data, EOF and CLS go as they do from the other side.
@@ -622,7 +622,7 @@ fn a_full_table_takes_no_more_connections() {
 
 /// **A bad check word does not lose the packet.** One that is not CHUDP's
 /// checksum is traced and the packet handled (`chudp::unwrap`), since UDP
-/// carries a checksum of its own (`DESIGN.md` §5).
+/// carries a checksum of its own (`docs/design.md` §5).
 #[test]
 fn a_bad_check_word_is_still_handled() {
     let mut h = Ncp::new(0o3060);
@@ -734,7 +734,7 @@ impl Lines {
 const NOTHING: [&str; 0] = [];
 
 /// **The log follows an accepted stream from its OPN to its close**
-/// (`DESIGN.md` §10): a line when the RFC is accepted, naming the contact
+/// (`docs/design.md` §10): a line when the RFC is accepted, naming the contact
 /// and the other host in octal, and one when the other end's CLS closes
 /// it, with its reason. What goes between --- a duplicate of the RFC, the
 /// STS, data both ways, EOF --- is the trace's, not the log's.
@@ -831,7 +831,7 @@ fn a_refusal_is_logged_with_its_reason() {
 }
 
 /// **With `--log-simple`, each simple transaction answered is a line of the
-/// log** (`DESIGN.md` §10), in the shape a connection's lines have: the
+/// log** (`docs/design.md` §10), in the shape a connection's lines have: the
 /// contact, the host that asked, and `answered`. Without it there is no
 /// line, since an answer opens no connection for the log to follow.
 #[test]
@@ -853,7 +853,7 @@ fn a_simple_transaction_answered_is_logged_when_asked() {
 }
 
 /// **A line names a host by the host table as well as by its address**
-/// (`DESIGN.md` §10): its official name in parentheses, and `?` for an
+/// (`docs/design.md` §10): its official name in parentheses, and `?` for an
 /// address the table does not hold --- in an answer's line and a
 /// connection's alike.
 #[test]

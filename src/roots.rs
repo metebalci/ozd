@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The tree FILE serves: its roots, how a pathname is resolved in it, and
-//! which roots are read-only (`DESIGN.md` §6).
+//! which roots are read-only (`docs/design.md` §6).
 //!
 //! **A tree is a base root and named roots mounted at its top level**, each
-//! read-only or not, `,ro` (`DESIGN.md` §6, "Roots"). A
+//! read-only or not, `,ro` (`docs/design.md` §6, "Roots"). A
 //! pathname whose first component is exactly a mount's name is in that
 //! mount, the rest of it under the mount's directory; any other pathname is
 //! in the base. With mounts and no base, `/` names the mounts and nothing
@@ -13,14 +13,14 @@
 //!
 //! **Nothing outside a root is ever named by a [`Place`]**, and so nothing
 //! outside one is served. That is the whole of FILE's security, since FILE
-//! answers anyone who reaches it (`DESIGN.md` §6). [`Tree::resolve`]
+//! answers anyone who reaches it (`docs/design.md` §6). [`Tree::resolve`]
 //! splits a pathname on `/`, refuses `.` and `..` rather than normalising
 //! them, puts an absolute pathname under the root, and canonicalises the
 //! deepest part that exists. Beyond that:
 //!
 //! - **No second tree by symlink.** A link at a root's top level does not
 //!   bring its target into the tree, which would serve a file outside the
-//!   root to anyone who names the link (`DESIGN.md` §6). A link anywhere is
+//!   root to anyone who names the link (`docs/design.md` §6). A link anywhere is
 //!   followed and must lead into its own root. A directory that lives
 //!   elsewhere is served by mounting it.
 //! - **What comes back is what was checked**: the canonical path, with the
@@ -46,12 +46,12 @@
 //! every component that exists was just canonicalised, and every one that
 //! does not was just found absent. Nothing can change that before FILE
 //! opens it, because nothing else runs --- the daemon is one thread, its
-//! loop the only thing in it (`DESIGN.md` §1), and it is the only writer of
+//! loop the only thing in it (`docs/design.md` §1), and it is the only writer of
 //! a writable root, while a read-only root is written by nobody
-//! (`DESIGN.md` §6). **Both are conditions, not checks**:
+//! (`docs/design.md` §6). **Both are conditions, not checks**:
 //! a second thread, or another writer in a writable root, makes the gap
 //! between check and open real, and the answer then is `openat` with
-//! `O_NOFOLLOW`, which std does not offer (`DESIGN.md` §2).
+//! `O_NOFOLLOW`, which std does not offer (`docs/design.md` §2).
 //!
 //! **What no path check sees.** A hard link inside a root to a file outside
 //! it canonicalises to a path under the root, and is out of scope; so is a
@@ -71,7 +71,7 @@ pub type Refusal = (&'static str, String);
 
 /// The refusal of a pathname that may not be reached: `ATD`, which the band
 /// turns into `INCORRECT-ACCESS-TO-DIRECTORY` (`sys/io/file/open.lisp:231`),
-/// with a message of this host's own (`PROTOCOLS.md`, FILE).
+/// with a message of this host's own (`docs/protocols.md`, FILE).
 fn denied() -> Refusal {
     ("ATD", "Access to directory denied".into())
 }
@@ -79,7 +79,7 @@ fn denied() -> Refusal {
 /// The refusal of a write that is not allowed: `ATF`, "Access to file
 /// denied", which the band turns into `INCORRECT-ACCESS-TO-FILE`
 /// (`sys/io/file/open.lisp:224`). FILE has no code of its own for a refused
-/// write (`PROTOCOLS.md`, FILE).
+/// write (`docs/protocols.md`, FILE).
 fn refused() -> Refusal {
     ("ATF", "Access to file denied".into())
 }
@@ -113,7 +113,7 @@ pub enum Resolved {
     Place(Place),
 }
 
-/// A path in one root: the only thing FILE opens (`DESIGN.md` §6, step 4).
+/// A path in one root: the only thing FILE opens (`docs/design.md` §6, step 4).
 ///
 /// **Good for the command that resolved it, and no longer.** The next
 /// command may change the tree --- a client's RENAME and CREATE-LINK are
@@ -132,7 +132,7 @@ pub struct Place {
 }
 
 /// A name in a directory of one root, for what acts on the name itself and
-/// not on what it leads to (`DESIGN.md` §6, "FILE's rules"): DELETE and
+/// not on what it leads to (`docs/design.md` §6, "FILE's rules"): DELETE and
 /// RENAME, which remove and move a link and never its target, as Unix
 /// does; and DIRECTORY, which describes by it a name that the
 /// tree will not follow, so that a link that leads nowhere is still listed,
@@ -182,7 +182,7 @@ enum Picked<'a, 'p> {
 
 impl Tree {
     /// The tree of these roots, if every one can be served safely, or why
-    /// not (`DESIGN.md` §6, "At startup"):
+    /// not (`docs/design.md` §6, "At startup"):
     ///
     /// - there is at least one root, at most one base, and no mount's name
     ///   twice;
@@ -241,7 +241,7 @@ impl Tree {
     /// What startup has to say that is not a refusal: each entry of the
     /// base that a mount covers, by its path. It exists and no pathname
     /// reaches it, as a Unix mount point covers the directory under it
-    /// (`DESIGN.md` §6).
+    /// (`docs/design.md` §6).
     ///
     /// On a filesystem that folds case, as macOS's usually does, such an
     /// entry may still be reached under another case --- `/TREE` in the
@@ -255,7 +255,7 @@ impl Tree {
         self.roots.iter().find(|r| r.name.is_none())
     }
 
-    /// What a pathname names, for reading (`DESIGN.md` §6, `resolve`):
+    /// What a pathname names, for reading (`docs/design.md` §6, `resolve`):
     ///
     /// 1. Split on `/`, empty components dropped. A `.` or a `..` is
     ///    refused, `ATD`, not normalised; so is a temporary's name, in any
@@ -263,7 +263,7 @@ impl Tree {
     ///    [`Resolved::Top`].
     /// 2. The first component is a mount if it is exactly a mount's name,
     ///    case and all --- FILE folds no case in a pathname, and a
-    ///    band sends its pathnames in lower case (`DESIGN.md` §6) --- and
+    ///    band sends its pathnames in lower case (`docs/design.md` §6) --- and
     ///    the rest is under the mount. Otherwise the whole pathname is under
     ///    the base; with no base it names nothing, `FNF`.
     /// 3. The deepest part that exists as an entry --- a link counts,
@@ -282,7 +282,7 @@ impl Tree {
     /// **FILE opens the path returned, and that is safe only because nothing
     /// runs between this check and the open**: one thread, this process the
     /// only writer of a writable root, and a read-only root written by
-    /// nobody (`DESIGN.md` §6; the module documentation).
+    /// nobody (`docs/design.md` §6; the module documentation).
     pub fn resolve(&self, pathname: &str) -> Result<Resolved, Refusal> {
         match self.find(pathname)? {
             Found::Top => Ok(Resolved::Top),
@@ -297,7 +297,7 @@ impl Tree {
     /// that writes resolves its pathnames here, or as an entry with the
     /// same refusals: OPEN for output, CREATE-DIRECTORY, CREATE-LINK's link
     /// and CHANGE-PROPERTIES here; DELETE and RENAME, which act on a link
-    /// itself, through [`Tree::resolve_entry_for_writing`] (`DESIGN.md` §6,
+    /// itself, through [`Tree::resolve_entry_for_writing`] (`docs/design.md` §6,
     /// "A read-only root" and "FILE's rules").
     ///
     /// Containment is decided first, so a pathname that leaves its root is
@@ -323,7 +323,7 @@ impl Tree {
     /// Both ends of a RENAME, each resolved for writing, the old first. Two
     /// ends in different roots are refused with `ATF`: that would be a copy
     /// and not a rename, carrying a file across the line between two roots'
-    /// rules (`DESIGN.md` §6). FILE's RENAME, which moves a link itself,
+    /// rules (`docs/design.md` §6). FILE's RENAME, which moves a link itself,
     /// resolves its ends as entries, by the same rule
     /// ([`Tree::resolve_entries_for_renaming`]).
     pub fn resolve_for_renaming(&self, from: &str, to: &str) -> Result<(Place, Place), Refusal> {
@@ -370,7 +370,7 @@ impl Tree {
     /// DELETE resolves its pathname here, and RENAME both of its (through
     /// [`Tree::resolve_entries_for_renaming`]): both act on a link itself,
     /// its directory resolved and its own name not followed, as Unix does
-    /// (`DESIGN.md` §6, "FILE's rules"). So a link that
+    /// (`docs/design.md` §6, "FILE's rules"). So a link that
     /// leads nowhere, which no read or write will touch, can still be
     /// deleted. The entry's directory is the root or lies in it, and its
     /// name, a link or not, is a name in that directory: removing or
@@ -400,7 +400,7 @@ impl Tree {
     /// [`Tree::resolve_for_renaming`] refuses them. A link at either end is
     /// the link itself: the old one is moved, whatever it leads to, and a
     /// new name that is a link is there already, whether or not it leads
-    /// anywhere (`DESIGN.md` §6, "FILE's rules").
+    /// anywhere (`docs/design.md` §6, "FILE's rules").
     pub fn resolve_entries_for_renaming(
         &self,
         from: &str,
@@ -453,7 +453,7 @@ impl Tree {
 
     /// The names at `/`: the base's entries and the mounts' names, each
     /// once, a mount's name standing for the base's entry of that name; with
-    /// no base, the mounts' names alone (`DESIGN.md` §6). Sorted.
+    /// no base, the mounts' names alone (`docs/design.md` §6). Sorted.
     ///
     /// These are names, and nothing is known about them yet: a base entry
     /// may be a link out of the root. Anything about one --- its length,
@@ -472,7 +472,7 @@ impl Tree {
 
     /// Removes the stale temporaries of every writable root, at startup: a
     /// daemon killed in the middle of a write leaves its temporary behind
-    /// (`DESIGN.md` §6, §10).
+    /// (`docs/design.md` §6, §10).
     ///
     /// A temporary is a regular file whose name [`is_temporary`], in any
     /// directory of a writable root, since FILE makes it beside the file it
@@ -554,7 +554,7 @@ impl Root {
 impl Place {
     /// What is at the place, if FILE may open it: a regular file or a
     /// directory, or `None` if nothing is there. Anything else --- a FIFO,
-    /// a device, a socket --- is refused with `ATD` (`DESIGN.md` §6,
+    /// a device, a socket --- is refused with `ATD` (`docs/design.md` §6,
     /// "Opening"): the loop is one thread, and opening a FIFO that has no
     /// writer blocks it, and every client with it. So is a
     /// link, which a place cannot hold unless the tree changed since it was

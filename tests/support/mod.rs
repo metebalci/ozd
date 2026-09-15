@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The harness (`DESIGN.md` §11), shared by the test binaries, each taking
+//! The harness (`docs/design.md` §11), shared by the test binaries, each taking
 //! what it needs.
 //!
 //! - **A daemon** built from the text of a file of flags, listening on
@@ -43,7 +43,7 @@ use std::time::Duration;
 pub const OZ: u16 = 0o3060;
 
 /// Machines on its subnet: System 100's band, `MIT-LISPM-1` at 3050, and
-/// the next two, as `DESIGN.md` §9 numbers a site's further machines.
+/// the next two, as `docs/design.md` §9 numbers a site's further machines.
 pub const LM1: u16 = 0o3050;
 pub const LM2: u16 = 0o3051;
 pub const LM3: u16 = 0o3052;
@@ -56,7 +56,7 @@ const HOST_WAIT: Duration = Duration::from_millis(5);
 /// How long the daemon waits for a datagram at each turn of [`settle`].
 const DAEMON_WAIT: Duration = Duration::from_millis(10);
 
-/// A second, in the nanoseconds of the daemon's clock (`DESIGN.md` §4).
+/// A second, in the nanoseconds of the daemon's clock (`docs/design.md` §4).
 pub const SECOND: u64 = 1_000_000_000;
 
 // --- packets ---------------------------------------------------------------
@@ -110,7 +110,7 @@ pub fn rfc(from: u16, to: u16, contact: &str) -> Packet {
 // --- the daemon ----------------------------------------------------------
 
 /// A directory of this test binary's own, under Cargo's
-/// `CARGO_TARGET_TMPDIR` (`DESIGN.md` §11), made once.
+/// `CARGO_TARGET_TMPDIR` (`docs/design.md` §11), made once.
 pub fn scratch() -> &'static Path {
     static SCRATCH: OnceLock<PathBuf> = OnceLock::new();
     SCRATCH.get_or_init(|| {
@@ -125,7 +125,7 @@ pub fn scratch() -> &'static Path {
 /// root.
 ///
 /// **A root of its own, each time.** The design has one daemon to a root
-/// (`DESIGN.md` §6), and a daemon's startup treats a temporary in its root
+/// (`docs/design.md` §6), and a daemon's startup treats a temporary in its root
 /// as its own to remove --- its writability probe is named as one. Daemons
 /// a test run starts side by side on one root raced: one's cleanup took
 /// another's probe, and logged it as a temporary it could not remove.
@@ -148,7 +148,7 @@ pub fn site(more: &str) -> String {
     )
 }
 
-/// The site's roots, checked as the startup checks them (`DESIGN.md` §6).
+/// The site's roots, checked as the startup checks them (`docs/design.md` §6).
 pub fn tree(config: &Config) -> Arc<Tree> {
     Arc::new(Tree::new(config.roots.clone()).expect("the site's roots"))
 }
@@ -161,7 +161,7 @@ pub fn daemon(text: &str) -> Daemon {
 
 /// The daemon's meters that count anything, in STATUS's order: every
 /// datagram received, every one sent, those rejected for their length,
-/// and those rejected for anything else (`DESIGN.md` §7).
+/// and those rejected for anything else (`docs/design.md` §7).
 pub fn meters(d: &Daemon) -> [u32; 4] {
     let m = d.meters();
     [&m.received, &m.transmitted, &m.bad_bit_count, &m.other_discarded]
@@ -333,7 +333,7 @@ impl Session for Recorder {
 
 /// Whether these tests run as root, which the daemon refuses to: asked of
 /// `id -u`, since a test may not call `geteuid` itself --- `unsafe_code` is
-/// denied for the whole package, tests included (`DESIGN.md` §2).
+/// denied for the whole package, tests included (`docs/design.md` §2).
 pub fn running_as_root() -> bool {
     let out = std::process::Command::new("id").arg("-u").output().expect("id -u runs");
     String::from_utf8_lossy(&out.stdout).trim() == "0"

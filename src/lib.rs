@@ -4,7 +4,7 @@
 //! ozd: the associated machine for a site of CADR Lisp Machines, and
 //! the switch of their one Chaosnet subnet over UDP.
 //!
-//! `DESIGN.md` is the design, its §3 these modules, and `PROTOCOLS.md`
+//! `docs/design.md` is the design, its §3 these modules, and `docs/protocols.md`
 //! what each protocol is.
 
 pub mod address;

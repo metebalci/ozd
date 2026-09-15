@@ -5,7 +5,7 @@
 //! services that answer on it.
 //!
 //! The link hands it every packet for this host and every broadcast
-//! (`DESIGN.md` §5); it keeps those addressed to it or broadcast, runs the
+//! (`docs/design.md` §5); it keeps those addressed to it or broadcast, runs the
 //! connection protocol, and hands what arrives to a [`Service`] by
 //! contact name. A service either answers a request outright --- the
 //! *simple transaction* of §4.1, RFC then ANS --- or accepts it as a
@@ -14,11 +14,11 @@
 //! `impl Service`; the transport does not know what any of them do.
 //!
 //! There is no cable: the NCP and the socket are wired to each other
-//! directly, through [`Ncp::receive`] and [`Ncp::transmit`] (`DESIGN.md`
+//! directly, through [`Ncp::receive`] and [`Ncp::transmit`] (`docs/design.md`
 //! §4).
 //!
 //! What becomes of each connection --- opened, refused, closed --- it tells
-//! the log, [`Ncp::log`], when it has one (`DESIGN.md` §10). Every packet is
+//! the log, [`Ncp::log`], when it has one (`docs/design.md` §10). Every packet is
 //! the trace's, `trace`, and not the log's.
 
 use crate::packet::{Framed, MAX_DATA, Packet};
@@ -207,7 +207,7 @@ pub struct Ncp {
     pub trace: bool,
     /// Our receive window for connections we accept.
     pub window: u16,
-    /// The log, if there is one (`DESIGN.md` §10): a line for each
+    /// The log, if there is one (`docs/design.md` §10): a line for each
     /// connection opened, refused and closed, without the time, which the
     /// log adds. Each names the contact and the other host --- `from` it
     /// when it asked for the connection, `to` it when this end did.
@@ -846,7 +846,7 @@ impl Ncp {
     /// CHUDP's checksum is printed under `trace` and the packet handled all
     /// the same (`chudp::unwrap`): UDP carries a checksum of its own ---
     /// optional over IPv4, where a sender may leave it zero --- and a peer
-    /// that puts something else there is still understood (`DESIGN.md`
+    /// that puts something else there is still understood (`docs/design.md`
     /// §5).
     pub fn receive(&mut self, now: u64, packet: &Framed) {
         let Ok((p, _)) = Packet::from_buffer(&packet.buffer) else { return };
@@ -867,11 +867,11 @@ impl Ncp {
 
     /// The next buffer to send, at `now`: the words as the software would
     /// write them, cable destination last, for the link to add the source
-    /// and the check word (`DESIGN.md` §5). With nothing queued, every
+    /// and the check word (`docs/design.md` §5). With nothing queued, every
     /// session is first let send what it has and what has gone unreceipted
     /// too long is sent again: the NCP has no timer of its own, and this is
     /// when its retransmission and its host-down interval are kept
-    /// (`DESIGN.md` §4).
+    /// (`docs/design.md` §4).
     pub fn transmit(&mut self, now: u64) -> Option<Vec<u16>> {
         if self.out.is_empty() {
             self.service_all(now);

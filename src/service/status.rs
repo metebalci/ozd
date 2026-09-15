@@ -35,7 +35,7 @@
 //! the eight counts something a network interface does, and this host has
 //! no interface, only a UDP socket. The link counts at it what has a
 //! meaning there, into the [`Meters`] it shares with this service
-//! (`DESIGN.md` §7):
+//! (`docs/design.md` §7):
 //!
 //! - 1, every datagram received;
 //! - 2, every datagram sent, this host's own and those passed on as the
@@ -51,7 +51,7 @@
 //! in because the one before had not been read out, or to fail a CRC, on
 //! the wire or out of the packet buffer, so nought is the true count of
 //! each. A CHUDP trailer's checksum is not one of them: a mismatch is
-//! traced, not counted (`DESIGN.md` §5). What the host answers is its name,
+//! traced, not counted (`docs/design.md` §5). What the host answers is its name,
 //! which subnet it is on, and what
 //! its socket has seen.
 
@@ -87,7 +87,7 @@ const SUBNET_BLOCK: u16 = 0o400;
 
 /// The meters this host counts, one atomic each. The link counts into
 /// them and STATUS reads them, so they are shared as an `Arc<Meters>`, a
-/// [`Service`] being `Send` (`DESIGN.md` §7). Each is 32 bits, as a meter
+/// [`Service`] being `Send` (`docs/design.md` §7). Each is 32 bits, as a meter
 /// is on the wire, and wraps as `fetch_add` does. Each is a count of its
 /// own and nothing orders one against another, so `Ordering::Relaxed` is
 /// enough to count and to read them.

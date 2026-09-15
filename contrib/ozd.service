@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Mete Balci
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# ozd as a systemd service (DESIGN.md §10). Install the binary at
+# ozd as a systemd service (docs/design.md §10). Install the binary at
 # /usr/local/bin/ozd and its flags in /etc/ozdrc; make a user
 # ozd that owns the writable root and nothing else, and list that root
 # in ReadWritePaths. Not yet tried on a system.

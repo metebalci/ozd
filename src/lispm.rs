@@ -6,7 +6,7 @@
 //! character.
 //!
 //! A module of their own, since FILE, HOSTAB and NAME all speak the
-//! character set (`DESIGN.md` §3).
+//! character set (`docs/design.md` §3).
 
 /// The Lisp Machine's newline, `#/NEWLINE`, which is what separates the
 /// lines of a command and a reply: `CHNL` in `FILE.c`, `0200|'\r'`.

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! FILE, driven as a band drives it, through two real NCPs (`DESIGN.md`
+//! FILE, driven as a band drives it, through two real NCPs (`docs/design.md`
 //! §11, item 7): a client NCP opens the
 //! control connection to `FILE 1` at a server NCP that holds the service,
 //! serves the contact names of the data connections the server calls back,
@@ -11,10 +11,10 @@
 //!
 //! First the protocol's ordinary exchanges, against the tree
 //! (`src/roots.rs`), with no allowlist, since FILE serves whoever reaches
-//! it (`DESIGN.md` §6). A write as a band makes it --- the SYNC mark on the
+//! it (`docs/design.md` §6). A write as a band makes it --- the SYNC mark on the
 //! data connection and the CLOSE on the control, the rename waiting for the
 //! mark --- is `a_read_and_a_write_in_the_base`. Then what the tree changes
-//! (`DESIGN.md` §6): a read-only mount, listings that never describe a file
+//! (`docs/design.md` §6): a read-only mount, listings that never describe a file
 //! outside a root, DELETE and RENAME of a link itself, a write cut off, two
 //! machines at once, and the containment table through FILE's own commands.
 //!
@@ -762,7 +762,7 @@ fn a_data_connection_that_cannot_be_made_is_answered() {
 /// delete, rename, create a directory, create a link, change properties,
 /// expunge, complete, and properties down a data connection. Each change to
 /// the root is reported, with its pathname, through the hook the service
-/// was given (`DESIGN.md` §10), and nothing that was refused is.
+/// was given (`docs/design.md` §10), and nothing that was refused is.
 #[test]
 fn the_file_service_manages_a_directory() {
     let s = Scratch::new("manage");
@@ -893,7 +893,7 @@ fn serve_access(roots: Vec<Root>, probe: bool) -> (Net, Arc<Mutex<Vec<String>>>)
 }
 
 /// **With `--log-file`, what a client reads is logged as well as what it
-/// changes** (`DESIGN.md` §10): its login, each file read, and each
+/// changes** (`docs/design.md` §10): its login, each file read, and each
 /// directory listed, a line each with the client's address, as the change
 /// lines have. A `PROBE` opens nothing and is not among them.
 #[test]
@@ -940,7 +940,7 @@ fn the_probe_lines_are_logged_when_asked() {
 }
 
 /// **A client is named by the host table as well as by its address**
-/// (`DESIGN.md` §10), as the NCP names a host: its official name in
+/// (`docs/design.md` §10), as the NCP names a host: its official name in
 /// parentheses.
 #[test]
 fn a_client_is_named_in_the_log_by_the_host_table() {
@@ -981,7 +981,7 @@ fn without_the_flags_a_read_is_not_logged() {
 /// root itself is no file to open for writing, delete, rename or create; a
 /// link deeper in that points out of the tree leads nowhere, for reading as
 /// for writing. A link in the root's top level is refused like any other
-/// that leaves its root (`DESIGN.md` §6), and the same directory is served
+/// that leaves its root (`docs/design.md` §6), and the same directory is served
 /// by mounting it, under the mount's own rules. Every refusal is `ATD`, and
 /// afterwards nothing has appeared beside the root or where either link
 /// points.
@@ -1080,7 +1080,7 @@ fn the_file_service_never_writes_outside_its_root() {
 
 /// **A write goes into the temporary it made, and nowhere else.** The
 /// temporary is made once, new, and written through the
-/// handle it was made with (`DESIGN.md` §6, "FILE's rules"), so taking it
+/// handle it was made with (`docs/design.md` §6, "FILE's rules"), so taking it
 /// away fails nothing and makes nothing again by name: the data goes on into
 /// the file that was taken away, and the CLOSE, whose rename finds nothing
 /// to put into place, fails --- fatal, `MSC`, as a failed rename is --- and
@@ -1302,7 +1302,7 @@ fn a_wildcard_is_matched_in_linear_time() {
 /// **A FIFO in the root is not opened.** A named pipe with no writer blocks
 /// whoever opens it --- here the loop's one thread, and every client with
 /// it --- and a device streams without end. So only a
-/// regular file or a directory is opened (`DESIGN.md` §6, "Opening"), its
+/// regular file or a directory is opened (`docs/design.md` §6, "Opening"), its
 /// kind read first with `symlink_metadata`, which opens nothing, and
 /// anything else is refused: on `OPEN READ`, on `PROBE`, and on an `OPEN
 /// WRITE` over it, before a temporary is made.
@@ -1698,7 +1698,7 @@ fn a_read_and_a_write_in_the_base() {
 }
 
 /// **A read-only mount is read, and every write there is refused with `ATF`
-/// before anything is touched** (`DESIGN.md` §6, "A read-only root"): OPEN
+/// before anything is touched** (`docs/design.md` §6, "A read-only root"): OPEN
 /// for output, of a new file and over one, and through a link;
 /// DELETE, of a file, a link, a directory, and the mount itself; RENAME
 /// within the mount, and across its line either way; CREATE-DIRECTORY;
@@ -1764,7 +1764,7 @@ fn a_readonly_mount_is_read_and_every_write_there_is_refused_with_atf() {
     assert_eq!(*log.lock().unwrap(), ["3050 (?) delete /mine.text"]);
 }
 
-/// **A listing never describes a file outside a root** (`DESIGN.md` §6,
+/// **A listing never describes a file outside a root** (`docs/design.md` §6,
 /// "FILE's rules"). DIRECTORY describes each entry through the tree, never
 /// with `metadata`, which follows a link and would give the size and date
 /// of a file outside its root to anyone who listed the link's directory.
@@ -1864,7 +1864,7 @@ fn a_listing_never_describes_a_file_outside_a_root() {
     }
 }
 
-/// **DELETE removes a link, never what it leads to** (`DESIGN.md` §6,
+/// **DELETE removes a link, never what it leads to** (`docs/design.md` §6,
 /// "FILE's rules"), as Unix does: its directory is
 /// resolved, and its own name is not followed. So a link that leads nowhere
 /// or round in a circle --- which no read or write will touch --- is got rid
@@ -1919,7 +1919,7 @@ fn a_link_is_deleted_itself_and_not_what_it_leads_to() {
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep\n");
 }
 
-/// **RENAME moves a link, never what it leads to** (`DESIGN.md` §6, "FILE's
+/// **RENAME moves a link, never what it leads to** (`docs/design.md` §6, "FILE's
 /// rules"): the link goes to its new name as it is, its content unchanged.
 /// One that holds an absolute path leads where it did --- into its root,
 /// where it is read through as before, or out of it, where it is refused as
@@ -1976,7 +1976,7 @@ fn a_link_is_renamed_itself() {
 }
 
 /// **A write cut off leaves only its temporary, and startup removes it**
-/// (`DESIGN.md` §6, §10): a daemon killed in the middle of a write --- here
+/// (`docs/design.md` §6, §10): a daemon killed in the middle of a write --- here
 /// the server's NCP dropped, sessions and all, with no CLS and no CLOSE ---
 /// has put nothing in place, and the one thing it leaves is the temporary
 /// it was writing, which [`Tree::remove_temporaries`] finds by the one name
@@ -2013,7 +2013,7 @@ fn an_interrupted_write_leaves_only_a_temporary_that_startup_removes() {
 }
 
 /// **Two machines at once, and neither sees the other's session**
-/// (`DESIGN.md` §11, item 7): each holds a control connection and a data
+/// (`docs/design.md` §11, item 7): each holds a control connection and a data
 /// connection of its own, under the same handle names and the same
 /// transaction ids, and each writes and reads at the same time as the
 /// other. Every reply, every file and every listing goes to the machine
@@ -2079,7 +2079,7 @@ fn two_clients_at_once_see_only_their_own_sessions() {
     }
 }
 
-/// **The containment table, through FILE's own commands** (`DESIGN.md` §11,
+/// **The containment table, through FILE's own commands** (`docs/design.md` §11,
 /// item 6; `tests/containment.rs` holds it against the tree alone). Each
 /// pathname a client can send that would reach outside a root, sent in
 /// every command that names one, is refused with its code and changes

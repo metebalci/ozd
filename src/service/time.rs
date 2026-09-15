@@ -23,7 +23,7 @@
 //! `DECODE-CANONICAL-TIME-PACKET`'s own documentation says "an integral
 //! number of 60ths of a second" --- all in `sys/network/chaos/chsaux.lisp`.
 //! Where the manual and the machine's code disagree, the code is what a
-//! band does, so [`Uptime`] answers sixtieths (`PROTOCOLS.md`, UPTIME).
+//! band does, so [`Uptime`] answers sixtieths (`docs/protocols.md`, UPTIME).
 
 use crate::ncp::{Response, Service};
 
@@ -86,7 +86,7 @@ impl Service for Time {
 }
 
 /// UPTIME: sixtieths of a second since the host came up, by the NCP's
-/// clock --- the `now` it is handed, in nanoseconds (`DESIGN.md` §4).
+/// clock --- the `now` it is handed, in nanoseconds (`docs/design.md` §4).
 pub struct Uptime {
     since: u64,
 }
@@ -102,7 +102,7 @@ impl Service for Uptime {
         "UPTIME"
     }
     fn request(&mut self, now: u64, _args: &str, _from: (u16, u16)) -> Response {
-        // (now - since) x 60 / 10^9, `DESIGN.md` §7's, in 128 bits so that
+        // (now - since) x 60 / 10^9, `docs/design.md` §7's, in 128 bits so that
         // no clock a `u64` holds overflows on the way; the four bytes are
         // the low 32 bits, which wrap after about 828 days.
         let sixtieths = (now.saturating_sub(self.since) as u128 * 60 / 1_000_000_000) as u32;

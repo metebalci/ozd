@@ -11,12 +11,12 @@
 //! ```
 //!
 //! The first argument names the host as `--peer` names a peer
-//! (`DESIGN.md` §8): its Chaos address, in octal or as `subnet:host`, then
+//! (`docs/design.md` §8): its Chaos address, in octal or as `subnet:host`, then
 //! where its CHUDP socket is, at 42042 unless a port is given. Where
 //! `--peer` takes an IP address only, this takes a name too. An argument
 //! that begins with `/` is the directory to list, `/` unless given.
 //!
-//! STATUS, TIME and UPTIME are simple transactions (`PROTOCOLS.md`): an RFC
+//! STATUS, TIME and UPTIME are simple transactions (`docs/protocols.md`): an RFC
 //! for the contact name, and the ANS that comes back. The listing is a FILE
 //! session as the band's `qfile.lisp` holds one (`sys/doc/chfile.text`): a
 //! control connection to `FILE 1`, a `LOGIN`, a `DATA-CONNECTION` that the
@@ -28,7 +28,7 @@
 //!
 //! **It sends from a Chaos address of its own**, `<from>`, or else the
 //! asked host's subnet with host 376. A switch learns that address at this
-//! socket as it learns any peer's (`DESIGN.md` §5), so a machine that has
+//! socket as it learns any peer's (`docs/design.md` §5), so a machine that has
 //! it would have its packets sent here until it next sends one itself.
 //! Give `<from>` if one of your machines is at host 376.
 //!
@@ -109,7 +109,7 @@ fn main() {
     }
 
     // UPTIME: sixtieths of a second since the host started, as a band
-    // reads it (`PROTOCOLS.md`, UPTIME).
+    // reads it (`docs/protocols.md`, UPTIME).
     match transaction(&socket, at, from, host, "UPTIME", 0o23).as_deref().and_then(word) {
         Some(n) => {
             let s = n / 60;

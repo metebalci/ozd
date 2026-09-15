@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The daemon (`DESIGN.md` §4): its services asked over loopback by a
+//! The daemon (`docs/design.md` §4): its services asked over loopback by a
 //! test host, at a clock the test sets; the turn that wakes when nothing
 //! arrives, which is what keeps a retransmission on time; the time a log
 //! line carries (§10); and the command line, run as the binary.
@@ -22,7 +22,7 @@ use support::{
 
 /// **STATUS over loopback, its meters counting what the test sent.** The
 /// link counts at the socket, into the meters it shares with STATUS
-/// (`DESIGN.md` §7): two datagrams that are no packet --- one too short,
+/// (`docs/design.md` §7): two datagrams that are no packet --- one too short,
 /// one of another version --- and then the RFC are three received, one
 /// rejected for its length and one for anything else, and nothing sent
 /// yet when the answer is made. The answer is then one sent, and the next
@@ -55,7 +55,7 @@ fn status_over_loopback_counts_what_the_test_sent() {
 
 /// **TIME is the system clock, over loopback**: universal time, seconds
 /// since 1900, least significant byte first, within a second of the clock
-/// read here (`DESIGN.md` §11).
+/// read here (`docs/design.md` §11).
 #[test]
 fn time_over_loopback_is_the_system_clock() {
     // 1900 to 1970: seventy years of 365 days and seventeen leap days, 1904
@@ -71,8 +71,8 @@ fn time_over_loopback_is_the_system_clock() {
 }
 
 /// **UPTIME is 600 at ten seconds of the daemon's clock.** The daemon's
-/// clock is nanoseconds since it started (`DESIGN.md` §4), and UPTIME
-/// answers sixtieths of a second since then (§7, `PROTOCOLS.md` UPTIME):
+/// clock is nanoseconds since it started (`docs/design.md` §4), and UPTIME
+/// answers sixtieths of a second since then (§7, `docs/protocols.md` UPTIME):
 /// nought at the start, and exactly 600 ten seconds on.
 #[test]
 fn uptime_is_600_at_ten_seconds_of_the_daemons_clock() {
@@ -83,7 +83,7 @@ fn uptime_is_600_at_ten_seconds_of_the_daemons_clock() {
 }
 
 /// **A retransmission happens on a turn with no packet arriving**, which
-/// is why the loop waits for a datagram only so long (`DESIGN.md` §4): the
+/// is why the loop waits for a datagram only so long (`docs/design.md` §4): the
 /// NCP has no timer, and sends again what is unreceipted only when it is
 /// asked for output. An RFC from this host to one that never answers goes
 /// out at once; a turn short of `RETRANSMIT_NS` sends nothing; a turn at
@@ -110,7 +110,7 @@ fn a_retransmission_happens_on_a_turn_with_no_packet_arriving() {
 }
 
 /// **A log line's time is UTC**, by `civil`, the one calendar function
-/// (`DESIGN.md` §10): the Unix epoch, a leap day in a century that has
+/// (`docs/design.md` §10): the Unix epoch, a leap day in a century that has
 /// one, the end of February in one that does not, and today. Each checked
 /// against `date -u -d @<seconds>`.
 #[test]
@@ -139,7 +139,7 @@ fn said(out: &Output) -> String {
 }
 
 /// Whether a run was refused for being root, which is all a run as root
-/// can be once what it was given is flags (`DESIGN.md` §6).
+/// can be once what it was given is flags (`docs/design.md` §6).
 fn refused_as_root(out: &Output) -> bool {
     out.status.code() == Some(1) && said(out).contains("root")
 }
@@ -315,7 +315,7 @@ fn the_daemon_runs_from_its_command_line_and_answers_status() {
 }
 
 /// **HOSTAB and NAME are served**, each opened through the daemon as a
-/// band opens it (`DESIGN.md` §7). NAME answers its one line and an EOF;
+/// band opens it (`docs/design.md` §7). NAME answers its one line and an EOF;
 /// HOSTAB opens and waits for a name --- what it answers is
 /// `tests/hostab.rs`'s business.
 #[test]
@@ -338,7 +338,7 @@ fn hostab_and_name_are_served() {
 }
 
 /// **A `--hosts-text` table says at startup how many hosts it gave**
-/// (`DESIGN.md` §10), so that a site can see its table was read and read
+/// (`docs/design.md` §10), so that a site can see its table was read and read
 /// whole. This host's own line is passed over, so a table naming it and
 /// two machines is two hosts.
 #[test]
@@ -386,7 +386,7 @@ fn the_host_table_says_how_many_hosts_it_gave() {
 }
 
 /// **The roots are checked before anything is bound**, by a run and by
-/// `--check` alike (`DESIGN.md` §6): a root that is not there, or `/`, is
+/// `--check` alike (`docs/design.md` §6): a root that is not there, or `/`, is
 /// a refusal to start, naming it, exit 1. A base directory a mount covers
 /// is warned of, and the check still passes. Each case has a directory of
 /// its own, since a daemon started by another test cleans its base.
@@ -421,7 +421,7 @@ fn the_roots_are_checked_at_startup() {
 
 /// **A run removes stale FILE temporaries, and `--check` does not**: a
 /// daemon killed mid-write leaves one, and a check changes nothing
-/// (`DESIGN.md` §6). The removal is logged before the daemon says where it
+/// (`docs/design.md` §6). The removal is logged before the daemon says where it
 /// listens, and nothing else in the root is touched.
 #[test]
 fn a_run_removes_stale_temporaries_and_check_does_not() {
@@ -468,7 +468,7 @@ fn a_run_removes_stale_temporaries_and_check_does_not() {
 /// **A second daemon on the first's endpoint touches nothing**: it binds
 /// before it removes a stale temporary, so it stops at the bind, and the
 /// temporary of a write the first is making stays where it is
-/// (`DESIGN.md` §6).
+/// (`docs/design.md` §6).
 #[test]
 fn a_second_daemon_on_the_same_endpoint_removes_nothing() {
     if support::running_as_root() {
@@ -491,7 +491,7 @@ fn a_second_daemon_on_the_same_endpoint_removes_nothing() {
 
 /// **A connection is logged**, by the daemon run from its command line and
 /// a file of flags: a test host opens NAME, and the log says `NAME from
-/// 3050 (MIT-LISPM-1) opened`, the NCP's line (`DESIGN.md` §10) with the
+/// 3050 (MIT-LISPM-1) opened`, the NCP's line (`docs/design.md` §10) with the
 /// host named by the site's `--host` and the log's UTC time before it. The
 /// daemon turns on its own clock and the test host on the test's, until the
 /// line comes or five seconds pass.
@@ -546,7 +546,7 @@ fn a_connection_is_logged() {
     panic!("no line for the connection: {seen:?}");
 }
 
-/// **FILE is served, from the roots the startup checked** (`DESIGN.md`
+/// **FILE is served, from the roots the startup checked** (`docs/design.md`
 /// §6): opened through the daemon as a band opens it, it answers OPN and
 /// waits for a command. What it serves is `tests/file.rs`'s business.
 #[test]

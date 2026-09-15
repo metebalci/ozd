@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The link and the switch (`DESIGN.md` §5), over loopback: a daemon and test
+//! The link and the switch (`docs/design.md` §5), over loopback: a daemon and test
 //! hosts, each on a socket of its own, and every datagram a real one.
 //!
 //! What is learned and what is fixed; what is dropped before anything
@@ -44,7 +44,7 @@ fn brd(from: u16, contact: &str) -> Packet {
 /// **An unknown host's endpoint is learned, and it is answered there.** A
 /// packet's source --- the header's --- is recorded at the UDP address the
 /// datagram came from, before anything else is done with the packet, so
-/// the answer to it has somewhere to go (`DESIGN.md` §5). A learned
+/// the answer to it has somewhere to go (`docs/design.md` §5). A learned
 /// endpoint moves when the host does: that is what learning means.
 #[test]
 fn an_unknown_hosts_endpoint_is_learned_and_answered() {
@@ -67,7 +67,7 @@ fn an_unknown_hosts_endpoint_is_learned_and_answered() {
 /// **A fixed endpoint is not moved by a packet.** A `--peer` is a
 /// statement about where a host is; a packet claiming that host's address
 /// from somewhere else is answered at the endpoint it gave, and does
-/// not move it (`DESIGN.md` §5).
+/// not move it (`docs/design.md` §5).
 #[test]
 fn a_fixed_endpoint_is_not_moved_by_a_packet() {
     let (named, named_at) = support::socket();
@@ -88,7 +88,7 @@ fn a_fixed_endpoint_is_not_moved_by_a_packet() {
 
 /// **A datagram from this host's own address is dropped**: a trailer
 /// whose source is this host's, or 0, which is no host's: a frame claiming
-/// to be from this station (`DESIGN.md` §5). Its
+/// to be from this station (`docs/design.md` §5). Its
 /// sender is not learned, and nothing answers it. And this host's address
 /// is never learned at an endpoint: a packet whose header claims it, in a
 /// frame from another host, is taken, and the answer --- addressed to this
@@ -114,7 +114,7 @@ fn a_datagram_from_this_hosts_own_address_is_dropped() {
 
 /// **A packet from one host to another is passed on byte for byte.** The
 /// switch stands in for the cable, and a cable does not change a frame: no
-/// forwarding count, no new trailer, the datagram as it came (`DESIGN.md` §5). So a
+/// forwarding count, no new trailer, the datagram as it came (`docs/design.md` §5). So a
 /// packet as no NCP here would write it --- a forwarding count of 3, and a
 /// check word that is not the checksum --- reaches the other host with
 /// both, and the other host's answer comes back the same way.
@@ -151,7 +151,7 @@ fn a_packet_from_one_host_to_another_is_passed_on_byte_for_byte() {
 /// **A broadcast reaches every host but its sender, and is answered
 /// here.** On one cable every host hears every broadcast; over CHUDP the
 /// switch makes it so, passing the datagram on to every endpoint but the one
-/// it came from, and taking it itself (`DESIGN.md` §5).
+/// it came from, and taking it itself (`docs/design.md` §5).
 /// A BRD for TIME is then answered by every host that serves TIME, this
 /// one among them (AIM-628 §4.5).
 #[test]
@@ -186,7 +186,7 @@ fn a_broadcast_reaches_every_host_but_its_sender_and_is_answered_here() {
 /// reaches nobody.** The switch passes on within its subnet and routes
 /// nothing: a host of another subnet is answered where it was heard from,
 /// but nothing is passed on to it; and a host with no endpoint has
-/// nowhere to be passed on to. Both are dropped, and counted (`DESIGN.md`
+/// nowhere to be passed on to. Both are dropped, and counted (`docs/design.md`
 /// §5).
 #[test]
 fn a_packet_for_another_subnet_or_a_host_not_heard_from_reaches_nobody() {
@@ -210,7 +210,7 @@ fn a_packet_for_another_subnet_or_a_host_not_heard_from_reaches_nobody() {
 
 /// **Nothing is sent back to the endpoint it came from.** Two hosts can
 /// share an endpoint --- hosts behind a bridge are learned at the
-/// bridge's (`DESIGN.md` §5) --- and a packet from one to the other has
+/// bridge's (`docs/design.md` §5) --- and a packet from one to the other has
 /// already been where it is going: it is dropped, and counted. A broadcast
 /// from behind that endpoint goes to every other, and not back.
 #[test]
@@ -243,7 +243,7 @@ fn nothing_is_sent_back_to_the_endpoint_it_came_from() {
 /// say anything about where anyone is: every datagram is meter 1; one
 /// `unwrap` refuses for its length --- too short for a packet, longer than
 /// any, or not the length its data count wants --- is meter 7; one it
-/// refuses for its version or its function is meter 8 (`DESIGN.md` §5,
+/// refuses for its version or its function is meter 8 (`docs/design.md` §5,
 /// §7). A datagram longer than any packet is read into a buffer one byte
 /// longer than the longest, and refused for that (`chudp::MAX_FRAME`).
 /// Traced, so that each drop is printed with why.
@@ -275,7 +275,7 @@ fn a_datagram_that_is_no_packet_is_dropped_and_counted() {
 
 /// **A broadcast of this host's own goes once to each endpoint** --- not
 /// once to each address, since two hosts behind one bridge share its
-/// endpoint (`DESIGN.md` §5). An RFC to 0 from the daemon's NCP is no
+/// endpoint (`docs/design.md` §5). An RFC to 0 from the daemon's NCP is no
 /// broadcast any NCP takes, but it is a buffer for 0 in the link's hands,
 /// which is what this is about.
 #[test]

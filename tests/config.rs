@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The site's flags (`DESIGN.md` §8): each flag, each form of `--listen`,
+//! The site's flags (`docs/design.md` §8): each flag, each form of `--listen`,
 //! and each refusal with where it was given; the file of flags,
 //! `.ozdrc` --- its comments, a value that is the rest of its line,
 //! the command line having the last word, and a file that would name
-//! another; and which file a run reads, run as the binary (`DESIGN.md`
+//! another; and which file a run reads, run as the binary (`docs/design.md`
 //! §11, test 2).
 
 mod support;
@@ -206,7 +206,7 @@ fn the_name_gives_this_hosts_system_type() {
 }
 
 /// **Without `--listen`, the loopback at 42042**: a fresh install answers
-/// its own host and nothing else (`DESIGN.md` §5).
+/// its own host and nothing else (`docs/design.md` §5).
 #[test]
 fn without_listen_it_is_the_loopback_at_42042() {
     assert_eq!(Config::parse(LEAST).unwrap().listen, at("127.0.0.1:42042"));
@@ -257,7 +257,7 @@ fn a_root_is_a_base_or_a_mount() {
 }
 
 /// **Mounts without a base are a site**: `/` then names only the mounts
-/// (`DESIGN.md` §6).
+/// (`docs/design.md` §6).
 #[test]
 fn mounts_without_a_base_are_a_site() {
     let config = Config::parse("--address 3060\n--name OZ\n--root sys=/srv/sys,ro\n").unwrap();
@@ -310,7 +310,7 @@ fn a_peer_is_an_address_and_an_endpoint() {
 }
 
 /// **A `--host` and a `--peer` at one address are one host, named and
-/// placed**: the host table and the endpoints are separate (`DESIGN.md`
+/// placed**: the host table and the endpoints are separate (`docs/design.md`
 /// §8), and neither answers the other's question.
 #[test]
 fn a_host_and_a_peer_at_one_address_are_one_host() {
@@ -418,7 +418,7 @@ fn listen_takes_no_names_and_no_nonsense() {
 }
 
 /// **A root's path is absolute**, the base's and a mount's; that it exists
-/// is the startup's to check (`DESIGN.md` §6), not the flag's. A value that
+/// is the startup's to check (`docs/design.md` §6), not the flag's. A value that
 /// neither begins with `/` nor has a name and `=` is a path that is not
 /// absolute.
 #[test]
@@ -444,7 +444,7 @@ fn one_base_and_each_mount_once() {
 
 /// **A mount's name is one directory name at the top of the tree, in
 /// lower case**: a band sends its pathnames in lower case and names match
-/// exactly (`DESIGN.md` §6), so a `TREE` would never be reached.
+/// exactly (`docs/design.md` §6), so a `TREE` would never be reached.
 #[test]
 fn a_mount_name_is_one_lower_case_directory_name() {
     for bad in ["a/b", ".", "..", ""] {
@@ -547,7 +547,7 @@ fn an_address_is_not_two_answers() {
 
 /// **A host name is one host**, this host's and every `--host`'s together,
 /// and ignoring case, since HOSTAB looks a name up ignoring case
-/// (`DESIGN.md` §7). The later is refused, naming the earlier.
+/// (`docs/design.md` §7). The later is refused, naming the earlier.
 #[test]
 fn a_host_name_is_one_host() {
     refused_after("--host 3050,OZ\n", 4, "by --name on line 2");

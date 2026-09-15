@@ -4,7 +4,7 @@ This file lists every contact name that a Lisp Machine serves or calls
 in the System 100 and System 304 releases. For each one it says what the
 protocol is, what goes over the wire, and where that was read. It
 records only what the protocols are. The summary's last column and
-`DESIGN.md` say what ozd does about them.
+`docs/design.md` say what ozd does about them.
 
 **Where the manual and the machine's code disagree, the code wins**,
 because the code is what a band actually sends and expects back. UPTIME
@@ -143,7 +143,7 @@ pathname outside the tree. The machine turns `FNF`, `ATF` and `ATD` into
 `:231`), and `WKF` into `WRONG-KIND-OF-FILE` (`:260`), each through
 `QFILE-PROCESS-ERROR-NEW` (`network/chaos/qfile.lisp:300`).
 
-`DESIGN.md` §6 describes how ozd keeps FILE inside its roots.
+`docs/design.md` §6 describes how ozd keeps FILE inside its roots.
 
 ### HOSTAB
 
@@ -215,7 +215,7 @@ The keyboard's finger prompt (`KBD-FINGER`, `window/basstr.lisp`) does
 the same for a user without a host. So does the time parser's birthday
 lookup (`SET-BIRTHDAY`, `io1/timpar.lisp`), which is reached only by
 parsing a user's birthday. ozd answers that nobody is logged in
-(`DESIGN.md` §7).
+(`docs/design.md` §7).
 
 The machine's display is one line, and it ignores the RFC's arguments.
 The line holds the user ID in six columns, the group affiliation
@@ -296,7 +296,7 @@ These protocols go from one Lisp Machine to another. ozd neither sends
 nor receives them. For them to arrive, a site needs a path between the
 two machines: either the machines are peered directly, or ozd passes the
 packets between them as its subnet's switch, without reading them
-(`DESIGN.md` §5).
+(`docs/design.md` §5).
 
 ### FINGER
 

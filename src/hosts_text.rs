@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The band's own host table, read as HOSTAB's: `--hosts-text`
-//! (`DESIGN.md` §8), the file a site already keeps for its machines,
+//! (`docs/design.md` §8), the file a site already keeps for its machines,
 //! `sys/site/hosts.text`, so that a host is written once and not twice.
 //!
 //! **The format is MIT's**, and this reads of it what the band's own
@@ -21,10 +21,10 @@
 //! name and a number, and a Chaosnet one is octal (`ZWEI:PARSE-NUMBER
 //! ... 8`, `chsaux.lisp:1618`); several may be given, in brackets.
 //!
-//! **What is taken is what HOSTAB answers with** (`DESIGN.md` §7): the
+//! **What is taken is what HOSTAB answers with** (`docs/design.md` §7): the
 //! names, the official first, the Chaos address, and the system type. The
 //! status and the machine type are not answered --- `MACHINE-TYPE` the band
-//! would read as an address (`PROTOCOLS.md`, HOSTAB) --- and are read past.
+//! would read as an address (`docs/protocols.md`, HOSTAB) --- and are read past.
 //!
 //! **A host with no Chaos address is skipped.** MIT's tables carry hosts of
 //! other networks, written `1/14` for the ARPANET (`sys/site/extra.hosts`),

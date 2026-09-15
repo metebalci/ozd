@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! HOSTAB: the site's host table, by name, for a band that meets a name its
-//! own table lacks (`DESIGN.md` §7; `PROTOCOLS.md`, HOSTAB).
+//! own table lacks (`docs/design.md` §7; `docs/protocols.md`, HOSTAB).
 //!
 //! A stream of transactions. The manual, `sys/man/chaos.text` §Host Table
 //! (line 1290): "The user connects to contact name HOSTAB, undertakes a
@@ -58,7 +58,7 @@
 //! - **Never `MACHINE-TYPE`.** Its clause is written
 //!   `(:SYSTEM-TYPE MACHINE-TYPE)` (`chuse.lisp:982`), the second without
 //!   its colon, so the keyword the user end interns would not match it, and
-//!   the value would be read as a Chaosnet address (`PROTOCOLS.md`,
+//!   the value would be read as a Chaosnet address (`docs/protocols.md`,
 //!   HOSTAB). **Unverified** against a running band; until it is, it is not
 //!   sent.
 //! - **`ERROR No such host`** for a name no host has: the one error the

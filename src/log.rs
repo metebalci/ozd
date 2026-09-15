@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The log: one line an event on stderr, with its time in UTC
-//! (`DESIGN.md` §10) --- startup, its checks and warnings, errors, and the
+//! (`docs/design.md` §10) --- startup, its checks and warnings, errors, and the
 //! rest §10 lists as they are written.
 //!
 //! What `--trace` prints is not the log: every packet, every packet passed
@@ -32,7 +32,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// session; `Send` and `Sync`, as a session is `Send`.
 pub type Hook = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
-/// The site's host table as the log names a host (`DESIGN.md` §10): each
+/// The site's host table as the log names a host (`docs/design.md` §10): each
 /// address's official name, from `--name`, `--host` and `--hosts-text`,
 /// the hosts HOSTAB answers for. The NCP and FILE share one, in an `Arc`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

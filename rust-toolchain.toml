@@ -1,7 +1,7 @@
 # Pinned so every machine builds ozd with the same compiler; with no
 # dependencies, this file is the whole of its build environment.
 #
-# A stable release (DESIGN.md §2). When 1.99 ships, the channel moves to
+# A stable release (docs/design.md §2). When 1.99 ships, the channel moves to
 # it.
 [toolchain]
 channel = "1.98.0"

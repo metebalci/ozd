@@ -180,7 +180,7 @@ impl Asking {
     }
 
     /// The same site, with the hosts of a band's own host table before the
-    /// flags' own, as `--hosts-text` puts them (`DESIGN.md` §8).
+    /// flags' own, as `--hosts-text` puts them (`docs/design.md` §8).
     fn with_table(site: &str, table: &str) -> Asking {
         let mut site = Config::parse(site).expect("the site's flags");
         let hosts = ozd::hosts_text::parse(table).expect("the table");
@@ -269,7 +269,7 @@ struct Defined {
 ///   `HOST-ADDRESS-PARSER` or else the Chaosnet one, which reads octal
 ///   (`ZWEI:PARSE-NUMBER ... 8`, `sys/network/chaos/chsaux.lisp:1618`).
 ///   `MACHINE-TYPE` is one of these although the clause at `:982` names it,
-///   as `PROTOCOLS.md` (HOSTAB) explains: it would be read as a Chaosnet
+///   as `docs/protocols.md` (HOSTAB) explains: it would be read as a Chaosnet
 ///   address.
 /// - **At the EOF** the names are sorted shortest first, stably
 ///   (`:964-969`) --- after `PUSH` put them in last first.
@@ -435,7 +435,7 @@ fn a_system_type_only_when_the_line_gives_one() {
 /// **Never `MACHINE-TYPE`.** The user end's clause for it is written
 /// `(:SYSTEM-TYPE MACHINE-TYPE)`, the second without its colon, while the
 /// attribute is interned as a keyword (`chuse.lisp:974`, `:982`), so it
-/// would be read as a Chaosnet address (`PROTOCOLS.md`, HOSTAB). No answer
+/// would be read as a Chaosnet address (`docs/protocols.md`, HOSTAB). No answer
 /// for any name of the site carries it, and [`define_host`], which fails
 /// on anything it would read as an address but `CHAOS`, takes them all.
 #[test]
@@ -557,7 +557,7 @@ fn the_client_closing_ends_the_connection() {
 }
 
 /// **A host of the band's own table is answered as a `--host` is**
-/// (`DESIGN.md` §7, §8). A site keeps its machines in `sys/site/hosts.text`
+/// (`docs/design.md` §7, §8). A site keeps its machines in `sys/site/hosts.text`
 /// for its bands; `--hosts-text` reads that file, so the site writes them
 /// once, and a `--host` adds what the file does not hold --- `cbridge`, for
 /// one, which is no band's business.

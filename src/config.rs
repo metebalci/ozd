@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The site's flags, parsed and checked (`DESIGN.md` §8): this host's
+//! The site's flags, parsed and checked (`docs/design.md` §8): this host's
 //! address and names, the UDP endpoint it binds, the roots FILE serves,
 //! the site's host table for HOSTAB, and the few peers whose endpoints are
 //! fixed --- given on the command line, or in a **file of flags**,
@@ -59,11 +59,11 @@
 //! ASCII (below); and, with no place, a required flag missing ---
 //! `--address`, `--name`, and at least one `--root`. None of it touches
 //! the disk: whether a root exists, is a directory and can be written is
-//! the startup's to check (`DESIGN.md` §6), and which file of flags is read
+//! the startup's to check (`docs/design.md` §6), and which file of flags is read
 //! is `main`'s to find.
 //!
 //! **An address is one host, and one endpoint.** The host table and the
-//! endpoints are separate (`DESIGN.md` §8), so an address is looked for in
+//! endpoints are separate (`docs/design.md` §8), so an address is looked for in
 //! two places, and it may be in each once: among `--address` and the
 //! `--host`s, for what a host is called, and among `--address` and the
 //! `--peer`s, for where its packets go. So this host's own address has no
@@ -77,7 +77,7 @@
 //!
 //! **A host name is one host.** No name is given twice among this host's
 //! and every `--host`'s, and two that differ only in case are the same
-//! name: HOSTAB looks a name up ignoring case (`DESIGN.md` §7), and would
+//! name: HOSTAB looks a name up ignoring case (`docs/design.md` §7), and would
 //! otherwise find two hosts for it, or one host twice.
 //!
 //! **A system type is upper case**, in `--name` and `--host` alike: no
@@ -106,7 +106,7 @@ use std::path::{Path, PathBuf};
 
 /// Where the socket is bound without `--listen`: the loopback at CHUDP's
 /// port, so that a fresh install answers its own host and nothing else
-/// (`DESIGN.md` §5).
+/// (`docs/design.md` §5).
 const LISTEN: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, PORT));
 
 /// Where a required flag may be given, as its refusal says.
@@ -127,13 +127,13 @@ pub struct Config {
     pub address: u16,
     /// `--name <NAME>[,<NAME>...][,system=<TYPE>]`, required, once: this
     /// host's names, the official first --- the one STATUS answers with,
-    /// and HOSTAB's first `NAME` (`DESIGN.md` §7). At least one. A part
+    /// and HOSTAB's first `NAME` (`docs/design.md` §7). At least one. A part
     /// with `=` in it is an attribute and not a name, wherever it is among
     /// them, as in `--host`, and `system` is the one there is:
     /// [`Config::system`]. As given; HOSTAB compares them ignoring case.
     pub names: Vec<String>,
     /// `system=<TYPE>` in `--name`, if it gives one: this host's system
-    /// type, HOSTAB's `SYSTEM-TYPE` for this host's own names (`DESIGN.md`
+    /// type, HOSTAB's `SYSTEM-TYPE` for this host's own names (`docs/design.md`
     /// §7), as [`Host::system`] is for a `--host`'s. Upper case (the
     /// module documentation), and otherwise as given.
     pub system: Option<String>,
@@ -145,17 +145,17 @@ pub struct Config {
     /// - a bare address, `192.0.2.10` or `::1`: at 42042;
     /// - address and port, `192.0.2.10:42043` or `[::1]:42043`: as given;
     /// - `0.0.0.0` or `::`, with a port or without: every interface, on
-    ///   purpose (`DESIGN.md` §5).
+    ///   purpose (`docs/design.md` §5).
     ///
     /// IPv6 is written bare, or in brackets before a port. **IP literals
     /// only**: a name would be resolved once at startup and not followed
-    /// afterwards, which nothing here does (`DESIGN.md` §8). Port 0 is a
+    /// afterwards, which nothing here does (`docs/design.md` §8). Port 0 is a
     /// port the system picks, which a test on the loopback wants and a site
     /// does not. `--listen` always takes an endpoint, and the default is no
     /// `--listen` at all.
     pub listen: SocketAddr,
     /// `--root <path>[,ro]` and `--root <name>=<path>[,ro]`, once a root:
-    /// the tree FILE serves (`DESIGN.md` §6), in the order given. A value
+    /// the tree FILE serves (`docs/design.md` §6), in the order given. A value
     /// beginning with `/` is the **base root**, at most one, its path the
     /// value up to its first comma; any other is a root **mounted** at the
     /// top level, its name before the first `=` and its path after, each
@@ -166,26 +166,26 @@ pub struct Config {
     /// - **A path is absolute**, and that is all that is checked of it
     ///   here; existing, being a directory, not being `/`, and being
     ///   writable without `,ro` are the startup's checks, made when it
-    ///   canonicalises each root (`DESIGN.md` §6).
+    ///   canonicalises each root (`docs/design.md` §6).
     /// - **A path cannot hold a comma**, which ends it: after the path
     ///   comes `,ro` or nothing. It may hold a blank, and `=`.
     /// - **A mount's name is one directory name, in lower case.** It is the
     ///   first component of a pathname under `/`, so it is not empty, holds
     ///   no `/`, and is neither `.` nor `..`; and names match exactly while
-    ///   a band sends its pathnames in lower case (`DESIGN.md` §6;
+    ///   a band sends its pathnames in lower case (`docs/design.md` §6;
     ///   `/tree/...` in System 100's `sys/site/sys.translations`), so a
     ///   mount named in capitals is one no band would reach.
     pub roots: Vec<Root>,
     /// `--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]`, once a host: the
     /// site's host table, which HOSTAB answers from beside this host's own
-    /// names (`DESIGN.md` §7), in the order given. This host is not in it;
+    /// names (`docs/design.md` §7), in the order given. This host is not in it;
     /// its names are [`Config::names`]. A part with `=` in it is an
     /// attribute, wherever it is after the address, and `system` is the one
     /// there is.
     pub hosts: Vec<Host>,
     /// `--peer <addr>@<ip>[:<port>]`, once a peer: a host whose endpoint is
     /// fixed, so that a packet does not move it; every other endpoint is
-    /// learned from the packets a host sends (`DESIGN.md` §5). An IP
+    /// learned from the packets a host sends (`docs/design.md` §5). An IP
     /// literal after the `@`, as `--listen` takes one; at 42042 unless a
     /// port is given. Not a bare port, since a peer is a host to send to
     /// and not a socket to bind; not `0.0.0.0` or `::`, which are every
@@ -199,7 +199,7 @@ pub struct Config {
     pub hosts_text: Option<PathBuf>,
 }
 
-/// One `--root` (`DESIGN.md` §6).
+/// One `--root` (`docs/design.md` §6).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Root {
     /// The name it is mounted under at the top level; none for the base.
@@ -208,12 +208,12 @@ pub struct Root {
     /// not here.
     pub path: PathBuf,
     /// `,ro`: every command that writes is refused before the disk is
-    /// touched (`DESIGN.md` §6).
+    /// touched (`docs/design.md` §6).
     pub readonly: bool,
 }
 
-/// One `--host`: what HOSTAB says of a host (`DESIGN.md` §7;
-/// `PROTOCOLS.md`, HOSTAB).
+/// One `--host`: what HOSTAB says of a host (`docs/design.md` §7;
+/// `docs/protocols.md`, HOSTAB).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Host {
     /// Its Chaos address, HOSTAB's `CHAOS`.
@@ -226,7 +226,7 @@ pub struct Host {
     pub system: Option<String>,
 }
 
-/// One `--peer`: a host whose endpoint is fixed (`DESIGN.md` §5).
+/// One `--peer`: a host whose endpoint is fixed (`docs/design.md` §5).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Peer {
     /// Its Chaos address.
@@ -483,14 +483,14 @@ pub struct Run {
     /// The site.
     pub config: Config,
     /// What this run writes down: `--trace`, `--log-simple`, `--log-file`
-    /// and `--log-file-probe` (`DESIGN.md` §10).
+    /// and `--log-file-probe` (`docs/design.md` §10).
     pub logging: Logging,
     /// `--check`: check the flags and the roots, bind nothing, and exit
-    /// (`DESIGN.md` §10).
+    /// (`docs/design.md` §10).
     pub check: bool,
 }
 
-/// How much a run writes down (`DESIGN.md` §10). None of it changes what
+/// How much a run writes down (`docs/design.md` §10). None of it changes what
 /// the daemon serves, and each may stand in a file of flags, since how much
 /// is written is a standing choice.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

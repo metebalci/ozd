@@ -1,7 +1,7 @@
 # CHUDP
 
 CHUDP carries Chaosnet packets over UDP, and it is the only way ozd
-reaches another host (`DESIGN.md` §2). This document describes the
+reaches another host (`docs/design.md` §2). This document describes the
 framing exactly as ozd implements it, which is the framing `cbridge` uses.
 It also says how that was established, so that nobody needs to consult the
 sources again.

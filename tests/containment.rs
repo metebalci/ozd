@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Containment: the tree FILE serves, and nothing outside it (`DESIGN.md`
+//! Containment: the tree FILE serves, and nothing outside it (`docs/design.md`
 //! §6 and §11, item 6).
 //!
 //! Written before FILE comes across, against [`ozd::roots`] alone:
@@ -15,7 +15,7 @@
 //! swapped between the check and the open. No check can
 //! stop that. What makes it impossible is that nothing runs between the
 //! two: one thread, this process the only writer of a writable root, and a
-//! read-only root written by nobody (`DESIGN.md` §1, §6). That invariant
+//! read-only root written by nobody (`docs/design.md` §1, §6). That invariant
 //! is written down where it is relied on, in `src/roots.rs` at
 //! `Tree::resolve`; a test that swapped a link from a second thread would
 //! test the invariant broken, not the code. What is tested is the nearest
@@ -351,7 +351,7 @@ fn a_symlink_under_a_root_pointing_outside_is_refused() {
 
 /// **A link at the top of the base is not a second tree.** Its target is
 /// not taken into the tree, which would serve a file outside the root to
-/// anyone who can name the link (`DESIGN.md` §6). The same directory is
+/// anyone who can name the link (`docs/design.md` §6). The same directory is
 /// served by mounting it, and then by the mount's own rules --- here,
 /// read-only.
 #[cfg(unix)]
@@ -468,7 +468,7 @@ fn a_write_whose_temporary_or_rename_target_would_be_outside_is_refused() {
 
 /// **A rename from one root into another is refused**, with `ATF`: it
 /// would be a copy and not a rename, and it would carry a file across the
-/// line between two roots' rules (`DESIGN.md` §6). Within one root, both
+/// line between two roots' rules (`docs/design.md` §6). Within one root, both
 /// ends resolve in it.
 #[test]
 fn a_rename_across_roots_is_refused() {
@@ -497,7 +497,7 @@ fn a_rename_across_roots_is_refused() {
 }
 
 /// **A FIFO, or anything else that is neither a regular file nor a
-/// directory, is refused before it is opened**, with `ATD` (`DESIGN.md`
+/// directory, is refused before it is opened**, with `ATD` (`docs/design.md`
 /// §6). The loop is one thread, and opening a FIFO that has no writer
 /// blocks it, and every client with it; the kind is read
 /// with `symlink_metadata`, which opens nothing. FILE answers the same
@@ -554,7 +554,7 @@ fn a_fifo_is_refused() {
 /// in, the other, which would let a path through the outer reach the
 /// inner's files under the outer's rules. Nothing is left on disk by any
 /// of it, and the probe of a writable root that does start leaves nothing
-/// either (`DESIGN.md` §6).
+/// either (`docs/design.md` §6).
 #[test]
 fn a_root_that_is_missing_not_a_directory_slash_or_relative_does_not_start() {
     let s = Scratch::new("startup");
@@ -637,7 +637,7 @@ fn a_writable_root_that_cannot_be_written_does_not_start() {
 /// **A read-only root refuses every write, with `ATF`, and serves every
 /// read.** "Access to file denied" is what the band turns into
 /// `INCORRECT-ACCESS-TO-FILE` (`sys/io/file/open.lisp:224`); FILE has no
-/// code of its own for a refused write (`PROTOCOLS.md`, FILE). Every
+/// code of its own for a refused write (`docs/protocols.md`, FILE). Every
 /// command that writes resolves its pathnames for writing --- OPEN for
 /// output, DELETE, both ends of RENAME, CREATE-DIRECTORY, CREATE-LINK's
 /// link, CHANGE-PROPERTIES --- so each pathname here stands for all of
@@ -698,7 +698,7 @@ fn a_readonly_root_refuses_every_write_with_atf() {
 /// **A link inside a root, to somewhere in the same root, is followed**,
 /// wherever it is and however it is written, and what comes back is where
 /// it leads: the canonical path, every link resolved, with the part that
-/// does not exist yet joined on. That is what FILE opens (`DESIGN.md` §6,
+/// does not exist yet joined on. That is what FILE opens (`docs/design.md` §6,
 /// step 4).
 #[cfg(unix)]
 #[test]
@@ -776,7 +776,7 @@ fn a_mount_is_reached_by_its_name_and_not_by_dot_dot() {
 }
 
 /// **A mount covers the base's entry of its name, and startup says so**, as
-/// a Unix mount point covers the directory under it (`DESIGN.md` §6):
+/// a Unix mount point covers the directory under it (`docs/design.md` §6):
 /// every pathname starting with the name is the mount's, the base's own
 /// entry cannot be reached, and nothing can be made in the base under that
 /// name. A tree whose base has no such entry warns of nothing.
@@ -815,7 +815,7 @@ fn a_mount_covers_a_base_directory_of_its_name_and_startup_warns() {
 }
 
 /// **Names match exactly**, case and all, as every directory name does:
-/// FILE folds no case in a pathname (`DESIGN.md` §6). Only a first
+/// FILE folds no case in a pathname (`docs/design.md` §6). Only a first
 /// component that is a mount's name, exactly, is the mount; anything else
 /// is the base's, and with no base it names nothing.
 #[test]
@@ -906,7 +906,7 @@ fn a_root_itself_is_not_written() {
 
 /// **At startup the stale temporaries of the writable roots are removed,
 /// and nothing else is.** A daemon killed in the middle of a write leaves
-/// its temporary behind (`DESIGN.md` §6, §10), and they are found by the
+/// its temporary behind (`docs/design.md` §6, §10), and they are found by the
 /// one name FILE gives them, in every directory of every writable root,
 /// without following a link. Kept: every name that only looks like one; a
 /// directory or a link with a temporary's name, since FILE only makes
@@ -1016,7 +1016,7 @@ fn entry_refused_everywhere(s: &Scratch, t: &Tree, code: &str, pathname: &str) {
 }
 
 /// **DELETE and RENAME act on a name itself, not on what it leads to**
-/// (`DESIGN.md` §6, "FILE's rules"), as Unix does: the
+/// (`docs/design.md` §6, "FILE's rules"), as Unix does: the
 /// pathname's directory is resolved as any place is --- canonical, in its
 /// root, every link on the way followed and held to that root --- and its
 /// last component is joined on as the directory holds it, a link or not,

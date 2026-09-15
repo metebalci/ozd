@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The daemon: the link, the NCP and the services wired together, and the
-//! turn that is the body of its loop (`DESIGN.md` §4).
+//! turn that is the body of its loop (`docs/design.md` §4).
 //!
 //! What the link has for this host goes to [`Ncp::receive`], and every
 //! buffer [`Ncp::transmit`] gives goes to [`Link::send`] --- the pump,
-//! `DESIGN.md` §4, none of it protocol.
+//! `docs/design.md` §4, none of it protocol.
 
 use crate::chudp::Link;
 use crate::config::{Config, Logging};
@@ -37,17 +37,17 @@ impl Daemon {
     /// `config.listen`, its NCP at `config.address`, and what it serves.
     /// `logging` is what this run writes down: `--trace` for the link and
     /// the NCP both, `--log-simple` for the NCP's answers, and `--log-file`
-    /// and `--log-file-probe` for FILE (`DESIGN.md` §10). A socket that
+    /// and `--log-file-probe` for FILE (`docs/design.md` §10). A socket that
     /// cannot be bound is the error, and then nothing is served. `tree` is
     /// the roots as the startup checked them, which FILE serves
-    /// (`DESIGN.md` §6).
+    /// (`docs/design.md` §6).
     pub fn new(config: &Config, tree: Arc<Tree>, logging: Logging) -> io::Result<Daemon> {
         let meters = Arc::new(Meters::default());
         let mut link = Link::bind(config, meters.clone())?;
         link.trace = logging.trace;
         let mut ncp = Ncp::new(config.address);
         // Each connection opened, refused and closed, as a line of the log
-        // naming the host by the site's table (`DESIGN.md` §10); `trace`
+        // naming the host by the site's table (`docs/design.md` §10); `trace`
         // stays the packets.
         ncp.log = Some(Arc::new(|line: &str| log::event(line)));
         ncp.trace = logging.trace;
@@ -66,7 +66,7 @@ impl Daemon {
         self.link.at()
     }
 
-    /// What the link has counted, which STATUS answers with (`DESIGN.md`
+    /// What the link has counted, which STATUS answers with (`docs/design.md`
     /// §7).
     pub fn meters(&self) -> &Meters {
         &self.meters
@@ -87,7 +87,7 @@ impl Daemon {
     /// One turn of the loop at `now`, nanoseconds on the daemon's clock:
     /// wait at most `wait` for one datagram, hand it to the link, and hand
     /// what the link has for this host to the NCP; then everything the NCP
-    /// has to send, to the link (`DESIGN.md` §4). A `wait` of zero does not
+    /// has to send, to the link (`docs/design.md` §4). A `wait` of zero does not
     /// wait at all.
     ///
     /// **It asks the NCP for output whether anything arrived or not**, and
@@ -114,7 +114,7 @@ impl Daemon {
 }
 
 /// What this host serves, and **the one place a service is added**
-/// (`DESIGN.md` §7); the NCP and the link know nothing of any of them.
+/// (`docs/design.md` §7); the NCP and the link know nothing of any of them.
 ///
 /// - STATUS, with the official name --- the first of `--name`'s ---
 ///   this host's subnet, the high byte of its address, and the meters the
@@ -125,7 +125,7 @@ impl Daemon {
 /// - HOSTAB, from `--name` --- its `system=` too, if it has one --- and
 ///   every `--host`;
 /// - NAME, saying that nobody is logged in;
-/// - FILE, from the roots the startup checked (`DESIGN.md` §6), each of
+/// - FILE, from the roots the startup checked (`docs/design.md` §6), each of
 ///   its changes to a root a line of the log, and what it serves as well
 ///   where `--log-file` and `--log-file-probe` ask for it (§10).
 fn services(
@@ -154,7 +154,7 @@ fn services(
     ]
 }
 
-/// The site's host table as the log names a host (`DESIGN.md` §10): this
+/// The site's host table as the log names a host (`docs/design.md` §10): this
 /// host's official name, and each `--host`'s and `--hosts-text` host's.
 fn names(config: &Config) -> Names {
     let own = (config.address, config.names[0].as_str());

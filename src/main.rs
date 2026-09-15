@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The `ozd` daemon: its command line, its startup, and its loop
-//! (`DESIGN.md` §4, §10).
+//! (`docs/design.md` §4, §10).
 //!
 //! ```text
 //! ozd [--address <addr>] [--name <NAME>[,<NAME>...][,system=<TYPE>]]
@@ -34,7 +34,7 @@
 //! refused printed as `<file>: line N: <flag> <value>: <what>` for a line
 //! of the file and `<flag> <value>: <what>` for the command line. Then the
 //! roots. A daemon that starts runs until it is stopped --- `SIGTERM`'s
-//! default action is the shutdown (`DESIGN.md` §10).
+//! default action is the shutdown (`docs/design.md` §10).
 
 use ozd::config::{Error, Flags, Place, Run};
 use ozd::daemon::Daemon;
@@ -158,7 +158,7 @@ stopped.";
 
 /// How long the loop waits for a datagram before it turns anyway: an idle
 /// daemon wakes ten times a second, which costs nothing measurable, and a
-/// retransmission is at most this late against its 500 ms (`DESIGN.md`
+/// retransmission is at most this late against its 500 ms (`docs/design.md`
 /// §4).
 const WAIT: Duration = Duration::from_millis(100);
 
@@ -184,13 +184,13 @@ fn main() {
     let (file, read) = file_of_flags(typed.config());
 
     // The startup checks, each a refusal to start, all before anything is
-    // bound (`DESIGN.md` §6). What was given has the shape of flags; the
+    // bound (`docs/design.md` §6). What was given has the shape of flags; the
     // first is who is running this, before any value is looked at.
     if running_as_root() {
         fail(
             "refusing to run as root: nothing here needs a privilege, and as root a \
              containment bug would reach every file on this host; run it as a user that \
-             owns its roots and nothing else (DESIGN.md §6)",
+             owns its roots and nothing else (docs/design.md §6)",
         );
     }
     let Run { mut config, logging, check } =
@@ -215,7 +215,7 @@ fn main() {
     }
     // The roots: each canonicalised, a directory, not `/`, writable unless
     // `,ro`, and inside no other; a base directory a mount covers is warned
-    // of (`DESIGN.md` §6). `--check` runs these and stops there, having
+    // of (`docs/design.md` §6). `--check` runs these and stops there, having
     // changed nothing.
     let tree = Tree::new(config.roots.clone()).unwrap_or_else(|e| fail(&e));
     for warning in tree.warnings() {
@@ -306,7 +306,7 @@ fn looked_for() -> Option<PathBuf> {
 /// Whether this process runs as root, by its effective user id, which is
 /// what decides what it may touch.
 ///
-/// **The one `unsafe` in the package** (`DESIGN.md` §2): `geteuid`, from the
+/// **The one `unsafe` in the package** (`docs/design.md` §2): `geteuid`, from the
 /// C library std links already. POSIX: it "shall always be successful", and
 /// it takes nothing, so there is no memory for it to misuse. Its `uid_t` is
 /// 32 bits unsigned --- `unsigned int` on Linux, read in glibc's

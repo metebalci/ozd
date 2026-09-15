@@ -14,8 +14,8 @@ Machines.
 
 ozd serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME, and it passes
 packets between the machines on its subnet. The design is in
-`DESIGN.md`. Every protocol a Lisp Machine speaks is described in
-`PROTOCOLS.md`, together with where each fact comes from, and CHUDP's
+`docs/design.md`. Every protocol a Lisp Machine speaks is described in
+`docs/protocols.md`, together with where each fact comes from, and CHUDP's
 framing, byte by byte, in `docs/chudp.md`.
 
 ## Build
@@ -98,7 +98,7 @@ The same flags, one per line, can also go in a file of flags. ozd reads
 the file that `-c` names. Without `-c`, it reads the file that `OZD_RC`
 names. Without either, it reads `.ozdrc` from the current directory, or
 else from your home directory. It reads only the first of these that it
-finds, and flags on the command line override the file (`DESIGN.md` §8).
+finds, and flags on the command line override the file (`docs/design.md` §8).
 `--check` reads the flags, checks the roots and exits without changing
 anything. `--trace` prints every packet, and `--help` describes each
 flag. ozd refuses to run as root, and it logs to stderr, one line per
@@ -158,7 +158,7 @@ muir --disk-pack /path/to/disk-sys-100-0.img \
 Some CHUDP implementations send a packet only to a peer that is named
 for its destination. A machine like that must also name every other
 machine's address at ozd's endpoint, so that packets between the
-machines pass through ozd (`DESIGN.md` §9).
+machines pass through ozd (`docs/design.md` §9).
 
 ozd does no routing, so it cannot connect a site to the Global
 Chaosnet. A site that wants that runs `cbridge`, the Chaosnet bridge, as
@@ -167,7 +167,7 @@ default CHUDP peer, and ozd becomes one more peer of `cbridge`, on a port
 of its own if both run on one computer. ozd still serves the machines,
 but it passes no packets between them. Through `cbridge`, a test host has
 reached ozd's STATUS, TIME, UPTIME and FILE; the Global Chaosnet has not
-been tried yet (`DESIGN.md` §9).
+been tried yet (`docs/design.md` §9).
 
 ## Security
 
@@ -186,7 +186,7 @@ Clients can reach the files in the roots and nothing else. A pathname
 cannot climb out of its root. ozd follows a symbolic link only while the
 link stays inside its own root. To serve a directory from elsewhere,
 mount it with `--root <name>=<path>` instead of linking to it
-(`DESIGN.md` §6).
+(`docs/design.md` §6).
 
 Two risks cannot be caught by checking paths, so the operator must
 prevent them:

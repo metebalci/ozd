@@ -40,7 +40,7 @@
 //! address. No MIT machine was ever there. `sys/site/site.lisp` confirms
 //! what the band expects of it: `OZ-SYS-PATHNAME-TRANSLATIONS` is Unix,
 //! `("SYS" "//TREE//SYS//")`, which here is the mount `tree`
-//! (`DESIGN.md` §8).
+//! (`docs/design.md` §8).
 //!
 //! The shape: the user end opens a *control connection* to contact `FILE
 //! 1` and sends commands on it as data packets of text, one command a
@@ -57,7 +57,7 @@
 //! what the user end reads until.
 //!
 //! **Containment** is not the protocol's but this server's, since this
-//! FILE answers anyone who reaches it (`DESIGN.md` §6):
+//! FILE answers anyone who reaches it (`docs/design.md` §6):
 //!
 //! - **Every pathname is resolved in the [`Tree`]**, never against a root
 //!   directory directly: a read through [`Tree::resolve`], a write
@@ -76,7 +76,7 @@
 //! - **A write's temporary is made once**, new, and written through the
 //!   handle it was made with, never reopened by name.
 //! - **Each change to a root is reported** through the [`LogHook`] the
-//!   service is given, with its pathname (`DESIGN.md` §10).
+//!   service is given, with its pathname (`docs/design.md` §10).
 
 use crate::lispm::{NEWLINE, from_bytes, from_lispm, lispm_text, to_lispm};
 use crate::log::Names;
@@ -132,7 +132,7 @@ pub fn async_mark_data(handle: &str, code: &str, message: &str) -> Vec<u8> {
 /// Where the service reports each change it makes to a root: one line, the
 /// client as [`File::names`] names it, what was done, and its pathname as
 /// the client wrote it, as in `3050 (MIT-LISPM-1) write /tmp/x.text`, for
-/// the daemon to put in its log (`DESIGN.md` §10). The changes are a
+/// the daemon to put in its log (`docs/design.md` §10). The changes are a
 /// write's rename into place (`write`), `rename`, `delete`,
 /// `create-directory`, `create-link` and `change-properties`. Shared by
 /// every control connection's session, so an `Arc`; `Send` and `Sync`, as a
@@ -148,19 +148,19 @@ pub struct File {
     log: Option<LogHook>,
     /// `--log-file`: report what is served as well as what is changed
     /// --- each file read, each directory listed, each `LOGIN`
-    /// (`DESIGN.md` §10).
+    /// (`docs/design.md` §10).
     pub log_file: bool,
     /// `--log-file-probe`: report each `PROBE` too.
     pub log_file_probe: bool,
     /// The site's host table, for the name each line gives the client
-    /// after its address (`DESIGN.md` §10). Empty unless set, and then
+    /// after its address (`docs/design.md` §10). Empty unless set, and then
     /// every client is `(?)`.
     pub names: Arc<Names>,
 }
 
 impl File {
     /// A service over `tree`, answering **every** host that reaches it
-    /// (`DESIGN.md` §6). Each change to a root is reported through `log`,
+    /// (`docs/design.md` §6). Each change to a root is reported through `log`,
     /// if given; what is served is reported too where [`File::log_file`]
     /// and [`File::log_file_probe`] say so.
     pub fn new(tree: Arc<Tree>, log: Option<LogHook>) -> File {
@@ -314,7 +314,7 @@ enum Transfer {
     Write {
         /// The temporary, open: made new by the `OPEN` that resolved its
         /// directory, and written through this handle alone --- never
-        /// opened again by name (`DESIGN.md` §6, "FILE's rules").
+        /// opened again by name (`docs/design.md` §6, "FILE's rules").
         file: std::fs::File,
         temp: PathBuf,
         real: PathBuf,
@@ -428,13 +428,13 @@ impl Control {
     }
 
     /// Reports a change this session made to a root, `what` and its
-    /// pathname, through the service's [`LogHook`] (`DESIGN.md` §10).
+    /// pathname, through the service's [`LogHook`] (`docs/design.md` §10).
     fn changed(&self, what: &str) {
         self.note(what);
     }
 
     /// Reports what this session served --- a `LOGIN`, a file read, a
-    /// directory listed --- where `--log-file` asks for it (`DESIGN.md`
+    /// directory listed --- where `--log-file` asks for it (`docs/design.md`
     /// §10).
     fn served(&self, what: &str) {
         if self.log_file {
@@ -689,7 +689,7 @@ impl Control {
     }
 
     /// `OPEN` of `/` itself, which the tree resolves to its top and not to
-    /// a path (`DESIGN.md` §6, "FILE's rules"): a directory, so a PROBE is
+    /// a path (`docs/design.md` §6, "FILE's rules"): a directory, so a PROBE is
     /// answered as one and anything else as opening a directory is. It has
     /// no date of its own --- the base and each mount have theirs --- and
     /// is dated now; what a band makes of that is not seen.
@@ -784,7 +784,7 @@ impl Control {
         Ok(Some(names))
     }
 
-    /// What DIRECTORY says of one name in a listing (`DESIGN.md` §6,
+    /// What DIRECTORY says of one name in a listing (`docs/design.md` §6,
     /// "FILE's rules"): what the tree resolves the name to, described as
     /// [`described`] describes it, so that a link in its own root is what it
     /// leads to --- a directory a directory. A name the tree will not
@@ -1003,7 +1003,7 @@ impl Control {
         // there, a link included --- under a name no other write takes and
         // no client can name (`roots::temporary_name`); then written
         // through this handle alone, never opened again by name
-        // (`DESIGN.md` §6, "FILE's rules"). A name a crash left, which the
+        // (`docs/design.md` §6, "FILE's rules"). A name a crash left, which the
         // count starting again at 0 can meet, is stepped past, as the
         // tree's probe steps past one.
         let mut made = None;
@@ -1243,7 +1243,7 @@ impl Control {
 
     /// `DELETE` of what a pathname names, and **a link itself, never what
     /// it leads to**: the pathname is resolved as an entry, its directory
-    /// followed and its own name not (`DESIGN.md` §6, "FILE's rules"). So a
+    /// followed and its own name not (`docs/design.md` §6, "FILE's rules"). So a
     /// link that leads nowhere is removed like any other.
     fn delete_entry(&mut self, tid: &str, handle: &str, pathname: &str) {
         let path = match self.tree.resolve_entry_for_writing(pathname) {
@@ -1272,7 +1272,7 @@ impl Control {
     /// `RENAME`, the old pathname then the new, each resolved as an entry:
     /// **a link itself is moved**, never what it leads to, and a new name
     /// that is a link is there already, whether or not it leads anywhere
-    /// (`DESIGN.md` §6, "FILE's rules"). Two ends in different roots are
+    /// (`docs/design.md` §6, "FILE's rules"). Two ends in different roots are
     /// refused, `ATF`: that would be a copy.
     fn rename(&mut self, tid: &str, handle: &str, old: &str, new: &str) {
         let (from, to) = match self.tree.resolve_entries_for_renaming(old, new) {
@@ -1313,7 +1313,7 @@ impl Control {
     }
 
     /// `CREATE-LINK`, the link then what it points at, both resolved
-    /// (`DESIGN.md` §6): the link for writing, the
+    /// (`docs/design.md` §6): the link for writing, the
     /// target for reading, so it can only lead into the tree. The link
     /// holds the target's canonical path. One into another root is made,
     /// and refused wherever it is used, since a link must lead into its
@@ -1620,7 +1620,7 @@ impl Session for Control {
 
 /// What is at a place, if FILE may open it: [`Place::metadata`] --- a
 /// regular file or a directory, or `None` if nothing is there --- read
-/// with `symlink_metadata`, which opens nothing (`DESIGN.md` §6,
+/// with `symlink_metadata`, which opens nothing (`docs/design.md` §6,
 /// "Opening"). The loop is one thread, and opening a FIFO that has no
 /// writer would block it, and every client with it.
 ///

@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Mete Balci
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! NAME: who is logged in at this host, which is nobody (`DESIGN.md` §7;
-//! `PROTOCOLS.md`, NAME).
+//! NAME: who is logged in at this host, which is nobody (`docs/design.md` §7;
+//! `docs/protocols.md`, NAME).
 //!
 //! A stream. The manual, `sys/man/chaos.text` §Name (line 1186): "The
 //! Name/Finger protocol of the Arpanet exists in identical form on the
@@ -21,7 +21,7 @@
 //! columns: `GIVE-NAME` (`chsaux.lisp:423`), which `LISTEN`s for `NAME`
 //! and reads nothing of the RFC. This host has no user at a keyboard, and
 //! answers in plain words that nobody is logged in: its text is display,
-//! not protocol (`DESIGN.md` §7). What `GIVE-NAME`'s columns hold with
+//! not protocol (`docs/design.md` §7). What `GIVE-NAME`'s columns hold with
 //! nobody logged in is not read.
 //!
 //! **What `FINGER` does with it** (`chsaux.lisp:490-499`): it prints blank
@@ -60,7 +60,7 @@
 use crate::lispm::{self, NEWLINE};
 use crate::ncp::{Out, Response, Service, Session};
 
-/// What this host says: nobody is logged in (`DESIGN.md` §7).
+/// What this host says: nobody is logged in (`docs/design.md` §7).
 const NOBODY: &str = "Nobody is logged in.";
 
 /// NAME: that nobody is logged in here.

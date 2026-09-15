@@ -1,7 +1,7 @@
 # ozd: design
 
 This document describes how ozd works. Where the code and this document
-disagree, one of them is wrong. `PROTOCOLS.md` describes the protocols
+disagree, one of them is wrong. `docs/protocols.md` describes the protocols
 themselves, and the README says how to build, run and secure ozd.
 
 ## 1. The shape of it
@@ -296,7 +296,7 @@ RENAME, CREATE-DIRECTORY, CREATE-LINK and CHANGE-PROPERTIES with `ATF`,
 "Access to file denied", before anything is touched. The band turns
 `ATF` into `INCORRECT-ACCESS-TO-FILE` (`io/file/open.lisp:224`), its
 usual condition for it. FILE has no error code of its own for a refused
-write (`PROTOCOLS.md`, FILE). A RENAME from one root into another is
+write (`docs/protocols.md`, FILE). A RENAME from one root into another is
 refused the same way, because it would be a copy rather than a rename.
 
 **Writes.** The temporary is made in the target's own directory, so the
@@ -362,7 +362,7 @@ wins as a whole, and no file is ever half one and half the other.
 
 ## 7. Services
 
-ozd serves six protocols (`PROTOCOLS.md`).
+ozd serves six protocols (`docs/protocols.md`).
 
 - **STATUS** answers with the official name and one block for this
   host's subnet. Its meters are counted at the socket and shared with
@@ -384,14 +384,14 @@ ozd serves six protocols (`PROTOCOLS.md`).
   `CHAOS` address in octal, and a `SYSTEM-TYPE` line if the host's flag
   gives one (for this host, the one on `--name`), and then an EOF. For no
   match, it answers `ERROR No such host` and then an EOF. It never sends
-  `MACHINE-TYPE` (`PROTOCOLS.md`, HOSTAB). The connection stays open for
+  `MACHINE-TYPE` (`docs/protocols.md`, HOSTAB). The connection stays open for
   the next name until the client closes it. A line longer than any name
   matches nothing, and no more of it than that is kept.
 - **NAME** answers with one line, `Nobody is logged in.`, ended with the
   Lisp Machine's newline. It then sends an EOF, and a CLS once the EOF
   is acknowledged, which is how the machine's own server ends
   (`FORMAT-AND-EOF`, `chuse.lisp:550`). A band's `(finger)` asks here
-  when it is given no host (`PROTOCOLS.md`, NAME).
+  when it is given no host (`docs/protocols.md`, NAME).
 
 ## 8. The flags, and the file of them
 
