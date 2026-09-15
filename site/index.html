@@ -274,7 +274,7 @@
           <text class="d-s" x="860" y="412" text-anchor="middle">only at a site that wants it</text>
         </svg>
       </div>
-      <figcaption class="cap long">Every machine names ozd as its CHUDP peer. ozd learns each host&rsquo;s endpoint from the packets it sends, as a switch learns where each host is, and <code>--peer</code> fixes one that must not move. FILE serves one tree: a base root, and roots mounted at its top level, each read-only or not.</figcaption>
+      <figcaption class="cap long">Every machine names ozd as its default CHUDP peer. ozd learns each host&rsquo;s endpoint from the packets it sends, as a switch learns where each host is, and <code>--peer</code> fixes one that must not move. FILE serves one tree: a base root, and roots mounted at its top level, each read-only or not.</figcaption>
     </figure>
 
     <div class="panels two">
@@ -361,7 +361,7 @@ FILE    / holds 2 directories and 1 file</pre>
 
       <div class="panel tone">
         <div class="step-head"><span class="step-num">5</span><h3>Point the machines at it</h3></div>
-        <p class="say">I name ozd as my CHUDP peer: its address, then where it listens. <code>3060@127.0.0.1:42042</code> on the same computer.</p>
+        <p class="say">I name ozd as my default CHUDP peer: its address, then where it listens. <code>3060@127.0.0.1:42042</code> on the same computer.</p>
         <p class="small">On one computer each program needs its own UDP port: ozd takes 42042, a machine 42043, the next 42044. On separate computers start ozd with <code>--listen 192.0.2.10</code>, and each machine names <code>3060@192.0.2.10</code>.</p>
         <p class="small push">A machine whose CHUDP sends a unicast packet only to a peer named for its destination also names every other machine&rsquo;s address at ozd&rsquo;s endpoint, so that its packets for them pass through the hub.</p>
       </div>
