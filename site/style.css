@@ -468,6 +468,15 @@ td.kind { font-family: var(--mono); font-size: var(--fs-mono-small); white-space
 
 .d-box  { fill: none; stroke: currentColor; stroke-width: 1.5; }
 .d-hub  { fill: var(--spot-tint); stroke: currentColor; stroke-width: 3; }
+.d-lit  { fill: var(--spot-tint); stroke: currentColor; stroke-width: 1.5; }
+/* A small drawing inside a panel, which scales with the panel rather than
+   scrolling, and stops growing before its lettering does. */
+.sketch { display: block; width: 100%; max-width: 26rem; height: auto; align-self: center; }
+/* A phone shows the sketch at about 0.9 of its viewBox, so its lettering
+   starts larger than the diagram's, which scrolls at full size instead. */
+.sketch .d-t { font: 500 17px var(--voice); }
+.sketch .d-s { font: 500 14px var(--voice); }
+.sketch .d-n { font: 400 14px var(--mono); }
 .d-dash { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 6 5; }
 .d-line { fill: none; stroke: currentColor; stroke-width: 1.5; }
 .d-wire { fill: none; stroke: currentColor; stroke-width: 4; }

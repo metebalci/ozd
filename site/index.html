@@ -193,6 +193,43 @@
       <h2 class="title t-l">The hub</h2>
     </div>
 
+    <div class="panels two">
+      <div class="panel">
+        <p class="cap">Then: one cable</p>
+        <svg class="sketch" viewBox="0 0 360 144" role="img" aria-label="One coaxial cable, terminated at both ends, with four nodes tapped onto it: CADRs at 3050, 3051 and 3052, and OZ at 3060. A packet sent by 3050 travels both ways along the cable, past every other node.">
+          <text class="d-s" x="180" y="22" text-anchor="middle">one cable: every node hears every packet</text>
+          <rect x="6" y="38" width="10" height="16" fill="currentColor"/>
+          <rect x="344" y="38" width="10" height="16" fill="currentColor"/>
+          <path class="d-wire" d="M16,46 L344,46"/>
+          <path class="d-line" d="M58,46 V84 M138,46 V84 M222,46 V84 M302,46 V84"/>
+          <rect class="d-lit" x="26" y="84" width="64" height="44"/>
+          <text class="d-t" x="58" y="103" text-anchor="middle">CADR</text>
+          <text class="d-n" x="58" y="120" text-anchor="middle">3050</text>
+          <rect class="d-box" x="106" y="84" width="64" height="44"/>
+          <text class="d-t" x="138" y="103" text-anchor="middle">CADR</text>
+          <text class="d-n" x="138" y="120" text-anchor="middle">3051</text>
+          <rect class="d-box" x="190" y="84" width="64" height="44"/>
+          <text class="d-t" x="222" y="103" text-anchor="middle">CADR</text>
+          <text class="d-n" x="222" y="120" text-anchor="middle">3052</text>
+          <rect class="d-box" x="270" y="84" width="64" height="44"/>
+          <text class="d-t" x="302" y="103" text-anchor="middle">OZ</text>
+          <text class="d-n" x="302" y="120" text-anchor="middle">3060</text>
+          <path d="M36,40 L26,46 L36,52 Z M100,40 L110,46 L100,52 Z M180,40 L190,46 L180,52 Z M260,40 L270,46 L260,52 Z" fill="#ff48b0" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+        </svg>
+        <p class="small">Chaosnet ran on one coaxial cable, which <a href="https://chaosnet.net/amber.html">AIM-628</a> calls the ether. A packet one node sends arrives at every other node, and each decides in hardware whether to keep it, much as on the coaxial Ethernet of its day.</p>
+        <p class="small">The memo explains whose turn it is to send by analogy with a ring&rsquo;s token, but the cable itself is a line: its ends may not be joined into a circle.</p>
+      </div>
+
+      <div class="panel tone">
+        <p class="cap">Now: a link each</p>
+        <p class="say">No cable is shared any more. Ethernet gives each host a link of its own to a switch, and UDP goes point to point. So I stand where the switch would.</p>
+        <p class="small">Each machine sends its packets to ozd. ozd passes each one on to the host it is addressed to, or to every host but its sender if it is a broadcast, and changes nothing on the way.</p>
+        <svg class="chara" viewBox="0 0 140 180" style="width:30%; align-self:flex-end; margin-top:auto;" role="img" aria-label="OZ">
+          <use href="#oz"/>
+        </svg>
+      </div>
+    </div>
+
     <figure class="panel">
       <div class="scroll">
         <svg viewBox="0 0 1000 420" role="img" aria-label="Three Lisp Machines, at 3050, 3051 and more, each connect over CHUDP on UDP port 42042 to ozd at 3060, the hub of one subnet, which serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME. FILE serves two roots: a writable base root, the users' homes, served as /, and a read-only mount of the release's sources at /tree. Below, ozd has cbridge as a peer with a fixed endpoint, drawn dashed, the way to the Global Chaosnet, only at a site that wants it.">
@@ -238,17 +275,10 @@
           <text class="d-s" x="860" y="412" text-anchor="middle">only at a site that wants it</text>
         </svg>
       </div>
-      <figcaption class="cap long">Every machine names ozd as its CHUDP peer. ozd learns each endpoint from the packets a host sends, and <code>--peer</code> fixes one that must not move. FILE serves one tree: a base root, and roots mounted at its top level, each read-only or not.</figcaption>
+      <figcaption class="cap long">Every machine names ozd as its CHUDP peer. ozd learns each host&rsquo;s endpoint from the packets it sends, as a switch learns where each host is, and <code>--peer</code> fixes one that must not move. FILE serves one tree: a base root, and roots mounted at its top level, each read-only or not.</figcaption>
     </figure>
 
     <div class="panels two">
-      <div class="panel tone">
-        <p class="say">On a cable every host hears every broadcast. Over UDP the subnet is a star with me in the middle, so I pass each packet on as the cable would, and change nothing.</p>
-        <svg class="chara" viewBox="0 0 140 180" style="width:34%; align-self:flex-end; margin-top:auto;" role="img" aria-label="OZ">
-          <use href="#oz"/>
-        </svg>
-      </div>
-
       <div class="panel">
         <p class="cap light">What ozd does with a packet, by where it is addressed:</p>
         <div class="tablewrap">
@@ -264,7 +294,11 @@
             </tbody>
           </table>
         </div>
-        <p class="small push">That makes it a hub and not a bridge: no forwarding count, no routing, and nothing to another subnet. A site that wants the Global Chaosnet runs <code>cbridge</code> beside ozd, and a machine that wants it names <code>cbridge</code> as a peer of its own.</p>
+      </div>
+
+      <div class="panel">
+        <p class="small">Unlike a switch, ozd drops a packet for a host it has not heard from yet, rather than sending it to every host.</p>
+        <p class="small">It is a hub and not a bridge: no forwarding count, no routing, and nothing to another subnet. A site that wants the Global Chaosnet runs <code>cbridge</code> beside ozd, and a machine that wants it names <code>cbridge</code> as a peer of its own.</p>
       </div>
     </div>
 
