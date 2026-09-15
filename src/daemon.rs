@@ -16,6 +16,7 @@ use crate::ncp::{Ncp, Service};
 use crate::roots::Tree;
 use crate::service::file::File;
 use crate::service::hostab::Hostab;
+use crate::service::mini::Mini;
 use crate::service::name::Name;
 use crate::service::status::{Meters, Status};
 use crate::service::time::{Time, Uptime};
@@ -46,8 +47,8 @@ impl Daemon {
     /// `config.listen`, its NCP at `config.address`, and what it serves.
     /// `logging` is what this run writes down: `--trace` for the link and
     /// the NCP both, `--log-simple` for the NCP's answers, `--log-file`
-    /// and `--log-file-probe` for FILE, and `--log-tcp` for `--tcp`'s
-    /// connections (`docs/design.md` §10). A socket or a `--tcp` listener
+    /// and `--log-file-probe` for FILE, `--log-mini` for MINI, and
+    /// `--log-tcp` for `--tcp`'s connections (`docs/design.md` §10). A socket or a `--tcp` listener
     /// that cannot be bound is the error, naming its flag, and then nothing
     /// is served. `tree` is the roots as the startup checked them, which
     /// FILE serves (`docs/design.md` §6).
@@ -198,7 +199,9 @@ impl Daemon {
 /// - NAME, saying that nobody is logged in;
 /// - FILE, from the roots the startup checked (`docs/design.md` §6), each of
 ///   its changes to a root a line of the log, and what it serves as well
-///   where `--log-file` and `--log-file-probe` ask for it (§10).
+///   where `--log-file` and `--log-file-probe` ask for it (§10);
+/// - MINI, from the same roots, read as FILE reads them, each open a line
+///   of the log where `--log-mini` asks for it (§10).
 fn services(
     config: &Config,
     meters: &Arc<Meters>,
@@ -210,6 +213,9 @@ fn services(
     file.log_file = logging.file;
     file.log_file_probe = logging.file_probe;
     file.names = names.clone();
+    let mut mini = Mini::new(tree.clone(), Some(Arc::new(|line: &str| log::event(line))));
+    mini.log_mini = logging.mini;
+    mini.names = names.clone();
     vec![
         Box::new(Status::new(&config.names[0], (config.address >> 8) as u8, meters.clone())),
         Box::new(Time::new()),
@@ -222,6 +228,7 @@ fn services(
         )),
         Box::new(Name::new()),
         Box::new(file),
+        Box::new(mini),
     ]
 }
 

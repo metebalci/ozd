@@ -674,6 +674,7 @@ fn every_flag_can_be_given_on_the_command_line() {
         "--log-simple",
         "--log-file",
         "--log-file-probe",
+        "--log-mini",
         "--log-tcp",
         "--check",
     ];
@@ -688,6 +689,7 @@ fn every_flag_can_be_given_on_the_command_line() {
             && r.logging.simple
             && r.logging.file
             && r.logging.file_probe
+            && r.logging.mini
             && r.logging.tcp
             && r.check
     );
@@ -697,6 +699,7 @@ fn every_flag_can_be_given_on_the_command_line() {
             && !r.logging.simple
             && !r.logging.file
             && !r.logging.file_probe
+            && !r.logging.mini
             && !r.logging.tcp
             && !r.check,
         "none of them unless given"

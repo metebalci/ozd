@@ -314,19 +314,22 @@ fn the_daemon_runs_from_its_command_line_and_answers_status() {
     assert!(ans.data.starts_with(b"MIT-OZ\0"), "this host's STATUS");
 }
 
-/// **HOSTAB and NAME are served**, each opened through the daemon as a
+/// **HOSTAB, NAME and MINI are served**, each opened through the daemon as a
 /// band opens it (`docs/design.md` §7). NAME answers its one line and an EOF;
-/// HOSTAB opens and waits for a name --- what it answers is
-/// `tests/hostab.rs`'s business.
+/// HOSTAB opens and waits for a name, and MINI for an open --- what they
+/// answer is `tests/hostab.rs`'s and `tests/mini.rs`'s business.
 #[test]
-fn hostab_and_name_are_served() {
+fn hostab_name_and_mini_are_served() {
     let mut d = daemon(&site(""));
     let mut lm1 = TestHost::new(LM1, d.at());
     let name = Recorder::default();
     lm1.ncp.connect(0, OZ, "NAME", Box::new(name.clone()));
     let hostab = Recorder::default();
     lm1.ncp.connect(0, OZ, "HOSTAB", Box::new(hostab.clone()));
+    let mini = Recorder::default();
+    lm1.ncp.connect(0, OZ, "MINI LISPM ", Box::new(mini.clone()));
     settle(&mut d, &mut [&mut lm1], 0);
+    assert_eq!(mini.events(), ["opened"], "MINI opens and waits for an open");
     let name = name.events();
     assert_eq!(name.first().map(String::as_str), Some("opened"), "NAME opens: {name:?}");
     assert!(
@@ -589,6 +592,7 @@ fn help_is_printed_on_stdout_and_exits_0() {
             "--host",
             "--peer",
             "--tcp",
+            "--log-mini",
             "--log-tcp",
             "--trace",
             "--check",

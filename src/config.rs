@@ -318,6 +318,7 @@ enum Flag {
     LogSimple,
     LogFile,
     LogFileProbe,
+    LogMini,
     LogTcp,
     Check,
     Config,
@@ -325,7 +326,7 @@ enum Flag {
 }
 
 impl Flag {
-    const ALL: [Flag; 16] = [
+    const ALL: [Flag; 17] = [
         Flag::Address,
         Flag::Name,
         Flag::Listen,
@@ -338,6 +339,7 @@ impl Flag {
         Flag::LogSimple,
         Flag::LogFile,
         Flag::LogFileProbe,
+        Flag::LogMini,
         Flag::LogTcp,
         Flag::Check,
         Flag::Config,
@@ -368,6 +370,7 @@ impl Flag {
             Flag::LogSimple => "--log-simple",
             Flag::LogFile => "--log-file",
             Flag::LogFileProbe => "--log-file-probe",
+            Flag::LogMini => "--log-mini",
             Flag::LogTcp => "--log-tcp",
             Flag::Check => "--check",
             Flag::Config => "--config",
@@ -391,6 +394,7 @@ impl Flag {
             | Flag::LogSimple
             | Flag::LogFile
             | Flag::LogFileProbe
+            | Flag::LogMini
             | Flag::LogTcp
             | Flag::Check
             | Flag::Help => None,
@@ -522,7 +526,8 @@ pub struct Run {
     /// The site.
     pub config: Config,
     /// What this run writes down: `--trace`, `--log-simple`, `--log-file`,
-    /// `--log-file-probe` and `--log-tcp` (`docs/design.md` §10).
+    /// `--log-file-probe`, `--log-mini` and `--log-tcp` (`docs/design.md`
+    /// §10).
     pub logging: Logging,
     /// `--check`: check the flags and the roots, bind nothing, and exit
     /// (`docs/design.md` §10).
@@ -551,6 +556,10 @@ pub struct Logging {
     /// more often than it reads, and serves no file by it, so it is asked
     /// for on its own.
     pub file_probe: bool,
+    /// `--log-mini`: a line for each file a cold load opens through MINI,
+    /// the file read or the reason it was refused. A refusal is where a
+    /// cold load stops.
+    pub mini: bool,
     /// `--log-tcp`: a line when a `--tcp` connection opens, with where the
     /// client is, and one when it closes, with who closed it; nothing for
     /// what passes between.
@@ -666,6 +675,7 @@ struct Reading {
     simple: bool,
     file: bool,
     file_probe: bool,
+    mini_log: bool,
     tcp_log: bool,
     check: bool,
 }
@@ -708,6 +718,10 @@ impl Reading {
             }
             Flag::LogFileProbe => {
                 self.file_probe = true;
+                Ok(())
+            }
+            Flag::LogMini => {
+                self.mini_log = true;
                 Ok(())
             }
             Flag::LogTcp => {
@@ -1012,6 +1026,7 @@ impl Reading {
             simple: self.simple,
             file: self.file,
             file_probe: self.file_probe,
+            mini: self.mini_log,
             tcp: self.tcp_log,
         };
         Ok(Run { config, logging, check: self.check })
