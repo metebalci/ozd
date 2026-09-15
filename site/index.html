@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ozd &mdash; the associated machine for a site of MIT CADR Lisp Machines</title>
+<meta name="description" content="ozd is the host a site's Lisp Machines ask for their files, the time and their host table. It serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME over CHUDP and passes packets between the machines of its subnet. Written in Rust, with no dependencies.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- The characters, drawn once and placed with <use>. CADR's body, its face
+     and its waving arm are Cold Boot's own parts. OZ is drawn for this page
+     in the same hand: a cabinet with CADR's face, two tape reels, and a
+     daemon's horns. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="cadr-body">
+      <rect x="48" y="112" width="24" height="14" fill="#141414"/>
+      <rect x="14" y="4" width="92" height="112" rx="7" fill="#fff" stroke="#141414" stroke-width="4"/>
+      <rect x="23" y="13" width="74" height="88" fill="#141414"/>
+      <rect x="23" y="90" width="74" height="2.5" fill="#fff"/>
+      <path d="M26 96h14M46 96h10M62 96h16" stroke="#fff" stroke-width="2"/>
+      <polygon points="10,128 110,128 117,146 3,146" fill="#fff" stroke="#141414" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M18 134h84M13 140h94" stroke="#141414" stroke-width="2.5" stroke-dasharray="5 3"/>
+    </g>
+
+    <g id="face-happy">
+      <ellipse cx="46" cy="50" rx="9" ry="13" fill="#fff"/>
+      <ellipse cx="74" cy="50" rx="9" ry="13" fill="#fff"/>
+      <ellipse cx="47" cy="53" rx="6.2" ry="9.5" fill="#141414"/>
+      <ellipse cx="73" cy="53" rx="6.2" ry="9.5" fill="#141414"/>
+      <ellipse cx="47" cy="58" rx="4.6" ry="3.6" fill="#ff48b0"/>
+      <ellipse cx="73" cy="58" rx="4.6" ry="3.6" fill="#ff48b0"/>
+      <circle cx="44.5" cy="48" r="2.8" fill="#fff"/>
+      <circle cx="70.5" cy="48" r="2.8" fill="#fff"/>
+      <circle cx="49" cy="57" r="1.2" fill="#fff"/>
+      <circle cx="75" cy="57" r="1.2" fill="#fff"/>
+      <path d="M54 74q6 6 12 0" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M29 70l3-5M33 70l3-5M37 70l3-5M80 70l3-5M84 70l3-5M88 70l3-5" stroke="#ff48b0" stroke-width="2" stroke-linecap="round"/>
+    </g>
+
+    <g id="arm-wave">
+      <path d="M106 64q17-4 14-25" fill="none" stroke="#141414" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="120" cy="36" r="5.5" fill="#fff" stroke="#141414" stroke-width="3"/>
+      <path d="M111 22l3 5M120 18v6M129 22l-3 5" stroke="#141414" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+
+    <!-- OZ stands 12 units lower than CADR, to leave room for its horns, so
+         the shared parts are placed with the same offset. -->
+    <g id="oz">
+      <path d="M32 19Q21 12 22 1Q34 6 42 16Z" fill="#ff48b0" stroke="#141414" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M88 19Q99 12 98 1Q86 6 78 16Z" fill="#ff48b0" stroke="#141414" stroke-width="3" stroke-linejoin="round"/>
+      <rect x="8" y="166" width="104" height="10" fill="#141414"/>
+      <rect x="14" y="16" width="92" height="152" rx="6" fill="#fff" stroke="#141414" stroke-width="4"/>
+      <rect x="23" y="25" width="74" height="88" fill="#141414"/>
+      <circle cx="40" cy="139" r="13" fill="#fff" stroke="#141414" stroke-width="3"/>
+      <circle cx="80" cy="139" r="13" fill="#fff" stroke="#141414" stroke-width="3"/>
+      <circle cx="40" cy="139" r="4" fill="#ff48b0" stroke="#141414" stroke-width="2"/>
+      <circle cx="80" cy="139" r="4" fill="#ff48b0" stroke="#141414" stroke-width="2"/>
+      <path d="M40 152h40" stroke="#141414" stroke-width="2.5"/>
+      <use href="#face-happy" y="12"/>
+    </g>
+    <g id="oz-wave"><use href="#oz"/><use href="#arm-wave" y="12"/></g>
+  </defs>
+</svg>
+
+<p class="desk-note"><b>ozd</b> &middot; the associated machine &middot; <a href="https://github.com/metebalci/ozd/blob/main/DESIGN.md">the design</a> &middot; <a href="https://github.com/metebalci/ozd/blob/main/PROTOCOLS.md">the protocols</a> &middot; <a href="https://github.com/metebalci/ozd">the repository</a></p>
+
+<div class="page">
+
+  <section aria-label="ozd">
+    <div class="masthead">
+      <div class="masthead-text">
+        <span class="eyebrow">The associated machine for a site of MIT CADR Lisp Machines</span>
+        <h1 class="title t-xl">ozd</h1>
+        <p class="lede">The host a site&rsquo;s Lisp Machines ask for their files, the time and their host table: OZ, as a daemon.</p>
+        <div class="actions">
+          <a class="key" href="#run">Build and run</a>
+          <a class="key lm" href="https://github.com/metebalci/ozd/blob/main/DESIGN.md">Design</a>
+          <a class="key lm" href="https://github.com/metebalci/ozd">GitHub</a>
+        </div>
+      </div>
+      <span class="vertical" lang="ja" aria-hidden="true">オズ</span>
+    </div>
+
+    <div class="panels two">
+      <div class="panel focus center" style="min-height: 19rem;">
+        <div class="sfx" style="position:absolute; top:0.8rem; left:0.8rem; z-index:2;">コンコン<small>KON KON</small></div>
+        <svg class="chara" viewBox="0 0 140 180" style="width:44%;" role="img" aria-label="OZ, a cabinet with horns, waving at whoever knocked">
+          <use href="#oz-wave"/>
+        </svg>
+      </div>
+
+      <nav class="panel contents" aria-label="Contents">
+        <span class="eyebrow">Contents</span>
+        <ol class="toc">
+          <li><a href="#what"><span class="tag">WHAT</span><span class="nm">What it is</span><span class="no">02</span></a></li>
+          <li><a href="#services"><span class="tag">SERVE</span><span class="nm">Six services</span><span class="no">03</span></a></li>
+          <li><a href="#hub"><span class="tag">PLAN</span><span class="nm">The hub</span><span class="no">04</span></a></li>
+          <li><a href="#run"><span class="tag">DO IT</span><span class="nm">Build and run</span><span class="no">05</span></a></li>
+          <li><a href="#security"><span class="tag">SAFE</span><span class="nm">Who can reach it</span><span class="no">06</span></a></li>
+          <li><a href="#service"><span class="tag">DAEMON</span><span class="nm">As a service</span><span class="no">07</span></a></li>
+          <li><a href="#colophon"><span class="tag">END</span><span class="nm">Colophon</span><span class="no">08</span></a></li>
+        </ol>
+        <p class="small push">The long form of all of it is in the repository: the <a href="https://github.com/metebalci/ozd#readme">README</a>, the <a href="https://github.com/metebalci/ozd/blob/main/DESIGN.md">design</a> and <a href="https://github.com/metebalci/ozd/blob/main/PROTOCOLS.md">every protocol</a>.</p>
+      </nav>
+    </div>
+
+    <footer class="wholine">
+      <div class="label">ozd</div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>01</span></div>
+    </footer>
+  </section>
+
+  <!-- ------------------------------------------------------ what it is -->
+  <section id="what" aria-label="What it is">
+    <div class="panel bare">
+      <span class="eyebrow">What</span>
+      <h2 class="title t-l">What it is</h2>
+    </div>
+
+    <div class="panels two">
+      <div class="panel tone">
+        <p class="say">I&rsquo;m a CADR. When I boot, I ask another host for the date and for my files. MIT called that host my associated machine.</p>
+        <svg class="chara" viewBox="0 0 132 150" style="width:46%; align-self:center; margin-top:auto;" role="img" aria-label="CADR, waving">
+          <use href="#cadr-body"/><use href="#face-happy"/><use href="#arm-wave"/>
+        </svg>
+      </div>
+
+      <div class="panel">
+        <p class="say r">At MIT that was OZ. I&rsquo;m OZ as a daemon: one host on one Chaosnet subnet, reached over UDP, for one machine or many.</p>
+        <p class="cap light">What a band prints once it has booted, from <code>sys/io/disk.lisp</code>:</p>
+<pre class="term">MIT Lisp Machine One, with associated machine <b>OZ</b>.</pre>
+        <p class="small">OZ, also called MIT-OZ, was the host where MIT&rsquo;s Lisp Machines kept their system files. They also asked it for the time and for their host table. Several machines can share one ozd, just as MIT had one associated machine for many Lisp Machines.</p>
+        <p class="small push"><b>ozd is written in Rust and has no crate dependencies.</b> It runs on Linux and macOS. None of it has been tried against a real band yet.</p>
+      </div>
+    </div>
+
+    <footer class="wholine">
+      <div class="label">ozd &middot; What it is</div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>02</span></div>
+    </footer>
+  </section>
+
+  <!-- --------------------------------------------------- six services -->
+  <section id="services" aria-label="Six services">
+    <div class="panel bare">
+      <span class="eyebrow">Serve</span>
+      <h2 class="title t-l">Six services</h2>
+      <p class="small" style="margin-top:0.4rem;">Four because a machine does not finish booting without them, and two because a band calls them at its associated machine. A simple transaction is one request and one answer; a stream is a connection.</p>
+    </div>
+
+    <div class="panels two serve-split">
+      <div class="panel">
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr><th>Contact</th><th>Kind</th><th>What ozd answers</th><th>When a band asks</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="contact">STATUS</td><td class="kind">simple transaction</td><td>Its name, and the counters of its subnet</td><td><code>(hostat)</code>, which asks every host</td></tr>
+              <tr><td class="contact">TIME</td><td class="kind">simple transaction</td><td>The universal time, from the system clock</td><td>When it wants the date, from the site&rsquo;s time servers</td></tr>
+              <tr><td class="contact">UPTIME</td><td class="kind">simple transaction</td><td>How long ozd has been up</td><td><code>(uptime)</code></td></tr>
+              <tr><td class="contact">FILE</td><td class="kind">stream</td><td>The files in its roots, to read, write, rename and delete</td><td>For its sources and its users&rsquo; files, from the file host its site names</td></tr>
+              <tr><td class="contact">HOSTAB</td><td class="kind">stream</td><td>A host&rsquo;s names, address and system type</td><td>When it meets a host name that its own table lacks</td></tr>
+              <tr><td class="contact">NAME</td><td class="kind">stream</td><td>That nobody is logged in</td><td><code>(finger)</code> with no host</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel tone-pink">
+        <div class="panel" style="gap:0.5rem; flex:1;">
+          <p class="big-number">1/60&nbsp;s</p>
+          <p class="small"><b>the unit of UPTIME&rsquo;s answer</b>, as the band&rsquo;s own server sends it and its own user end divides it.</p>
+          <p class="say quiet">The manual says seconds. The band&rsquo;s code says sixtieths, and the band is what reads the answer.</p>
+          <p class="small push">Every protocol a Lisp Machine speaks, and where each fact about it was read, is in <a href="https://github.com/metebalci/ozd/blob/main/PROTOCOLS.md">PROTOCOLS.md</a>.</p>
+        </div>
+      </div>
+    </div>
+
+    <footer class="wholine">
+      <div class="label">ozd &middot; Six services</div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>03</span></div>
+    </footer>
+  </section>
+
+  <!-- ---------------------------------------------------------- the hub -->
+  <section id="hub" aria-label="The hub">
+    <div class="panel bare">
+      <span class="eyebrow">Plan</span>
+      <h2 class="title t-l">The hub</h2>
+    </div>
+
+    <figure class="panel">
+      <div class="scroll">
+        <svg viewBox="0 0 1000 420" role="img" aria-label="Three Lisp Machines, at 3050, 3051 and more, each connect over CHUDP on UDP port 42042 to ozd at 3060, the hub of one subnet, which serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME. FILE serves two roots: a writable base root, the users' homes, served as /, and a read-only mount of the release's sources at /tree. Below, ozd has cbridge as a peer with a fixed endpoint, drawn dashed, the way to the Global Chaosnet, only at a site that wants it.">
+          <rect class="d-box" x="20" y="24" width="210" height="76"/>
+          <text class="d-t" x="125" y="56" text-anchor="middle">Lisp Machine</text>
+          <text class="d-n" x="125" y="78" text-anchor="middle">3050, MIT-LISPM-1</text>
+          <rect class="d-box" x="20" y="162" width="210" height="76"/>
+          <text class="d-t" x="125" y="194" text-anchor="middle">Lisp Machine</text>
+          <text class="d-n" x="125" y="216" text-anchor="middle">3051</text>
+          <rect class="d-dash" x="20" y="300" width="210" height="76"/>
+          <text class="d-t" x="125" y="332" text-anchor="middle">more machines</text>
+          <text class="d-n" x="125" y="354" text-anchor="middle">3052, 3053, ...</text>
+
+          <path class="d-wire" d="M230,62 L400,170 M230,200 L400,200 M230,338 L400,230"/>
+          <text class="d-s" x="315" y="188" text-anchor="middle">CHUDP over UDP</text>
+          <text class="d-n" x="315" y="222" text-anchor="middle">port 42042</text>
+
+          <rect class="d-hub" x="400" y="126" width="240" height="148"/>
+          <text class="d-big" x="520" y="166" text-anchor="middle">ozd</text>
+          <text class="d-n" x="520" y="190" text-anchor="middle">3060, MIT-OZ</text>
+          <text class="d-s" x="520" y="212" text-anchor="middle">the hub of one subnet</text>
+          <text class="d-n" x="520" y="240" text-anchor="middle">STATUS TIME UPTIME</text>
+          <text class="d-n" x="520" y="258" text-anchor="middle">FILE HOSTAB NAME</text>
+
+          <path class="d-line" d="M640,176 L690,176 L690,72 L740,72 M690,176 L740,176"/>
+          <text class="d-s" x="682" y="128" text-anchor="end">FILE</text>
+          <rect class="d-box" x="740" y="30" width="240" height="84"/>
+          <text class="d-t" x="860" y="58" text-anchor="middle">base root, writable</text>
+          <text class="d-s" x="860" y="78" text-anchor="middle">the users' homes, served as /</text>
+          <text class="d-n" x="860" y="100" text-anchor="middle">--root /srv/lispm</text>
+          <rect class="d-box" x="740" y="134" width="240" height="84"/>
+          <text class="d-t" x="860" y="162" text-anchor="middle">a mount, read-only</text>
+          <text class="d-s" x="860" y="182" text-anchor="middle">the release's sources, at /tree</text>
+          <text class="d-n" x="860" y="204" text-anchor="middle">--root tree=...,ro</text>
+
+          <path class="d-line" d="M520,274 L520,338 L740,338"/>
+          <text class="d-s" x="630" y="330" text-anchor="middle">a peer, its endpoint fixed</text>
+          <rect class="d-dash" x="740" y="296" width="240" height="84"/>
+          <text class="d-t" x="860" y="324" text-anchor="middle">cbridge</text>
+          <text class="d-s" x="860" y="344" text-anchor="middle">to the Global Chaosnet</text>
+          <text class="d-n" x="860" y="366" text-anchor="middle">--peer 3040@192.0.2.5</text>
+          <rect class="d-ring" x="726" y="282" width="268" height="112"/>
+          <text class="d-s" x="860" y="412" text-anchor="middle">only at a site that wants it</text>
+        </svg>
+      </div>
+      <figcaption class="cap long">Every machine names ozd as its CHUDP peer. ozd learns each endpoint from the packets a host sends, and <code>--peer</code> fixes one that must not move. FILE serves one tree: a base root, and roots mounted at its top level, each read-only or not.</figcaption>
+    </figure>
+
+    <div class="panels two">
+      <div class="panel tone">
+        <p class="say">On a cable every host hears every broadcast. Over UDP the subnet is a star with me in the middle, so I pass each packet on as the cable would, and change nothing.</p>
+        <svg class="chara" viewBox="0 0 140 180" style="width:34%; align-self:flex-end; margin-top:auto;" role="img" aria-label="OZ">
+          <use href="#oz"/>
+        </svg>
+      </div>
+
+      <div class="panel">
+        <p class="cap light">What ozd does with a packet, by where it is addressed:</p>
+        <div class="tablewrap">
+          <table style="min-width:24rem;">
+            <thead>
+              <tr><th>Addressed to</th><th>ozd</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>3060</code>, this host</td><td>answers it</td></tr>
+              <tr><td><code>0</code>, a broadcast</td><td>answers it, and passes it to every endpoint but its sender&rsquo;s</td></tr>
+              <tr><td><code>3051</code>, another machine</td><td>passes it on, byte for byte</td></tr>
+              <tr><td><code>4401</code>, another subnet</td><td>drops it, as it drops a host not yet heard from</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small push">That makes it a hub and not a bridge: no forwarding count, no routing, and nothing to another subnet. A site that wants the Global Chaosnet runs <code>cbridge</code> beside ozd, and a machine that wants it names <code>cbridge</code> as a peer of its own.</p>
+      </div>
+    </div>
+
+    <footer class="wholine">
+      <div class="label">ozd &middot; The hub</div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>04</span></div>
+    </footer>
+  </section>
+
+  <!-- ---------------------------------------------------- build and run -->
+  <section id="run" aria-label="Build and run">
+    <div class="panel bare">
+      <span class="eyebrow">Do it</span>
+      <h2 class="title t-l">Build and run</h2>
+      <p class="small" style="margin-top:0.4rem;">ozd is built from its source with Cargo. Its compiler is pinned in <code>rust-toolchain.toml</code>, and nothing else is downloaded.</p>
+    </div>
+
+    <div class="panels two">
+      <div class="panel">
+        <div class="step-head"><span class="step-num">1</span><h3>The Rust toolchain</h3></div>
+<pre class="term cmd">curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh</pre>
+        <p class="small">Install rustup, and open a new shell. A Cargo from your system&rsquo;s packages ignores <code>rust-toolchain.toml</code> and may be too old for the 2024 edition.</p>
+      </div>
+
+      <div class="panel">
+        <div class="step-head"><span class="step-num">2</span><h3>Clone and build</h3></div>
+<pre class="term cmd">git clone https://github.com/metebalci/ozd
+cd ozd
+cargo build --release</pre>
+        <p class="small">rustup downloads the pinned toolchain the first time Cargo runs here. ozd has no crate dependencies.</p>
+      </div>
+
+      <div class="panel wide">
+        <div class="step-head"><span class="step-num">3</span><h3>Run a System 100 site</h3></div>
+<pre class="term cmd">target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
+    --root /srv/lispm --root tree=/path/to/system-100-0/sys,ro \
+    --host 3050,MIT-LISPM-1,CADR-1,CADR1,LM1,system=LISPM</pre>
+        <p class="small">System 100&rsquo;s host table lists the Lisp Machine as MIT-LISPM-1 at 3050 and its file and time host as MIT-OZ at 3060, so ozd takes that address and those names. Every root must be an existing directory when ozd starts.</p>
+        <dl class="flags">
+          <div><dt>--address, --name</dt><dd>This host as the band&rsquo;s host table has it: its address, its names with the official one first, and its system type.</dd></div>
+          <div><dt>--root /srv/lispm</dt><dd>The base root. It holds the users&rsquo; home directories, and ozd writes to it.</dd></div>
+          <div><dt>--root tree=...,ro</dt><dd>The release&rsquo;s sources, mounted read-only at <code>/tree</code>, which is where the band looks for them.</dd></div>
+          <div><dt>--host, --hosts-text</dt><dd>Machines for HOSTAB to answer for, one flag each, or a band&rsquo;s own <code>hosts.text</code>, so that a band whose table lacks a machine can still find it by name.</dd></div>
+          <div><dt>--listen</dt><dd>Where ozd answers. Without it, <code>127.0.0.1:42042</code>, which only this host can reach.</dd></div>
+          <div><dt>--peer &lt;addr&gt;@&lt;ip&gt;</dt><dd>The fixed endpoint of a host that must not move, such as <code>cbridge</code>. Every other endpoint is learned.</dd></div>
+          <div><dt>--log-simple, --log-file, --log-file-probe</dt><dd>More lines in the log: each simple transaction answered; each file read, directory listed and login; each FILE probe.</dd></div>
+        </dl>
+        <p class="small">The same flags, one per line, can go in a file of flags that <code>-c</code> names, or <code>OZD_RC</code>, or <code>.ozdrc</code>. <code>--check</code> reads the flags, checks the roots and exits, and <code>--help</code> describes each flag.</p>
+      </div>
+
+      <div class="panel">
+        <div class="step-head"><span class="step-num">4</span><h3>Ask it</h3></div>
+<pre class="term cmd">cargo run --example ask 3060@127.0.0.1:42042</pre>
+<pre class="term">asking 3060 at 127.0.0.1:42042, from 3376
+STATUS  <b>MIT-OZ</b>
+TIME    2026-09-13T13:24:58Z (+0 s from this host)
+UPTIME  0d 1h 6m 45s
+FILE    / holds 2 directories and 1 file</pre>
+        <p class="small">It asks for STATUS, TIME and UPTIME over CHUDP, as a Lisp Machine would, then lists a directory through FILE and counts what is in it.</p>
+      </div>
+
+      <div class="panel tone">
+        <div class="step-head"><span class="step-num">5</span><h3>Point the machines at it</h3></div>
+        <p class="say">I name ozd as my CHUDP peer: its address, then where it listens. <code>3060@127.0.0.1:42042</code> on the same computer.</p>
+        <p class="small">On one computer each program needs its own UDP port: ozd takes 42042, a machine 42043, the next 42044. On separate computers start ozd with <code>--listen 192.0.2.10</code>, and each machine names <code>3060@192.0.2.10</code>.</p>
+        <p class="small push">A machine whose CHUDP sends a unicast packet only to a peer named for its destination also names every other machine&rsquo;s address at ozd&rsquo;s endpoint, so that its packets for them pass through the hub.</p>
+      </div>
+    </div>
+
+    <footer class="wholine">
+      <div class="label">ozd &middot; Build and run</div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>05</span></div>
+    </footer>
+  </section>
+
+  <!-- --------------------------------------------------------- security -->
+  <section id="security" aria-label="Who can reach it">
+    <div class="panel bare">
+      <span class="eyebrow">Safe</span>
+      <h2 class="title t-l">Who can reach it</h2>
+    </div>
+
+    <div class="panels two">
+      <div class="panel ink">
+        <p class="say">I don&rsquo;t ask who you are. Any host that reaches my socket gets an answer, and FILE too.</p>
+        <svg class="chara" viewBox="0 0 140 180" style="width:30%; align-self:center;" role="img" aria-label="OZ">
+          <use href="#oz"/>
+        </svg>
+        <p class="small push">ozd is meant for a trusted network segment. <code>LOGIN</code> accepts any name and only records it; it is never a credential. So the address ozd listens on decides who can use it: without <code>--listen</code> only this host can, and with <code>0.0.0.0</code> every host that can reach it can. ozd has no TLS and does no routing.</p>
+      </div>
+
+      <div class="panel">
+        <p class="cap">What ozd holds to</p>
+        <p class="small">A pathname cannot climb out of its root: <code>..</code> and <code>.</code> are refused, not normalised. A symbolic link is followed only while it stays inside its own root, and a directory from elsewhere is mounted with <code>--root &lt;name&gt;=&lt;path&gt;</code>, never linked in.</p>
+        <p class="small">Anything that is not a regular file or a directory is refused, and a <code>,ro</code> root refuses every write before the disk is touched. ozd refuses to run as root, and needs no privilege: 42042 is an ordinary UDP port.</p>
+        <p class="cap">What the operator holds to</p>
+        <ol class="rules">
+          <li><b>The roots belong to ozd&rsquo;s own user, and nobody else writes to them.</b> A hard link inside a root to a file outside it looks like an ordinary file, and so does a bind mount. If only ozd&rsquo;s user can write to a root, neither can appear there.</li>
+          <li><b>One ozd per root, and each <code>,ro</code> root read-only on disk as well.</b> ozd checks a path and then opens it, which is safe only because nothing else writes to a root in between.</li>
+        </ol>
+      </div>
+    </div>
+
+    <footer class="wholine">
+      <div class="label">ozd &middot; Who can reach it</div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>06</span></div>
+    </footer>
+  </section>
+
+  <!-- ------------------------------------------------------- as a service -->
+  <section id="service" aria-label="As a service">
+    <div class="panel bare">
+      <span class="eyebrow">Daemon</span>
+      <h2 class="title t-l">As a service</h2>
+      <p class="small" style="margin-top:0.4rem;"><code>contrib/</code> has a systemd unit and a launchd daemon. Both run ozd as a user of its own, which owns the writable roots and nothing else. Neither has been tried on its system yet.</p>
+    </div>
+
+    <div class="panels two">
+      <div class="panel">
+        <div class="step-head"><h3>Linux, with systemd</h3></div>
+<pre class="term cmd">sudo contrib/install-systemd.sh</pre>
+        <p class="small">Build ozd first, and run the script from the source directory. It creates the <code>ozd</code> user and the base root <code>/srv/lispm</code>, installs the binary and the unit, writes <code>/etc/ozdrc</code> unless one exists, checks the flags and the roots as that user, and starts the service. With <code>--dry-run</code> it prints what it would do and changes nothing, which is all it has been checked with so far.</p>
+        <p class="small push">Edit <code>/etc/ozdrc</code> to suit your site, then <code>sudo systemctl restart ozd</code>. The log goes to the journal: <code>journalctl -u ozd</code>.</p>
+      </div>
+
+      <div class="panel">
+        <div class="step-head"><h3>macOS, with launchd</h3></div>
+<pre class="term cmd">sudo cp contrib/com.metebalci.ozd.plist /Library/LaunchDaemons/</pre>
+        <p class="small">Create a hidden system user named <code>_ozd</code> that owns the writable roots, for example with <code>dscl</code>. Install the binary as <code>/usr/local/bin/ozd</code> and the file of flags as <code>/usr/local/etc/ozdrc</code>, and copy the plist into place.</p>
+      </div>
+    </div>
+
+    <footer class="wholine">
+      <div class="label">ozd &middot; As a service</div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>07</span></div>
+    </footer>
+  </section>
+
+  <!-- --------------------------------------------------------- colophon -->
+  <section id="colophon" aria-label="Colophon">
+    <div class="panel bare">
+      <span class="eyebrow">End</span>
+      <h2 class="title t-m">Colophon</h2>
+    </div>
+
+    <div class="panels two end-split">
+      <div class="colophon">
+        <p>Every fact about a protocol is read from the Lisp Machine&rsquo;s own manual and sources: AIM-628, <code>sys/man/chaos.text</code>, <code>sys/doc/chfile.text</code> and the machine&rsquo;s network code. <a href="https://github.com/metebalci/ozd/blob/main/PROTOCOLS.md">PROTOCOLS.md</a> says where each one was read.</p>
+        <p>ozd is written in Rust with <a href="https://claude.com/claude-code">Claude Code</a>, and has no crate dependencies.</p>
+        <p><b>&copy; 2026 Mete Balci.</b> ozd is <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0-or-later</a>.</p>
+        <p>The drawing style, the palette, the panels and CADR are Cold Boot&rsquo;s, a manga-style zine about the CADR by the same author, under CC BY-SA 4.0. OZ is drawn for this page in the same hand.</p>
+        <div class="actions" style="margin-top:0.6rem;">
+          <a class="key" href="https://github.com/metebalci/ozd#readme">Read the README</a>
+          <a class="key lm" href="https://github.com/metebalci/ozd/blob/main/DESIGN.md">Design</a>
+          <a class="key lm" href="https://github.com/metebalci/ozd">Repository</a>
+        </div>
+      </div>
+
+      <div class="panel tone-pink center">
+        <svg class="chara" viewBox="0 0 290 184" style="width:88%;" role="img" aria-label="CADR and OZ, waving goodbye">
+          <use href="#cadr-body" x="4" y="34"/><use href="#face-happy" x="4" y="34"/><use href="#arm-wave" x="4" y="34"/>
+          <use href="#oz-wave" x="146" y="4"/>
+        </svg>
+        <p class="cap" style="align-self:center;">Thanks for reading.</p>
+      </div>
+    </div>
+
+    <footer class="wholine">
+      <div class="label">ozd &middot; Colophon</div>
+      <div class="bar"><span>09/15/26 10:00:00</span><span>USER:</span><span>Chaos Listen</span><span>08</span></div>
+    </footer>
+  </section>
+
+</div>
+
+</body>
+</html>

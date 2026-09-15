@@ -1,0 +1,540 @@
+/* SPDX-FileCopyrightText: 2026 Mete Balci */
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+/* ozd --- the site, drawn in Cold Boot's hand.
+
+   Cold Boot is a manga-style zine about the CADR by the same author. This
+   page is drawn the same way: riso black and one spot color, fluorescent
+   pink, on paper white, laid on a halftone desk. Every section is a plate of
+   paper: panels with a 3px ink border, a title in the display face with a
+   pink drop shadow --- a second drum printed a little out of register ---
+   and the Lisp Machine's own who-line ruled off at the foot.
+
+   No dark mode. Paper and ink is what this is, as the zine is, so the
+   stylesheet names one set of colors and the page keeps them in either
+   setting: a spot color printed on black is a different object.
+
+   Text sizes are all in rem, taken from the tokens below, and nothing here
+   styles `html`. The one exception is the diagram: the `d-*` rules give
+   their sizes in the drawing's own viewBox units, which are not page pixels
+   and do not scale with the reader's text size, because the picture scales
+   with its box instead. */
+
+/* The three families, served from this directory rather than from Google:
+   a visitor should not have to ask a third party for a page to be readable.
+   Dela Gothic One is the display face, Zen Maru Gothic the voice, IBM Plex
+   Mono the machine's own. All are under the SIL Open Font License 1.1, and
+   `fonts/README.md` says where each came from and how it was cut down.
+
+   Zen Maru Gothic is carried at 500 and 700 and no lighter: 500 is the
+   weight this page calls normal, as the zine does. */
+@font-face {
+  font-family: 'Dela Gothic One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/dela-gothic-one.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Maru Gothic';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('fonts/zen-maru-gothic-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Zen Maru Gothic';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('fonts/zen-maru-gothic-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/ibm-plex-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('fonts/ibm-plex-mono-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('fonts/ibm-plex-mono-600.woff2') format('woff2');
+}
+
+:root {
+  --ink: #141414;
+  --paper: #ffffff;
+  --spot: #ff48b0;        /* riso Fluorescent Pink */
+  --spot-tint: #ffd3ec;
+  --tone: rgba(20, 20, 20, 0.5);
+  --desk: #e6e0e4;
+
+  --display: "Dela Gothic One", "Noto Sans CJK JP", "Arial Black", sans-serif;
+  --voice: "Zen Maru Gothic", "Noto Sans CJK JP", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Every size on the page comes from one of these, so that a step up or
+     down is one edit and no rule invents a size of its own. */
+  --fs-body: 1.125rem;         /* running text */
+  --fs-small: 0.95rem;         /* captions, tables, the aside under a panel */
+  --fs-say: 1.06rem;           /* a speech bubble, which is set heavier */
+  --fs-lede: 1.24rem;          /* the line under the wordmark */
+  --fs-mono: 0.92rem;          /* inline code, the terminal blocks, the keys */
+  --fs-mono-small: 0.84rem;    /* eyebrows, the who-line, table headings */
+  --fs-cmd: 0.82rem;           /* a command line, which must not fold */
+  --fs-t-xl: clamp(4rem, 14vw, 7.8rem);   /* the wordmark */
+  --fs-t-l: 2.35rem;           /* a section's title */
+  --fs-t-m: 1.5rem;            /* a smaller one */
+  --fs-t-s: 1.18rem;           /* a heading inside a section, a contents line */
+  --fs-numeral: 2.9rem;        /* a figure printed as a picture of itself */
+  --fs-sfx: 2.7rem;            /* a sound effect */
+
+  /* A line of running text stops at 70 characters however wide the page is;
+     a bubble or a caption, which is read in a glance, stops sooner. What a
+     program printed is not running text and is not held to it. */
+  --measure: 70ch;
+  --measure-tight: 62ch;
+
+  --line: 3px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--voice);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink);
+  background-color: var(--desk);
+  background-image: radial-gradient(rgba(20, 20, 20, 0.13) 1px, transparent 1.4px);
+  background-size: 7px 7px;
+  padding-block: 1.5rem 3rem;
+  padding-inline: 1rem;
+  -webkit-text-size-adjust: 100%;
+}
+
+p { margin: 0; text-wrap: pretty; }
+a { color: inherit; text-decoration-color: var(--spot); text-decoration-thickness: 2px; text-underline-offset: 2px; }
+a:focus-visible { outline: 3px solid var(--spot); outline-offset: 3px; }
+
+/* Inline code is one size wherever it sits, not a fraction of its context:
+   a relative size compounds against every panel and produces sizes nobody
+   chose. */
+code { font-family: var(--mono); font-size: var(--fs-mono); font-weight: 400; white-space: nowrap; }
+
+/* ---------------------------------------------------------------- shell */
+
+/* One explicit column, not `auto`: an `auto` column takes the min-content
+   width of its widest section, and the diagram is 720px wide whatever the
+   screen is. With minmax(0, 1fr) the sections follow the viewport and the
+   diagram scrolls inside its own box. */
+.page {
+  max-width: 76rem;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.75rem;
+}
+
+.desk-note {
+  font-family: var(--mono);
+  font-size: var(--fs-mono-small);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  padding-inline: 0.15rem;
+  margin-bottom: 0.9rem;
+}
+.desk-note b { font-weight: 600; }
+
+/* Each section is paper on the halftone desk, with its panels above and the
+   machine's own status line ruled off at the foot. */
+.page > section {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  background: var(--paper);
+  padding: 1.25rem 1.25rem 0.8rem;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 14px 30px -18px rgba(40, 20, 35, 0.45);
+}
+
+.panels { display: grid; gap: 0.9rem; }
+.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wide { grid-column: 1 / -1; }
+/* Uneven splits, as classes rather than inline styles: an inline style would
+   outrank the narrow-screen rule below and keep two columns on a phone. */
+.serve-split { grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr); }
+.hub-split { grid-template-columns: minmax(0, 2.6fr) minmax(0, 1fr); }
+.end-split { grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr); }
+
+/* ---------------------------------------------------------------- panels */
+
+.panel {
+  position: relative;
+  min-width: 0;
+  border: var(--line) solid var(--ink);
+  background: var(--paper);
+  overflow: hidden;
+  padding: 0.8rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.panel.ink { background: var(--ink); color: var(--paper); }
+.panel.bare { border: 0; padding: 0; overflow: visible; }
+.panel.center { align-items: center; justify-content: center; text-align: center; }
+
+.tone { background-image: radial-gradient(var(--tone) 0.9px, transparent 1.2px); background-size: 5px 5px; }
+/* Running text on a halftone reads through the dots. Give it a plate of
+   paper to sit on, the width of the line and no more. */
+.panel.tone > .small, .panel.tone > .step-head {
+  background: var(--paper);
+  box-shadow: 0 0 0 0.25rem var(--paper);
+}
+.panel.tone > .step-head { align-self: flex-start; }
+.tone-pink { background-image: radial-gradient(var(--spot) 1.5px, transparent 1.8px); background-size: 7px 7px; }
+
+/* focus lines (manga 集中線) */
+.focus::before {
+  content: "";
+  position: absolute;
+  inset: -60%;
+  background: repeating-conic-gradient(from 3deg, var(--ink) 0deg 0.7deg, transparent 0.7deg 5.3deg);
+  -webkit-mask: radial-gradient(circle, transparent 24%, #000 60%);
+  mask: radial-gradient(circle, transparent 24%, #000 60%);
+  pointer-events: none;
+}
+.focus > * { position: relative; }
+
+/* ------------------------------------------------------------- lettering */
+
+.title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  line-height: 0.95;
+  text-wrap: balance;
+  text-shadow: 0.07em 0.05em 0 var(--spot);   /* second drum, slightly off */
+}
+.t-xl { font-size: var(--fs-t-xl); letter-spacing: -0.02em; line-height: 0.88; }
+.t-l { font-size: var(--fs-t-l); }
+.t-m { font-size: var(--fs-t-m); }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: var(--fs-mono-small);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  align-self: flex-start;
+  background: var(--spot);
+  color: var(--ink);
+  padding: 0.1rem 0.4rem;
+}
+
+.cap {
+  align-self: flex-start;
+  max-width: min(100%, var(--measure-tight));
+  background: var(--ink);
+  color: var(--paper);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  padding: 0.3rem 0.55rem;
+  text-wrap: pretty;
+}
+.cap.light { background: var(--paper); color: var(--ink); border: 2px solid var(--ink); }
+.cap.long { max-width: min(100%, var(--measure)); }
+.panel.ink .cap { background: var(--paper); color: var(--ink); }
+
+.say {
+  position: relative;
+  align-self: flex-start;
+  max-width: min(94%, var(--measure-tight));
+  background: var(--paper);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 1.4rem / 1.1rem;
+  padding: 0.5rem 0.9rem;
+  font-size: var(--fs-say);
+  font-weight: 700;
+  line-height: 1.35;
+  text-wrap: pretty;
+  margin-bottom: 0.75rem;
+}
+.say::before, .say::after {
+  content: "";
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 1.3rem;
+  width: 1.15rem;
+  height: 0.9rem;
+  background: var(--ink);
+  clip-path: polygon(0 0, 100% 0, 12% 100%);
+}
+.say::after {
+  top: calc(100% - 3px);
+  left: calc(1.3rem + 3px);
+  width: calc(1.15rem - 8px);
+  height: calc(0.9rem - 4px);
+  background: var(--paper);
+}
+.say.r { align-self: flex-end; }
+.say.r::before, .say.r::after { left: auto; right: 1.3rem; clip-path: polygon(0 0, 100% 0, 88% 100%); }
+.say.r::after { right: calc(1.3rem + 3px); }
+/* An aside in the same voice, set at the size of the text around it. */
+.say.quiet { font-size: var(--fs-small); }
+/* On an ink panel the bubble's tail is drawn in paper, or it vanishes. */
+.panel.ink .say::before { background: var(--paper); }
+
+.sfx {
+  font-family: var(--display);
+  font-size: var(--fs-sfx);
+  line-height: 1;
+  color: var(--spot);
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+  transform: rotate(-9deg);
+  white-space: nowrap;
+}
+.sfx small {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-mono);
+  color: var(--ink);
+  -webkit-text-stroke: 0;
+  letter-spacing: 0.12em;
+  text-align: right;
+}
+
+.vertical {
+  writing-mode: vertical-rl;
+  font-family: var(--display);
+  font-size: var(--fs-t-m);
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+@media (min-width: 52rem) { .vertical { font-size: var(--fs-numeral); } }
+
+.small { font-size: var(--fs-small); max-width: var(--measure); }
+.mono { font-family: var(--mono); }
+.lede { font-size: var(--fs-lede); font-weight: 700; max-width: 40rem; }
+.push { margin-top: auto; }
+
+.big-number {
+  font-family: var(--display);
+  font-size: var(--fs-numeral);
+  line-height: 0.95;
+  text-shadow: 0.06em 0.05em 0 var(--spot);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------- masthead and the keys */
+
+.masthead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1.25rem;
+  align-items: start;
+}
+.masthead-text { display: grid; gap: 0.85rem; justify-items: start; }
+
+/* links drawn as Lisp Machine keys */
+.actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.key {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: var(--fs-mono);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  background: var(--ink);
+  color: var(--paper);
+  border: 2px solid var(--ink);
+  border-bottom-width: 5px;
+  border-radius: 4px;
+  padding: 0.45rem 0.85rem 0.35rem;
+}
+.key.lm { background: var(--spot-tint); color: var(--ink); }
+.key:hover { background: var(--spot); color: var(--ink); }
+.key:active { border-bottom-width: 2px; translate: 0 3px; }
+
+/* The contents, with dotted leaders */
+.contents { display: grid; gap: 0.45rem; }
+.toc { margin: 0; padding: 0; list-style: none; display: grid; }
+.toc a {
+  display: grid;
+  grid-template-columns: 5.2rem minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding-block: 0.3rem 0.25rem;
+  border-bottom: 2px dotted var(--ink);
+  text-decoration: none;
+}
+.toc .tag, .toc .no { font-family: var(--mono); font-size: var(--fs-mono-small); font-variant-numeric: tabular-nums; }
+.toc .nm { font-family: var(--display); font-size: var(--fs-t-s); line-height: 1.2; }
+.toc a:hover .nm { background: var(--spot-tint); box-shadow: 0 0 0 0.15rem var(--spot-tint); }
+
+/* -------------------------------------------- characters, screens, blocks */
+
+.chara { display: block; width: 100%; height: auto; max-width: 100%; }
+figure { margin: 0; display: grid; gap: 0.5rem; }
+
+.term {
+  margin: 0;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: var(--fs-mono);
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 0.55rem 0.7rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.term b { color: var(--spot); font-weight: 400; }
+.term code { font-size: inherit; white-space: inherit; }
+.panel.ink .term { border: 2px solid var(--paper); }
+/* A command keeps the line breaks it was typed with, and where a line is
+   longer than its panel it folds at a space and never inside a flag, a path
+   or a URL --- a break mid-token reads as a typo. */
+.term.cmd {
+  white-space: pre-wrap;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  font-size: var(--fs-cmd);
+}
+
+.step-num {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  background: var(--spot);
+  border: 2px solid var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-mono);
+  flex: none;
+}
+.step-head { display: flex; align-items: center; gap: 0.5rem; }
+.step-head h3 { margin: 0; font-family: var(--display); font-weight: 400; font-size: var(--fs-t-s); line-height: 1.1; }
+
+/* ------------------------------------------------------------ the tables */
+
+/* A mono heading ruled off in ink, dotted rules between the rows, and the
+   row under the pointer tinted. */
+.tablewrap { overflow-x: auto; }
+
+table { width: 100%; min-width: 34rem; border-collapse: collapse; font-size: var(--fs-small); }
+th, td { text-align: left; padding: 0.35rem 1rem 0.3rem 0; vertical-align: top; }
+thead th {
+  font-family: var(--mono);
+  font-size: var(--fs-mono-small);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  border-bottom: var(--line) solid var(--ink);
+}
+tbody td { border-bottom: 2px dotted var(--ink); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: var(--spot-tint); }
+/* A contact name is printed as the display face prints a name, and its kind
+   as the machine writes it. */
+td.contact { font-family: var(--display); font-size: var(--fs-t-s); line-height: 1.2; white-space: nowrap; }
+td.kind { font-family: var(--mono); font-size: var(--fs-mono-small); white-space: nowrap; }
+
+/* ------------------------------------------------------------- the diagram */
+
+/* The diagram keeps its own minimum width and scrolls inside its box rather
+   than shrinking to illegibility. The sizes below are the drawing's own
+   viewBox units, not page pixels: the picture scales with its box. */
+.scroll { min-width: 0; overflow-x: auto; padding-bottom: 0.25rem; }
+.scroll svg { display: block; width: 100%; min-width: 720px; height: auto; }
+
+.d-box  { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.d-hub  { fill: var(--spot-tint); stroke: currentColor; stroke-width: 3; }
+.d-dash { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 6 5; }
+.d-line { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.d-wire { fill: none; stroke: currentColor; stroke-width: 4; }
+/* A ring round part of the picture, saying that what is inside it is there
+   only under a condition the label gives. */
+.d-ring { fill: none; stroke: currentColor; stroke-width: 1; opacity: .4; stroke-dasharray: 2 4; }
+.d-t { font: 500 14px var(--voice); fill: currentColor; }
+.d-s { font: 500 12px var(--voice); fill: currentColor; }
+.d-n { font: 400 12px var(--mono); fill: currentColor; }
+.d-big { font: 400 26px var(--display); fill: currentColor; }
+
+/* ---------------------------------------------------------------- lists */
+
+/* The flags: the name over what it does rather than beside it, because the
+   longest of them is wider than a column that would leave room to read. */
+dl.flags { margin: 0; }
+dl.flags > div { padding: 0.55rem 0; border-top: 2px dotted var(--ink); }
+dl.flags > div:first-child { border-top: 0; padding-top: 0; }
+dl.flags dt {
+  font-family: var(--mono);
+  font-size: var(--fs-mono);
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  background: var(--spot-tint);
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
+}
+dl.flags dd { margin: 0; font-size: var(--fs-small); max-width: var(--measure); }
+
+/* A rule the operator keeps, set as a numbered point because there are
+   exactly two and the page refers to them as a pair. */
+ol.rules { margin: 0; padding-left: 1.3rem; display: grid; gap: 0.5rem; font-size: var(--fs-small); max-width: var(--measure); }
+ol.rules b { font-weight: 700; }
+
+/* ---------------------------------------------- colophon and the who-line */
+
+.colophon { display: grid; gap: 0.4rem; font-size: var(--fs-small); max-width: var(--measure); align-content: start; }
+
+.wholine { font-family: var(--mono); font-size: var(--fs-mono-small); font-weight: 400; line-height: 1.2; margin-top: auto; }
+.wholine .label { padding-block: 0.1rem 0.15rem; }
+.wholine .bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.2rem 0.75rem;
+  border-top: 4px solid var(--ink);
+  padding-top: 0.15rem;
+  font-variant-numeric: tabular-nums;
+}
+.wholine .bar span:last-child { background: var(--spot); color: var(--ink); padding-inline: 0.35rem; }
+
+/* ------------------------------------------------------------------ narrow */
+
+/* The phone: every panel row becomes one column, panel under panel, and the
+   masthead's vertical caption steps out of the way. */
+@media screen and (max-width: 46rem) {
+  body { padding-inline: 1rem; }
+  .page > section { padding: 0.9rem 0.9rem 0.7rem; }
+  .panels { grid-template-columns: minmax(0, 1fr); }
+  .panel.wide, .panels > .panel { grid-column: auto; }
+  .masthead { grid-template-columns: minmax(0, 1fr); }
+  .masthead .vertical { display: none; }
+  .t-l { font-size: var(--fs-t-m); }
+  .sfx { font-size: var(--fs-t-m); }
+  /* Too narrow to fold a command at a space: every fold would land inside a
+     flag, which reads as a typo. So the box scrolls instead. */
+  .term.cmd { white-space: pre; }
+  .big-number { font-size: var(--fs-t-l); }
+  .toc a { grid-template-columns: 4rem minmax(0, 1fr) auto; }
+}
