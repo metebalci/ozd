@@ -172,7 +172,6 @@ code { font-family: var(--mono); font-size: var(--fs-mono); font-weight: 400; wh
 
 .panels { display: grid; gap: 0.9rem; }
 .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .wide { grid-column: 1 / -1; }
 /* Uneven splits, as classes rather than inline styles: an inline style would
    outrank the narrow-screen rule below and keep two columns on a phone. */
@@ -328,7 +327,6 @@ code { font-family: var(--mono); font-size: var(--fs-mono); font-weight: 400; wh
 @media (min-width: 52rem) { .vertical { font-size: var(--fs-numeral); } }
 
 .small { font-size: var(--fs-small); max-width: var(--measure); }
-.mono { font-family: var(--mono); }
 .lede { font-size: var(--fs-lede); font-weight: 700; max-width: 40rem; }
 .push { margin-top: auto; }
 
@@ -479,9 +477,6 @@ td.kind { font-family: var(--mono); font-size: var(--fs-mono-small); white-space
 .d-dash { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-dasharray: 6 5; }
 .d-line { fill: none; stroke: currentColor; stroke-width: 1.5; }
 .d-wire { fill: none; stroke: currentColor; stroke-width: 4; }
-/* A ring round part of the picture, saying that what is inside it is there
-   only under a condition the label gives. */
-.d-ring { fill: none; stroke: currentColor; stroke-width: 1; opacity: .4; stroke-dasharray: 2 4; }
 .d-t { font: 500 14px var(--voice); fill: currentColor; }
 .d-s { font: 500 12px var(--voice); fill: currentColor; }
 .d-n { font: 400 12px var(--mono); fill: currentColor; }

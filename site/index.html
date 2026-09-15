@@ -63,8 +63,8 @@
     </g>
     <g id="oz-wave"><use href="#oz"/><use href="#arm-wave" y="12"/></g>
 
-    <!-- muir-fpga: the CADR on an FPGA board, drawn for this page in the
-         same hand. The chip wears CADR's face; the DDR3 beside it, the
+    <!-- muir-fpga: the CADR on an FPGA board, drawn in the same hand for
+         muir-fpga's own site. The chip wears CADR's face; the DDR3 beside it, the
          Ethernet jack and the microSD slot are the parts muir-fpga's README
          names on its Arty Z7-20, and the mounting holes and the lights are any
          development board's. -->
@@ -114,7 +114,7 @@
 
     <div class="panels two">
       <div class="panel focus center" style="min-height: 19rem;">
-        <div class="sfx" style="position:absolute; top:0.8rem; left:0.8rem; z-index:2;">コンコン<small>KON KON</small></div>
+        <div class="sfx" style="position:absolute; top:0.8rem; left:0.8rem; z-index:2;" aria-hidden="true">コンコン<small>KON KON</small></div>
         <svg class="chara" viewBox="0 0 140 180" style="width:44%;" role="img" aria-label="OZ, a cabinet with horns, waving at whoever knocked">
           <use href="#oz-wave"/>
         </svg>
@@ -186,7 +186,7 @@
         <div class="tablewrap">
           <table>
             <thead>
-              <tr><th>Contact</th><th>Kind</th><th>What ozd answers</th><th>When a band asks</th></tr>
+              <tr><th scope="col">Contact</th><th scope="col">Kind</th><th scope="col">What ozd answers</th><th scope="col">When a band asks</th></tr>
             </thead>
             <tbody>
               <tr><td class="contact">STATUS</td><td class="kind">simple transaction</td><td>Its name, and the counters of its subnet</td><td><code>(hostat)</code>, which asks every host</td></tr>
@@ -306,7 +306,7 @@
         <div class="tablewrap">
           <table style="min-width:24rem;">
             <thead>
-              <tr><th>Addressed to</th><th>ozd</th></tr>
+              <tr><th scope="col">Addressed to</th><th scope="col">ozd</th></tr>
             </thead>
             <tbody>
               <tr><td><code>3060</code>, this host</td><td>answers it</td></tr>
@@ -445,7 +445,7 @@ FILE    / holds 2 directories and 1 file</pre>
     <div class="panel bare">
       <span class="eyebrow">Daemon</span>
       <h2 class="title t-l">As a service</h2>
-      <p class="small" style="margin-top:0.4rem;"><code>contrib/</code> has a systemd unit and a launchd daemon. Both run ozd as a user of its own, which owns the writable roots and nothing else. Neither has been tried on its system yet.</p>
+      <p class="small" style="margin-top:0.4rem;"><code>contrib/</code> has a systemd unit and a launchd daemon. Both run ozd as a user of its own, which owns the writable roots and nothing else. The systemd unit is in use; the launchd daemon has not been tried yet.</p>
     </div>
 
     <div class="panels two">
@@ -481,7 +481,7 @@ FILE    / holds 2 directories and 1 file</pre>
         <p>Every fact about a protocol is read from the Lisp Machine&rsquo;s own manual and sources: AIM-628, <code>sys/man/chaos.text</code>, <code>sys/doc/chfile.text</code> and the machine&rsquo;s network code. <a href="https://github.com/metebalci/ozd/blob/main/PROTOCOLS.md">PROTOCOLS.md</a> says where each one was read.</p>
         <p>ozd is written in Rust with <a href="https://claude.com/claude-code">Claude Code</a>, and has no crate dependencies.</p>
         <p><b>&copy; 2026 Mete Balci.</b> ozd is <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0-or-later</a>.</p>
-        <p>The drawing style, the palette, the panels and CADR are Cold Boot&rsquo;s, a manga-style zine about the CADR by the same author, under CC BY-SA 4.0. OZ and muir-fpga&rsquo;s board are drawn for this page in the same hand.</p>
+        <p>The drawing style, the palette, the panels and CADR are Cold Boot&rsquo;s, a manga-style zine about the CADR by the same author, under CC BY-SA 4.0. OZ is drawn for this page in the same hand, and muir-fpga&rsquo;s board for muir-fpga&rsquo;s own site.</p>
         <div class="actions" style="margin-top:0.6rem;">
           <a class="key" href="https://github.com/metebalci/ozd#readme">Read the README</a>
           <a class="key lm" href="https://github.com/metebalci/ozd">Repository</a>

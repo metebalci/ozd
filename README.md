@@ -13,10 +13,9 @@ as its CHUDP peer, just as MIT had one associated machine for many Lisp
 Machines.
 
 ozd serves STATUS, TIME, UPTIME, FILE, HOSTAB and NAME, and it passes
-packets between the machines on its subnet. None of this has been tried
-against a real band yet. The design is in `DESIGN.md`. Every protocol a
-Lisp Machine speaks is described in `PROTOCOLS.md`, together with where
-each fact comes from.
+packets between the machines on its subnet. The design is in
+`DESIGN.md`. Every protocol a Lisp Machine speaks is described in
+`PROTOCOLS.md`, together with where each fact comes from.
 
 ## Build
 
@@ -208,7 +207,8 @@ ordinary UDP port.
 `contrib/ozd.service` is a systemd unit, and
 `contrib/com.metebalci.ozd.plist` is a launchd daemon. Both run ozd as a
 user of its own, which owns the writable roots and nothing else, as the
-Security section asks. Neither has been tried on its system yet.
+Security section asks. The systemd unit is in use; the launchd daemon has
+not been tried yet.
 
 On Linux with systemd, `contrib/install-systemd.sh` does the whole
 installation. Build ozd first, and then run the script as root from this
