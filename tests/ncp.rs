@@ -598,6 +598,30 @@ fn a_late_packet_for_a_closed_connection_misses_the_next_one() {
     assert_eq!((los.opcode, los.dest_index), (op::LOS, 7), "no such connection, to its sender");
 }
 
+/// **A restarted host does not give out its last run's indexes.** A machine
+/// still holding a connection from this host's last run discards an RFC
+/// from the same index as a duplicate (AIM-628 §4.1), and FILE's data
+/// connections are this host's RFCs. The machine's own NCP met that on
+/// reload --- "it is exactly what happens with the file job connection!!"
+/// --- and seeds every slot's uniquizer from the clock at reset
+/// (`sys/network/chaos/chsncp.lisp`, `RESET`). [`Ncp::new`] seeds from the
+/// clock too, the slot its search starts at as well as the uniquizers, and
+/// [`Ncp::seeded`] takes the seed from the test: one seed gives out the same
+/// first index, and runs a nanosecond to a minute apart give out others.
+#[test]
+fn a_restarted_host_does_not_give_out_its_last_runs_indexes() {
+    const RUN: u64 = 1_757_950_000_000_000_000;
+    let first = |seed: u64| {
+        let mut h = Ncp::seeded(0o3060, seed);
+        h.connect(0, 0o3050, "FILE", Box::new(Recorder(Log::default()))).expect("an index")
+    };
+    let before = first(RUN);
+    assert_eq!(first(RUN), before, "one seed, one first index");
+    for later in [1, 2, 1_000, 60_000_000_000] {
+        assert_ne!(first(RUN + later), before, "a run {later} ns later");
+    }
+}
+
 /// **A full table takes no more connections**: with every index in use, a
 /// connection from this end is not made --- its session is told so, as a
 /// close --- and an RFC from the other end is refused with a CLS, rather

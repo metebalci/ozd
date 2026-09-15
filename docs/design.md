@@ -113,6 +113,16 @@ connection that has closed, such as a CLS that crossed this end's own,
 then finds no connection instead of the next one. When every slot is
 taken, an RFC is refused, and a connection from this end is not made.
 
+**A restart does not give out the last run's indexes.** A band that still
+holds a connection from this host's last run, closing it, discards an RFC
+from the same index as a duplicate (AIM-628 §4.1), and FILE's data
+connections are this host's RFCs. The machine's own NCP met this on reload
+and seeds every slot's uniquizer from the clock at reset (`chsncp.lisp`,
+`RESET`: "it is exactly what happens with the file job connection!!").
+`Ncp::new` does the same from the system clock, and starts its search for
+a free slot at a slot the clock gives as well, so two runs give out the
+same first index only one time in 65,472.
+
 ## 4. The loop
 
 ```text

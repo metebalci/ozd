@@ -24,6 +24,7 @@
 use crate::packet::{Framed, MAX_DATA, Packet};
 use std::collections::VecDeque;
 use std::fmt;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Packet opcodes, AIM-628 chapter 4, as `sys/network/chaos/chsncp.lisp`
 /// numbers them.
@@ -199,6 +200,11 @@ pub struct Ncp {
     /// Each slot's uniquizer, the bits of an index above its slot: one
     /// more each time the slot is given out.
     uniquizers: Vec<u16>,
+    /// What a slot's uniquizer starts at, before it is first given out:
+    /// this, plus the slot. From the seed ([`Ncp::seeded`]), as the
+    /// machine's own NCP starts each slot's at the clock plus the slot
+    /// (`sys/network/chaos/chsncp.lisp`, `RESET`).
+    uniquizer_base: u16,
     /// Where the search for a free slot starts: after the last slot given
     /// out.
     next_slot: usize,
@@ -244,13 +250,30 @@ pub struct Ncp {
 }
 
 impl Ncp {
+    /// The NCP at `address`, its indexes seeded from the system clock, so
+    /// that a restarted host does not give out its last run's
+    /// (`docs/design.md` §3).
     pub fn new(address: u16) -> Ncp {
+        let seed = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64);
+        Ncp::seeded(address, seed)
+    }
+
+    /// The NCP at `address`, its indexes seeded from `seed`: the slot the
+    /// search for a free one starts at, and each slot's first uniquizer. A
+    /// band holding a connection from this host's last run discards an RFC
+    /// from its index as a duplicate (AIM-628 §4.1); the machine's own NCP
+    /// met that on reload, and seeds its uniquizers from the clock at reset
+    /// (`sys/network/chaos/chsncp.lisp`, `RESET`). One seed gives out the
+    /// same indexes, which is what a test wants.
+    pub fn seeded(address: u16, seed: u64) -> Ncp {
+        let usable = (SLOTS - 1) as u64;
         Ncp {
             address,
             services: Vec::new(),
             conns: vec![None],
             uniquizers: vec![0],
-            next_slot: 1,
+            uniquizer_base: (seed / usable) as u16,
+            next_slot: (seed % usable) as usize + 1,
             out: VecDeque::new(),
             trace: false,
             window: 8,
@@ -325,7 +348,10 @@ impl Ncp {
             let s = (self.next_slot - 1 + k) % usable + 1;
             if s >= self.conns.len() {
                 self.conns.resize_with(s + 1, || None);
-                self.uniquizers.resize(s + 1, 0);
+                while self.uniquizers.len() <= s {
+                    let k = self.uniquizers.len() as u16;
+                    self.uniquizers.push(self.uniquizer_base.wrapping_add(k));
+                }
             }
             if self.conns[s].is_none() {
                 self.next_slot = s % usable + 1;
