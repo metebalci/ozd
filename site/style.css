@@ -177,7 +177,7 @@ code { font-family: var(--mono); font-size: var(--fs-mono); font-weight: 400; wh
 /* Uneven splits, as classes rather than inline styles: an inline style would
    outrank the narrow-screen rule below and keep two columns on a phone. */
 .serve-split { grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr); }
-.end-split { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.end-split { grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr); }
 
 /* ---------------------------------------------------------------- panels */
 
