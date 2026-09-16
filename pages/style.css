@@ -157,6 +157,12 @@ code { font-family: var(--mono); font-size: var(--fs-mono); font-weight: 400; wh
   margin-bottom: 0.9rem;
 }
 .desk-note b { font-weight: 600; }
+.desk-note a, .desk-note [aria-current="page"] { white-space: nowrap; }
+.desk-note [aria-current="page"] {
+  background: var(--spot);
+  box-shadow: 0 0 0 0.15rem var(--spot);
+  color: var(--ink);
+}
 
 /* Each section is paper on the halftone desk, with its panels above and the
    machine's own status line ruled off at the foot. */
