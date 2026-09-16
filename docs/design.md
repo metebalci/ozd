@@ -571,9 +571,11 @@ a System 100 site with them on one command line.
   `CHECK-THIS-SITE-INTEGRITY` says to fix the site files
   (`network/host.lisp:483`). The machine's own name is set in the band,
   in `SYS: SITE;`. What ozd adds is HOSTAB: with a `--host` here, every
-  band that asks can find that machine by name. It is unverified that
-  System 100's band knows `OZ`, the name its site option gives, as 3060.
-  The first HOSTAB test against a band will show it.
+  band that asks can find that machine by name. System 100's band knows
+  `OZ`, the name its site option gives, without asking: its host table
+  names `MIT-OZ` at 3060, nicknamed `OZ` (`site/hosts.text:4`), and the
+  compiled table it loads, `site/hsttbl.qfasl`, carries the same name and
+  address.
 - **Every machine names this host as its CHUDP peer and reaches the
   others through it** (§5). A machine whose CHUDP sends a unicast packet
   only to a peer named for its destination also names every other
