@@ -535,14 +535,22 @@ fn a_long_answer_is_cut_into_packets() {
     assert_eq!(host.chaos, [0o3052]);
 }
 
-/// **The client closes, and the connection ends at both ends.** The user
-/// end's stream is closed on the way out of `WITH-OPEN-STREAM`
-/// (`chuse.lisp:953`): an EOF, waited on until it is receipted, then a CLS
-/// with no reason (`BASIC-OUTPUT-STREAM :EOF` and `:BEFORE :CLOSE`,
-/// `BASIC-STREAM :CLOSE`, `chuse.lisp`). The service sends nothing for the
-/// EOF, and the CLS frees it. A client that aborts sends the CLS alone.
+/// **The client closes, and the connection ends at both ends.** The band's
+/// user end leaves `WITH-OPEN-STREAM` (`chuse.lisp:953`) by `(RETURN T)`
+/// (`:989`), before the macro marks its body finished
+/// (`sys2/lmmac.lisp:1264`), so its stream is closed with `:ABORT`: no EOF,
+/// and a CLS whose reason is `Aborted` (`BASIC-STREAM :CLOSE`, `:575`). A
+/// client that closes normally sends an EOF first (`BASIC-OUTPUT-STREAM
+/// :BEFORE :CLOSE`, `:647`), which draws nothing, then a CLS with no
+/// reason. The CLS frees the service either way.
 #[test]
 fn the_client_closing_ends_the_connection() {
+    let mut site = Asking::new(SITE);
+    site.ask("LM1");
+    assert_eq!(site.connections(), (1, 1), "open while it asks");
+    site.user.send(Out::Close("Aborted".into()));
+    site.shuttle();
+    assert_eq!(site.connections(), (0, 0), "closed at both ends, as a band closes");
     let mut site = Asking::new(SITE);
     site.ask("LM1");
     site.user.send(Out::Eof);
@@ -553,7 +561,7 @@ fn the_client_closing_ends_the_connection() {
     let mut site = Asking::new(SITE);
     site.user.send(Out::Close("Aborted".into()));
     site.shuttle();
-    assert_eq!(site.connections(), (0, 0), "aborted");
+    assert_eq!(site.connections(), (0, 0), "and aborted before asking anything");
 }
 
 /// **A host of the band's own table is answered as a `--host` is**
