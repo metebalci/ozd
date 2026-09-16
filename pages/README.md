@@ -1,4 +1,4 @@
-# site/
+# pages/
 
 This is the project page, served at
 [ozd.metebalci.com](https://ozd.metebalci.com) by GitHub Pages. Its files
@@ -24,7 +24,7 @@ and its custom domain is `ozd.metebalci.com`.
 To look at the page before pushing, open `index.html` in a browser, or
 serve the directory:
 
-    python3 -m http.server -d site 8000
+    python3 -m http.server -d pages 8000
 
 The fonts hold only the characters the page draws. A character outside
 that set is drawn in a fallback face, so adding one means cutting the
