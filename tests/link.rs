@@ -18,6 +18,7 @@ use ozd::daemon::Daemon;
 use ozd::ncp::op;
 use ozd::packet::Packet;
 use ozd::service::time::Time;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use support::{
     LM1, LM2, LM3, OZ, Recorder, TestHost, ask, daemon, datagram, hear, meters, packet, rfc,
@@ -206,6 +207,45 @@ fn a_packet_for_another_subnet_or_a_host_not_heard_from_reaches_nobody() {
         assert!(h.heard.is_empty(), "{:o} heard {:?}", h.ncp.address(), h.packets());
     }
     assert_eq!(meters(&d)[3] - dropped, 2, "both dropped, and counted");
+}
+
+/// **A packet for a host of this subnet that has never spoken writes a line
+/// of the log**, without `--trace`, and says what to do about it
+/// (`docs/design.md` §5, §10). It is the one drop whose cure is an action
+/// rather than a configuration: the host is reachable as soon as it sends
+/// anything. Every other drop stays silent --- a packet for another subnet
+/// is a drop by design, and logging it would bury this one.
+///
+/// **Rate-limited per destination**, so that a machine asking repeatedly
+/// cannot bury its own log: one line, then nothing for that destination
+/// until the repeat interval has passed.
+#[test]
+fn a_packet_for_a_host_never_heard_from_writes_one_line() {
+    let mut d = daemon(&site(""));
+    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let kept = lines.clone();
+    d.set_link_log(Some(Arc::new(move |line: &str| kept.lock().unwrap().push(line.into()))));
+    let mut lm1 = TestHost::new(LM1, d.at());
+    ask(&mut d, &mut lm1, 0, "STATUS");
+    assert!(lines.lock().unwrap().is_empty(), "nothing said for an ordinary exchange");
+    lm1.send_bytes(&datagram(&rfc(LM1, LM2, "TIME"), LM1));
+    settle(&mut d, &mut [&mut lm1], 10);
+    {
+        let said = lines.lock().unwrap();
+        assert_eq!(said.len(), 1, "one line: {said:?}");
+        let line = &said[0];
+        assert!(line.contains("3050"), "the host that asked: {line}");
+        assert!(line.contains("3051"), "the host that has not spoken: {line}");
+        assert!(line.contains("not been heard from"), "why it was dropped: {line}");
+        assert!(line.contains("sends anything"), "and the cure: {line}");
+    }
+    lm1.send_bytes(&datagram(&rfc(LM1, LM2, "TIME"), LM1));
+    settle(&mut d, &mut [&mut lm1], 20);
+    assert_eq!(lines.lock().unwrap().len(), 1, "the second is not said again");
+    // A packet for another subnet is a drop by design and says nothing.
+    lm1.send_bytes(&datagram(&rfc(LM1, ELSEWHERE, "TIME"), LM1));
+    settle(&mut d, &mut [&mut lm1], 30);
+    assert_eq!(lines.lock().unwrap().len(), 1, "another subnet is not this line's business");
 }
 
 /// **Nothing is sent back to the endpoint it came from.** Two hosts can

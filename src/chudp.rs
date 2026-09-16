@@ -318,6 +318,18 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
 ///
 /// Meter 1, `received`, counts every datagram; meter 2, `transmitted`,
 /// every datagram sent, this host's own and those passed on ([`Meters`]).
+///
+/// **One drop writes a line of the log whatever `--trace` says**: a packet
+/// for a host of this subnet that has never spoken (`docs/design.md` §10).
+/// Every other drop is the design working --- a packet for another subnet,
+/// or back where it came from --- and saying so would bury the one whose
+/// cure is an action.
+///
+/// How long before that line is worth saying again for the same
+/// destination: a machine asking repeatedly must not bury its own log, and
+/// one line then an occasional repeat says what a flood would.
+const UNHEARD_AGAIN_NS: u64 = 60_000_000_000;
+
 pub struct Link {
     socket: UdpSocket,
     /// Where the socket is bound, as the system bound it.
@@ -332,6 +344,13 @@ pub struct Link {
     /// Every packet, every packet passed on, and every drop with why,
     /// printed as they go by: `--trace` (`docs/design.md` §10).
     pub trace: bool,
+    /// The site's host table, for the names in the one line a drop writes.
+    pub names: Arc<crate::log::Names>,
+    /// Where that line goes, if anywhere.
+    pub log: Option<crate::log::Hook>,
+    /// When each destination was last written about, so that the line is
+    /// said once and then at most once every [`UNHEARD_AGAIN_NS`].
+    unheard: BTreeMap<u16, u64>,
 }
 
 /// Where a host's packets go.
@@ -356,7 +375,18 @@ impl Link {
             .map(|p| (p.address, Endpoint { at: p.endpoint, fixed: true }))
             .collect();
         let address = config.address;
-        Ok(Link { socket, at, address, endpoints, meters, waiting: None, trace: false })
+        Ok(Link {
+            socket,
+            at,
+            address,
+            endpoints,
+            meters,
+            waiting: None,
+            trace: false,
+            names: Arc::default(),
+            log: None,
+            unheard: BTreeMap::new(),
+        })
     }
 
     /// Where the socket is bound: a `listen` at port 0 is the port the
@@ -464,7 +494,10 @@ impl Link {
             return None;
         }
         match self.endpoint(dest) {
-            None => self.discard(now, format_args!("{source:o} -> {dest:o}: not heard from")),
+            None => {
+                self.unheard(now, source, dest);
+                self.discard(now, format_args!("{source:o} -> {dest:o}: not heard from"));
+            }
             Some(to) if to == from => self.discard(
                 now,
                 format_args!("{source:o} -> {dest:o}: at {from}, where it came from"),
@@ -488,6 +521,8 @@ impl Link {
             Some(e) if e.fixed || e.at == from => {}
             _ => {
                 self.endpoints.insert(source, Endpoint { at: from, fixed: false });
+                // It has spoken, so the next silence is worth saying again.
+                self.unheard.remove(&source);
                 self.traced(now, format_args!("{source:o} is at {from}"));
             }
         }
@@ -545,6 +580,28 @@ impl Link {
                 log::event(format_args!("chudp: to {to}: {e}"));
             }
         }
+    }
+
+    /// A packet for a host of this subnet that has never spoken, which is
+    /// the one drop worth a line of the log without `--trace`: its cure is
+    /// an action rather than a configuration, since the host is reachable
+    /// as soon as it sends anything, and nothing else tells anybody so.
+    /// The line names both ends and says what to do; it is written once for
+    /// a destination and then at most once every [`UNHEARD_AGAIN_NS`], so
+    /// that a machine asking repeatedly cannot bury it.
+    fn unheard(&mut self, now: u64, source: u16, dest: u16) {
+        let Some(log) = self.log.clone() else { return };
+        let said = self.unheard.get(&dest).copied();
+        if said.is_some_and(|then| now.saturating_sub(then) < UNHEARD_AGAIN_NS) {
+            return;
+        }
+        self.unheard.insert(dest, now);
+        let (from, to) = (self.names.host(source), self.names.host(dest));
+        log(&format!(
+            "dropped {from} -> {to}: {dest:o} has not been heard from since this run \
+             started, so there is nowhere to send it; it is reachable as soon as it \
+             sends anything"
+        ));
     }
 
     /// A packet dropped for anything but its length: meter 8, and why,
