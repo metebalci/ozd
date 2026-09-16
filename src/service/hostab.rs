@@ -79,11 +79,13 @@
 //! `UNIX-HOST` for `UNIX` (`sys/io/file/access.lisp:876-877`).
 //!
 //! **The connection stays open** for the next name until the client closes
-//! it. The user end closes on the way out of `WITH-OPEN-STREAM`: an EOF,
-//! waited on until it is receipted, then a CLS (`BASIC-OUTPUT-STREAM :EOF`
-//! and `:BEFORE :CLOSE`, `chuse.lisp:639`, `:647`; `BASIC-STREAM :CLOSE`,
-//! `:575`). The client's EOF says it has no more names and draws nothing;
-//! its CLS ends the session. A client that ended its lines with ASCII's CR
+//! it. The band's user end leaves `WITH-OPEN-STREAM` by `(RETURN T)`
+//! (`chuse.lisp:989`), before the macro marks its body finished
+//! (`sys2/lmmac.lisp:1264`), so it closes with `:ABORT`: no EOF, and a CLS
+//! whose reason is `Aborted` (`BASIC-STREAM :CLOSE`, `chuse.lisp:575`). A
+//! client that closes normally sends an EOF first (`BASIC-OUTPUT-STREAM
+//! :BEFORE :CLOSE`, `:647`), which draws nothing. Either way its CLS ends
+//! the session. A client that ended its lines with ASCII's CR
 //! or LF rather than 0o215 would never end one: no Lisp Machine does, and
 //! whether any other HOSTAB client did is **unverified**.
 

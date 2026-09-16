@@ -66,9 +66,11 @@ enum Heard {
 }
 
 /// The session the band's NCP holds for the user end: it writes down what
-/// it hears, and closes on the EOF if `closes` --- as `FINGER` does, whose
-/// input stream is closed on the way out of `WITH-OPEN-STREAM` with a CLS
-/// and no reason (`BASIC-STREAM :CLOSE`, `sys/network/chaos/chuse.lisp`).
+/// it hears, and closes on the EOF if `closes` --- as `FINGER` does, which
+/// leaves `WITH-OPEN-STREAM` by `(RETURN NIL)` once it has copied to the EOF
+/// (`chsaux.lisp:482`, `:500`). That exit is abnormal, so its stream is
+/// closed with `:ABORT` and its CLS says `Aborted` (`sys2/lmmac.lisp:1264`;
+/// `BASIC-STREAM :CLOSE`, `chuse.lisp:575`).
 struct Recorder {
     heard: Arc<Mutex<Vec<Heard>>>,
     closes: bool,
@@ -91,7 +93,7 @@ impl Session for Recorder {
     fn eof(&mut self, _now: u64) {
         self.note(Heard::Eof);
         if self.closes {
-            self.to_send.push(Out::Close(String::new()));
+            self.to_send.push(Out::Close("Aborted".into()));
         }
     }
     fn closed(&mut self, _now: u64, reason: &str) {
