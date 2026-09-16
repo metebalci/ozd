@@ -443,8 +443,27 @@ impl Ncp {
         // and all connections which are in the Open or RFC-received state,
         // to see if the source address and index match; if so, the RFC is
         // a duplicate and is discarded."
-        if self.conns.iter().flatten().any(|c| c.remote == from) {
-            return;
+        // A duplicate is an RFC the far end sent again because our OPN has
+        // not reached it: it carries the same packet number, and nothing
+        // has been received on the connection since. A connection that has
+        // taken a controlled packet past its own RFC cannot be hearing that
+        // RFC again --- the far end has restarted and is asking at the same
+        // index, which is what a rebooted band does, MINI's index being
+        // always 1 (`docs/protocols.md`, MINI). Then the old connection is
+        // closed and this RFC answered. A connection this end asked for is
+        // never replaced this way: its index is ours, not theirs.
+        let held = self
+            .conns
+            .iter()
+            .flatten()
+            .find(|c| c.remote == from)
+            .map(|c| (c.local, c.from_this_end, c.last_received));
+        if let Some((index, ours, last_received)) = held {
+            if ours || last_received == p.number {
+                return;
+            }
+            self.note(index, format_args!("closed, its host asked again at the same index"));
+            self.close(now, index, "Host restarted");
         }
         let text = String::from_utf8_lossy(&p.data).into_owned();
         let (name, args) = match text.split_once(' ') {

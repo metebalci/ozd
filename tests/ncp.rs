@@ -341,6 +341,48 @@ fn a_duplicate_rfc_is_discarded() {
     assert_eq!(h.connections(), 2);
 }
 
+/// **An RFC at an index this host holds, after that connection has taken a
+/// packet, opens a new connection.** AIM-628 §4.1 discards a duplicate
+/// RFC, and a duplicate is one the far end sent again because the OPN has
+/// not reached it: it carries the same packet number, and the connection
+/// has heard nothing since its own RFC. A connection that has taken a
+/// controlled packet past that RFC cannot be hearing it again --- the far
+/// end has restarted and is asking at the same index, which is what a
+/// rebooted band does, MINI's index being always 1 (`docs/protocols.md`,
+/// MINI). So the old connection is closed and the RFC is answered.
+#[test]
+fn an_rfc_at_a_held_index_after_traffic_opens_a_new_connection() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let me = (0o3050, 1);
+    h.receive(0, &arriving(&rfc(me, 0o3060, 1, "ECHO")));
+    let opn = next_from(&mut h, 0).expect("an OPN");
+    let first = opn.source_index;
+    h.receive(10, &arriving(&sts(me, (0o3060, first), 2, opn.number, 1)));
+    let dat = Packet {
+        opcode: op::DAT,
+        forward: 0,
+        dest: 0o3060,
+        dest_index: first,
+        source: me.0,
+        source_index: me.1,
+        number: 2,
+        ack: opn.number,
+        data: b"hello".to_vec(),
+    };
+    h.receive(20, &arriving(&dat));
+    while next_from(&mut h, 20).is_some() {}
+    assert_eq!(h.connections(), 1, "one connection, which has heard a packet");
+    // The band reboots: its indexes start again, so the RFC comes from the
+    // same index and numbered from 1, as the first one was.
+    h.receive(30, &arriving(&rfc(me, 0o3060, 1, "ECHO")));
+    let again = next_from(&mut h, 30).expect("an OPN, not a discarded duplicate");
+    assert_eq!(again.opcode, op::OPN);
+    assert_eq!((again.dest, again.dest_index), me);
+    assert_ne!(again.source_index, first, "a new index of this host's own");
+    assert_eq!(h.connections(), 1, "and the old connection is gone");
+}
+
 /// A service whose session has everything to say at once: three data
 /// packets and an EOF, all offered on its first poll.
 struct Burst;
