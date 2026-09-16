@@ -56,13 +56,22 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
 
 - `--address` and `--name` describe this host as the band's host table
   does: its address, its names with the official name first, and its
-  system type.
+  system type. On a System 100 band, keep every address below `140000`
+  octal: that release's routing table holds 96 subnets, and a band whose
+  own subnet is 96 or above stops during its network setup and then runs
+  on with no Chaosnet at all. System 304 holds 256 and does not mind.
 - `--root /srv/lispm` is the base root. It holds the users' home
   directories, and ozd writes to it.
 - `--root tree=...,ro` mounts the release's sources at `/tree`,
   read-only. That is where the band looks for them
   (`sys/site/sys.translations`). Every root must be an existing
   directory when ozd starts.
+- **Double the slashes in that translations file.** It is read in the
+  machine's traditional syntax, where a slash escapes the next character,
+  so a Unix path must be written `"//tree//sys//"` and not `"/tree/sys/"`,
+  and the file must not name a readtable. MIT never met this because
+  their translations named TOPS-20 paths. A cold load whose site file has
+  single slashes stops with its reader running off the end of the file.
 - A site can have mounts and no base root. `/` is then read-only and
   lists only the mounts. `LOGIN` gives each user a home directory,
   `/<user>/` in lower case. Without a base root that directory does not
