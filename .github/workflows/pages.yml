@@ -1,8 +1,8 @@
-# Publishes site/ to GitHub Pages.
+# Publishes pages/ to GitHub Pages.
 #
 # One-time setup, already done for this repository: Settings -> Pages ->
 # Build and deployment -> Source: "GitHub Actions", with the custom domain
-# ozd.metebalci.com. Nothing is built; site/ is uploaded as it is.
+# ozd.metebalci.com. Nothing is built; pages/ is uploaded as it is.
 
 name: pages
 
@@ -10,7 +10,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'site/**'
+      - 'pages/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -35,6 +35,6 @@ jobs:
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: site
+          path: pages
       - id: deployment
         uses: actions/deploy-pages@v5

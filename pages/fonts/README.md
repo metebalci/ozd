@@ -1,4 +1,4 @@
-# `site/fonts/`
+# `pages/fonts/`
 
 These are the three families the page uses. They are carried here so that
 reading the page asks nothing of a third party.
