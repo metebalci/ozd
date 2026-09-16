@@ -66,6 +66,10 @@ impl Daemon {
         ncp.log_simple = logging.simple;
         let names = Arc::new(names(config));
         ncp.names = names.clone();
+        // The switch's one unconditional line: a packet for a host of this
+        // subnet that has never spoken (`docs/design.md` §10).
+        link.names = names.clone();
+        link.log = Some(Arc::new(|line: &str| log::event(line)));
         for service in services(config, &meters, &tree, logging, &names) {
             ncp.serve(service);
         }
@@ -117,6 +121,14 @@ impl Daemon {
     /// it collects the NCP's through [`Ncp::log`].
     pub fn set_tcp_log(&mut self, log: Option<Hook>) {
         self.tcp_log = log;
+    }
+
+    /// Where the switch's own line goes --- a packet dropped for a host of
+    /// this subnet never heard from --- for a test to collect. The daemon
+    /// writes it to the log; it is not behind a flag, being the one drop
+    /// whose cure is an action (`docs/design.md` §10).
+    pub fn set_link_log(&mut self, log: Option<Hook>) {
+        self.link.log = log;
     }
 
     /// One turn of the loop at `now`, nanoseconds on the daemon's clock:

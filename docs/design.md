@@ -482,6 +482,14 @@ be given more than once, one listener an endpoint.
   it (§10). The NCP's own lines for the stream are written as they are
   for any connection.
 
+**Addresses at a System 100 site.** That release's routing table holds 96
+subnets (`chsncp.lisp:253`), and its `RESET-ROUTING-TABLE` writes at the
+band's own subnet without testing it, so a band on subnet 96 or above
+traps there at cold boot and then runs on with no NCP at all --- measured
+on a board, in an emulator, and from the source. So keep `--address` and
+every `--host` below `140000` octal at such a site; System 304's table
+holds 256 and does not care.
+
 **The band's own host table.** `--hosts-text <file>` names
 `sys/site/hosts.text`, the file a site already keeps for its machines, and
 HOSTAB answers for the hosts in it as well. Its `HOST` lines are read as the
@@ -617,6 +625,21 @@ a System 100 site with them on one command line.
 - **`--log-file-probe`** adds a line for each FILE `PROBE`. A band probes
   far more often than it reads, before a read and through a compile, and
   serves no file by it, so it is asked for on its own.
+- **One drop of the switch's writes a line whatever the flags say**: a
+  packet for a host of this subnet that has never spoken, `dropped 3050
+  (MIT-LISPM-1) -> 3051 (?): 3051 has not been heard from since this run
+  started, so there is nowhere to send it; it is reachable as soon as it
+  sends anything`. It is the only drop whose cure is an action rather than
+  a configuration --- the host is reachable the moment it sends anything
+  --- and without the line the symptom is "host not responding" at the
+  machine that asked and silence here, which reads as ozd being down. A
+  band that never initialises its NCP, a machine that has not spoken since
+  ozd restarted, and one deliberately quiet during a migration all arrive
+  at that same silence. Written once for a destination and then at most
+  once a minute, so that a machine asking repeatedly cannot bury it, and
+  forgotten when that host is heard from. Every other drop stays silent,
+  since a packet for another subnet is the design working and would bury
+  this one.
 - **`--log-mini`** adds a line for each MINI open, in the shape of a
   connection's lines: `MINI from 3050 (MIT-LISPM-1) read
   /tree/sys/sys2/defsel.qfasl` for a file sent, or `MINI from 3050
