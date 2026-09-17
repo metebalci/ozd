@@ -61,7 +61,11 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   own subnet is 96 or above stops during its network setup and then runs
   on with no Chaosnet at all. System 304 holds 256 and does not mind.
 - `--root /srv/lispm` is the base root. It holds the users' home
-  directories, and ozd writes to it.
+  directories, and ozd writes to it. `LOGIN` gives each user the home
+  directory `/<user>/` in lower case, so the user LISPM's is
+  `/srv/lispm/lispm/`. **Create it and make it writable**: ozd does not
+  create it, and a band that compiles a system writes its compiler
+  warnings there and stops with "Access to file denied" if it cannot.
 - `--root tree=...,ro` mounts the release's sources at `/tree`,
   read-only. That is where the band looks for them
   (`sys/site/sys.translations`). Every root must be an existing
@@ -73,9 +77,8 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   their translations named TOPS-20 paths. A cold load whose site file has
   single slashes stops with its reader running off the end of the file.
 - A site can have mounts and no base root. `/` is then read-only and
-  lists only the mounts. `LOGIN` gives each user a home directory,
-  `/<user>/` in lower case. Without a base root that directory does not
-  exist, unless a writable mount has the same name. For example,
+  lists only the mounts. A user's home directory then does not exist,
+  unless a writable mount has its name. For example,
   `--root lispm=/srv/lispm` becomes the home of the user LISPM.
 - `--host` adds a machine to the host table that HOSTAB answers from.
   Bands whose own table does not know the machine can then find it by

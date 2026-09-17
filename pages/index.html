@@ -399,7 +399,7 @@ cargo build --release</pre>
         <p class="small">System 100&rsquo;s host table lists the Lisp Machine as MIT-LISPM-1 at 3050 and its file and time host as MIT-OZ at 3060, so ozd takes that address and those names. Every root must be an existing directory when ozd starts.</p>
         <dl class="flags">
           <div><dt>--address, --name</dt><dd>This host as the band&rsquo;s host table has it: its address, its names with the official one first, and its system type.</dd></div>
-          <div><dt>--root /srv/lispm</dt><dd>The base root. It holds the users&rsquo; home directories, and ozd writes to it.</dd></div>
+          <div><dt>--root /srv/lispm</dt><dd>The base root. It holds the users&rsquo; home directories, and ozd writes to it. Each user&rsquo;s is <code>/&lt;user&gt;/</code> in lower case: create it and make it writable, or a band that compiles stops with "Access to file denied".</dd></div>
           <div><dt>--root tree=...,ro</dt><dd>The release&rsquo;s sources, mounted read-only at <code>/tree</code>, which is where the band looks for them.</dd></div>
           <div><dt>--host, --hosts-text</dt><dd>Machines for HOSTAB to answer for, one flag each, or a band&rsquo;s own <code>hosts.text</code>, so that a band whose table lacks a machine can still find it by name.</dd></div>
           <div><dt>--listen</dt><dd>Where ozd answers. Without it, <code>127.0.0.1:42042</code>, which only this host can reach.</dd></div>
