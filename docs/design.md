@@ -396,7 +396,9 @@ ozd serves seven protocols (`docs/protocols.md`).
   cold load reads the same roots that its band later reads through FILE.
   A machine rebooted within three minutes of its last MINI connection
   sends its RFC from the same index, 1, and the RFC is discarded as a
-  duplicate until that connection is given up (§4).
+  duplicate until that connection is given up (§4). A `204`, which is not
+  MIT's opcode, is a line for this host's log: it is written whatever the
+  flags say (§10) and answered with a `203`, so that no file follows.
 - **HOSTAB** looks up each line that the client sends, ignoring case,
   among this host's names, every `--host`'s names, and the names of every
   host of the table `--hosts-text` names (§8). For a match, it
@@ -642,6 +644,14 @@ a System 100 site with them on one command line.
   forgotten when that host is heard from. Every other drop stays silent,
   since a packet for another subnet is the design working and would bury
   this one.
+- **A MINI report writes a line whatever the flags say**: `MINI from 3050
+  (MIT-LISPM-1) report: script-begins`. A cold load running a script has no
+  other way to say how far it has got, and unlike an open --- of which
+  there are a couple of hundred in a boot --- it is the one thing the
+  machine chose to say, so a flag would hide the only message it can send.
+  The message is the machine's own text, so its control characters, its
+  newline at `215` among them, are written as spaces and the line stays one
+  line.
 - **`--log-mini`** adds a line for each MINI open, in the shape of a
   connection's lines: `MINI from 3050 (MIT-LISPM-1) read
   /tree/sys/sys2/defsel.qfasl` for a file sent, or `MINI from 3050
@@ -733,7 +743,9 @@ clock that it sets.
     words; a text file in the machine's character set; one file after
     another on one connection; a lose with its newline for a missing
     file, a pathname outside the root, a directory and a FIFO, the
-    connection staying open; and an open sent again answered once.
+    connection staying open; an open sent again answered once; and a
+    report logged whatever `--log-mini` says, answered with a lose, its
+    newline written as a space.
 
 **The acceptance test** is done by hand. ozd runs with the System 100
 site that the README configures, its `tree` mount pointing at the

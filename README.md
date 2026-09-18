@@ -97,7 +97,9 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   login, with the address of the machine that asked. `--log-file-probe`
   writes one for each FILE probe, which a band makes far more often than it
   reads. `--log-mini` writes one for each file a cold load reads through
-  MINI, and one for each it is refused. `--log-tcp` writes one when a
+  MINI, and one for each it is refused; a cold load that reports its
+  progress through MINI is logged without it, being the one thing such a
+  machine can say. `--log-tcp` writes one when a
   `--tcp` connection opens and one when it closes. Without them, a machine's whole boot leaves one line in the
   log, the connection it opened. A line names a machine by its address and
   by its name in the host table, or `(?)` when the table does not have it.
@@ -187,6 +189,14 @@ System 100's names 3060, so an ozd at 3060 serves it as it is. System
 304's takes the address of the host that `SYS:` translated to when it was
 compiled, so a cold load built from files compiled against ozd reads
 from ozd (`docs/protocols.md`, MINI).
+
+A cold load has no other network, so it cannot say how it is getting on.
+ozd therefore takes one opcode that MIT's MINI does not, `204`, a line for
+this host's log, so that a machine building a world unattended reports its
+progress where an operator can read it. The line is written whatever the
+logging flags say. No band sends it unless its own cold load was built to,
+and a band that expects a server without it stops reporting rather than
+wait (`docs/protocols.md`, MINI).
 
 ozd does no routing, so it cannot connect a site to the Global
 Chaosnet. A site that wants that runs `cbridge`, the Chaosnet bridge, as
