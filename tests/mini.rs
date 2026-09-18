@@ -175,6 +175,24 @@ impl Machine {
         (reply.opcode, lispm::from_bytes(before), lispm::from_bytes(after))
     }
 
+    /// `MINI-REPORT`: a line for the server's log, the message its data and
+    /// no newline (**(LMZ)** `cold/mini.lisp:390`). ozd's reply is a lose,
+    /// so that no file follows, and it is receipted as an open's reply is.
+    /// The machine takes any answer as the packet having arrived and reads
+    /// none of it (`:390`-`:406`); the split here is the test's, holding
+    /// ozd's answer to the shape an open's reply has.
+    fn report(&mut self, message: &str) -> (u8, String, String) {
+        self.send(mini::REPORT, lispm::lispm_text(message));
+        let reply = self.next();
+        self.taken = reply.number;
+        self.out = self.out.wrapping_add(1);
+        self.sts();
+        let newline = reply.data.iter().position(|&b| b == NEWLINE);
+        let cr = newline.expect("a newline in the reply, where the machine splits it");
+        let (before, after) = (&reply.data[..cr], &reply.data[cr + 1..]);
+        (reply.opcode, lispm::from_bytes(before), lispm::from_bytes(after))
+    }
+
     /// The file, read to its EOF as `MINI-BINARY-STREAM` and
     /// `MINI-ASCII-STREAM` read it (`MINI-CLOSE`): an STS before each packet
     /// waited for, and one for the EOF. Each packet's opcode and data.
@@ -340,7 +358,7 @@ fn an_open_sent_again_gets_one_reply() {
 /// connection's lines: the contact, the machine, and then `read` and the
 /// pathname for a file sent, or `refused`, the pathname and the message for
 /// a lose --- which is where a cold load stops. Without `--log-mini` MINI
-/// writes nothing at all.
+/// writes nothing but a report.
 #[test]
 fn log_mini_writes_a_line_for_each_open() {
     let dir = world("log");
@@ -369,5 +387,44 @@ fn log_mini_writes_a_line_for_each_open() {
         } else {
             assert!(lines.is_empty(), "nothing without --log-mini: {lines:?}");
         }
+    }
+}
+
+/// **A report is a line for the log whatever the flags say.** A cold load
+/// that runs a script through MINI has no other way to say how far it got,
+/// and it sends the line as `204` (`docs/protocols.md`, MINI). ozd writes
+/// it whether or not `--log-mini` is set: it is the one thing the machine
+/// chose to send, where an open is one of a couple of hundred. It is
+/// answered with a `203`, a message and the machine's newline, so that the
+/// machine knows it arrived and no file follows. A log line is one line, so
+/// the machine's own newline in a report --- and every other control
+/// character --- is written as a space. The connection then serves the next
+/// open.
+#[test]
+fn a_report_is_a_line_for_the_log_whatever_the_flags_say() {
+    let dir = world("report");
+    let root = dir.join("root");
+    put(&root, "one.text", b"one\n");
+    for log_mini in [true, false] {
+        let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+        let kept = lines.clone();
+        let log: ozd::log::Hook =
+            Arc::new(move |line: &str| kept.lock().unwrap().push(line.into()));
+        let mut service = serving(&root, Some(log));
+        service.log_mini = log_mini;
+        let mut m = Machine::connect(service);
+        let (opcode, message, rest) = m.report("COLDRUN: form-3");
+        assert_eq!(opcode, mini::LOSE, "a lose, so that no file follows");
+        assert_eq!((message.as_str(), rest.as_str()), ("noted", ""), "a message, then the newline");
+        assert_eq!(m.oz_next(), None, "nothing after the lose");
+        let newline = char::from(NEWLINE);
+        m.report(&format!("two{newline}lines"));
+        assert_eq!(
+            *lines.lock().unwrap(),
+            ["MINI from 3050 (?) report: COLDRUN: form-3", "MINI from 3050 (?) report: two lines",],
+            "a line each, whatever --log-mini says"
+        );
+        assert_eq!(m.open("/one.text", false).0, mini::WIN, "the connection still serves");
+        assert_eq!(m.read(), [(CHARACTER_OP, lispm::to_lispm(b"one\n"))]);
     }
 }

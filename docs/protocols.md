@@ -14,7 +14,10 @@ is one such case.
 
 Paths below are under System 100's `system-100-0/sys/`, with its line
 numbers. Paths marked **(304)** are under System 304's
-`system-304-0/sys-304-0/`.
+`system-304-0/sys-304-0/`. Paths marked **(LMZ)** are LMZ's fork of the
+sources, in its System 1001, where its cold load's MINI sends an opcode
+MIT's does not (§MINI); they were read in that project and reported, and
+are the one thing here that was not read from a release.
 
 - `man/chaos.text`, chapter *The Chaosnet*, section *Higher-Level
   Protocols*, is the manual. It is cited below as §*Name*.
@@ -176,7 +179,27 @@ ones in the server's own header (`cold/minisr.mid:7`):
 | characters | server | `200` | the file |
 | binary | server | `300` | the file in 16-bit words |
 | end of file | server | `EOF` | nothing |
+| report | machine | `204` | a line for the server's log **(LMZ)** |
 
+- **`204` is not MIT's**, whose server knows the seven opcodes above and
+  no other. A cold load that runs a script --- `SYS: COLD; COLDRUN LISP`
+  (**(LMZ)** `cold/mini.lisp:378`), opened by `MINI-RUN-SCRIPT` (`:408`)
+  from `LISP-REINITIALIZE` where `PRINT-HERALD` is still unbound, so that
+  only a cold load runs it (`sys/ltop.lisp:355`) --- has no other way to
+  say how far it has got: MINI only reads, and a cold load has no NCP, no
+  FILE and no TELNET. It reports `script-begins`, `form-N` before each
+  form, and `script-ends`, each as plain characters with no newline. It
+  needs a reply, to know that the packet arrived, and ozd answers a `203`
+  so that no file follows. **That reply is not parsed**: `MINI-REPORT`
+  takes any answer as the packet having arrived, receipts it and returns
+  (**(LMZ)** `:390`-`:406`), so the bullet below is `MINI-OPEN-FILE`'s
+  alone. ozd answers `noted` and the newline all the same, the newline
+  costing one byte and a reply with none being what signals an error in
+  an open. A server that does not know `204` says
+  nothing: the machine tries three times, then reports no more for the
+  rest of the boot (`MINI-REPORT`, `:390`, and `MINI-REPORTING-P`,
+  `:382`) rather than retransmit for ever, so an old server leaves a gap
+  in the log and not an error.
 - **The machine splits a reply at its first newline**
   (`cold/mini.lisp:113`), so a reply without one signals an error in the
   cold load. The server writes the date as `MM/DD/YY HH:MM:SS`

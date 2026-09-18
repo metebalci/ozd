@@ -24,11 +24,17 @@
 //!   packets of 16-bit words, and then an EOF. The machine then opens the
 //!   next file on the same connection, which it never closes.
 //!
+//! **And one opcode that is not MIT's**: `204`, a line for this server's
+//! log, which a cold load running a script sends because MINI only reads
+//! and it has no other network (`docs/protocols.md`, MINI). ozd writes it
+//! to the log whatever the flags say and answers a lose, so that no file
+//! follows.
+//!
 //! **Containment** is FILE's reading: each name is resolved in the
 //! [`Tree`], and only a regular file is read (`docs/design.md` §6). MINI
 //! only reads, so a read-only root serves it whole.
 
-use crate::lispm::{NEWLINE, from_bytes, lispm_text, to_lispm};
+use crate::lispm::{NEWLINE, from_bytes, from_lispm, lispm_text, to_lispm};
 use crate::log::{Hook, Names};
 use crate::ncp::{Out, Response, Service, Session};
 use crate::packet::MAX_DATA;
@@ -48,11 +54,15 @@ pub const BINARY_OPEN: u8 = 0o201;
 pub const WIN: u8 = 0o202;
 /// The open lost: a message and the newline.
 pub const LOSE: u8 = 0o203;
+/// A line for the log, the message its data: a cold load running a script
+/// says how far it has got. Not MIT's opcode; answered with a [`LOSE`], so
+/// that no file follows.
+pub const REPORT: u8 = 0o204;
 
 /// The service: the [`Tree`], read.
 pub struct Mini {
     tree: Arc<Tree>,
-    /// Where each open is written, if anywhere.
+    /// Where a line is written, if anywhere.
     log: Option<Hook>,
     /// `--log-mini`: a line for each open, the file read or the reason it
     /// was refused (`docs/design.md` §10).
@@ -64,8 +74,8 @@ pub struct Mini {
 
 impl Mini {
     /// A service over `tree`, answering every host that reaches it, as FILE
-    /// does (`docs/design.md` §6). Each open is written to `log` where
-    /// [`Mini::log_mini`] asks for it.
+    /// does (`docs/design.md` §6). A report is written to `log`, and each
+    /// open where [`Mini::log_mini`] asks for it.
     pub fn new(tree: Arc<Tree>, log: Option<Hook>) -> Mini {
         Mini { tree, log, log_mini: false, names: Arc::default() }
     }
@@ -77,16 +87,20 @@ impl Service for Mini {
     }
     fn request(&mut self, _now: u64, _args: &str, from: (u16, u16)) -> Response {
         let head = format!("{CONTACT} from {}", self.names.host(from.0));
-        let log = if self.log_mini { self.log.clone().map(|hook| (hook, head)) } else { None };
-        Response::Accept(Box::new(Reader { tree: self.tree.clone(), log, out: Vec::new() }))
+        let log = self.log.clone().map(|hook| (hook, head));
+        let tree = self.tree.clone();
+        Response::Accept(Box::new(Reader { tree, log, log_mini: self.log_mini, out: Vec::new() }))
     }
 }
 
 /// One machine's connection.
 struct Reader {
     tree: Arc<Tree>,
-    /// Where each open is written, and what its line begins with.
+    /// Where a line is written, and what it begins with.
     log: Option<(Hook, String)>,
+    /// `--log-mini`, which is the opens alone: a report is written without
+    /// it.
+    log_mini: bool,
     /// What is to go down the connection, in order.
     out: Vec<Out>,
 }
@@ -143,21 +157,49 @@ impl Reader {
             .map_err(|_| "Access to file denied".into())
     }
 
-    /// Writes what came of an open, where `--log-mini` asks.
+    /// A [`REPORT`]: the machine's line goes to the log whatever the flags
+    /// say, since it is the one thing the machine chose to send, and it is
+    /// answered with a lose --- so that the machine knows it arrived, and no
+    /// file follows.
+    fn report(&mut self, bytes: &[u8]) {
+        self.line(format_args!("report: {}", one_line(bytes)));
+        let mut answer = lispm_text("noted");
+        answer.push(NEWLINE);
+        self.out.push(Out::DataOp(LOSE, answer));
+    }
+
+    /// Writes what came of an open, where `--log-mini` asks: a cold load
+    /// opens a couple of hundred files, which is why it is a flag.
     fn note(&self, what: fmt::Arguments) {
+        if self.log_mini {
+            self.line(what);
+        }
+    }
+
+    /// One line of the log, where there is one to write to.
+    fn line(&self, what: fmt::Arguments) {
         if let Some((hook, head)) = &self.log {
             hook(&format!("{head} {what}"));
         }
     }
 }
 
+/// A report's message on one line of the log: the machine's characters as
+/// Unix's, and every control character among them --- the machine's own
+/// newline at `215` first of all --- a space. A line of the log is one line
+/// ([`crate::log::event`]), and what the machine sends is its own text.
+fn one_line(bytes: &[u8]) -> String {
+    from_bytes(&from_lispm(bytes)).chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
+}
+
 impl Session for Reader {
-    /// An open. The machine sends nothing else, and anything else is passed
-    /// over.
+    /// An open, or a report. The machine sends nothing else, and anything
+    /// else is passed over.
     fn data(&mut self, _now: u64, op: u8, bytes: &[u8]) {
         let characters = match op {
             CHARACTER_OPEN => true,
             BINARY_OPEN => false,
+            REPORT => return self.report(bytes),
             _ => return,
         };
         self.open(&from_bytes(bytes), characters);
