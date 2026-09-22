@@ -646,9 +646,22 @@ a System 100 site with them on one command line.
   ozd restarted, and one deliberately quiet during a migration all arrive
   at that same silence. Written once for a destination and then at most
   once a minute, so that a machine asking repeatedly cannot bury it, and
-  forgotten when that host is heard from. Every other drop stays silent,
-  since a packet for another subnet is the design working and would bury
-  this one.
+  forgotten when that host is heard from. Every other drop of the switch's
+  stays silent, since a packet for another subnet is the design working and
+  would bury this one.
+- **A datagram that cannot be read writes a line whatever the flags say**:
+  `refused a datagram from 192.0.2.10:42043: a data count of 1536, and the
+  most is 488; nothing that endpoint sends can be read here, so the two
+  ends may be framing CHUDP differently`. It is the other silence that
+  reads as the service being down, and it is not a drop of the switch's:
+  the datagram never became a packet, so `unwrap` refused it, the meters
+  counted it and until this line nothing else said so. Two ends that frame
+  CHUDP differently therefore threw each other's datagrams away for twelve
+  minutes on 2026-09-20, the far end's log naming the fault in every line
+  while this one said only that nothing had been heard from the machine.
+  Written once per sender and then at most once a minute, and forgotten
+  when something from that endpoint reads, so a peer that recovers and
+  fails again is worth a second line.
 - **A MINI report writes a line whatever the flags say**: `MINI from 3050
   (MIT-LISPM-1) report: script-begins`. A cold load running a script has no
   other way to say how far it has got, and unlike an open --- of which

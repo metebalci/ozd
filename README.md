@@ -101,7 +101,11 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   progress through MINI is logged without it, being the one thing such a
   machine can say, as is an operation ozd does not know. `--log-tcp` writes one when a
   `--tcp` connection opens and one when it closes. Without them, a machine's whole boot leaves one line in the
-  log, the connection it opened. A line names a machine by its address and
+  log, the connection it opened. Two lines are written whatever the flags
+  say, because nothing else would mention them: a packet dropped for a
+  machine that has not spoken since ozd started, and a datagram ozd cannot
+  read at all, which is what two ends framing CHUDP differently look like
+  from here. A line names a machine by its address and
   by its name in the host table, or `(?)` when the table does not have it.
 - `--listen` sets where ozd answers. Without it, ozd listens on
   `127.0.0.1:42042`, which only this host can reach. Give an address on

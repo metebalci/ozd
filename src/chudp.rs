@@ -325,10 +325,12 @@ pub fn unwrap(datagram: &[u8]) -> Result<Framed, String> {
 /// or back where it came from --- and saying so would bury the one whose
 /// cure is an action.
 ///
-/// How long before that line is worth saying again for the same
-/// destination: a machine asking repeatedly must not bury its own log, and
-/// one line then an occasional repeat says what a flood would.
-const UNHEARD_AGAIN_NS: u64 = 60_000_000_000;
+/// How long before a line of this kind is worth saying again about the
+/// same host or endpoint: a machine asking repeatedly must not bury its
+/// own log, and one line then an occasional repeat says what a flood
+/// would. Both unconditional lines keep to it --- [`Link::unheard`] per
+/// destination, [`Link::refused`] per sender.
+const SAID_AGAIN_NS: u64 = 60_000_000_000;
 
 pub struct Link {
     socket: UdpSocket,
@@ -349,8 +351,12 @@ pub struct Link {
     /// Where that line goes, if anywhere.
     pub log: Option<crate::log::Hook>,
     /// When each destination was last written about, so that the line is
-    /// said once and then at most once every [`UNHEARD_AGAIN_NS`].
+    /// said once and then at most once every [`SAID_AGAIN_NS`].
     unheard: BTreeMap<u16, u64>,
+    /// Endpoints whose last datagram `unwrap` refused, and when that was
+    /// said: one line each and then at most once every [`SAID_AGAIN_NS`],
+    /// forgotten when something from that endpoint reads.
+    refusals: BTreeMap<SocketAddr, u64>,
 }
 
 /// Where a host's packets go.
@@ -386,6 +392,7 @@ impl Link {
             names: Arc::default(),
             log: None,
             unheard: BTreeMap::new(),
+            refusals: BTreeMap::new(),
         })
     }
 
@@ -455,9 +462,11 @@ impl Link {
                 };
                 meter.fetch_add(1, Ordering::Relaxed);
                 self.traced(now, format_args!("from {from}: dropped: {why}"));
+                self.refused(now, from, &why);
                 return None;
             }
         };
+        self.refusals.remove(&from);
         // What `unwrap` takes is a whole packet, its count answering its
         // length, so this does not fail; if it did, the datagram would be
         // dropped as any other.
@@ -587,12 +596,12 @@ impl Link {
     /// an action rather than a configuration, since the host is reachable
     /// as soon as it sends anything, and nothing else tells anybody so.
     /// The line names both ends and says what to do; it is written once for
-    /// a destination and then at most once every [`UNHEARD_AGAIN_NS`], so
+    /// a destination and then at most once every [`SAID_AGAIN_NS`], so
     /// that a machine asking repeatedly cannot bury it.
     fn unheard(&mut self, now: u64, source: u16, dest: u16) {
         let Some(log) = self.log.clone() else { return };
         let said = self.unheard.get(&dest).copied();
-        if said.is_some_and(|then| now.saturating_sub(then) < UNHEARD_AGAIN_NS) {
+        if said.is_some_and(|then| now.saturating_sub(then) < SAID_AGAIN_NS) {
             return;
         }
         self.unheard.insert(dest, now);
@@ -601,6 +610,30 @@ impl Link {
             "dropped {from} -> {to}: {dest:o} has not been heard from since this run \
              started, so there is nowhere to send it; it is reachable as soon as it \
              sends anything"
+        ));
+    }
+
+    /// A datagram [`unwrap`] would not read, said once per sender and
+    /// then at most once every [`SAID_AGAIN_NS`], forgotten when that
+    /// endpoint sends something that reads.
+    ///
+    /// **It is written whatever the flags say**, as [`Link::unheard`] is
+    /// and for the same reason: nothing else here mentions it, the meters
+    /// counting it and `--trace` alone printing it, so two ends that
+    /// disagree about the frame throw each other's datagrams away in
+    /// silence. Measured on 2026-09-20, where that silence ran twelve
+    /// minutes and only the far end's log named the fault
+    /// (`docs/design.md` §10).
+    fn refused(&mut self, now: u64, from: SocketAddr, why: &str) {
+        let Some(log) = self.log.clone() else { return };
+        let said = self.refusals.get(&from).copied();
+        if said.is_some_and(|then| now.saturating_sub(then) < SAID_AGAIN_NS) {
+            return;
+        }
+        self.refusals.insert(from, now);
+        log(&format!(
+            "refused a datagram from {from}: {why}; nothing that endpoint sends can be \
+             read here, so the two ends may be framing CHUDP differently"
         ));
     }
 

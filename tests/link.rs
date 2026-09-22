@@ -340,3 +340,52 @@ fn this_hosts_own_broadcast_goes_once_to_each_endpoint() {
     assert_eq!((p.opcode, p.source, cable), (op::RFC, OZ, 0));
     assert_eq!(meters(&d)[1] - sent_before, 2, "two datagrams sent");
 }
+
+/// **A datagram this host cannot read writes a line of the log**, without
+/// `--trace` (`docs/design.md` §5, §10). `unwrap` refusing a datagram is
+/// counted in the meters, and until this line it was said nowhere else:
+/// two ends that frame CHUDP differently threw each other's datagrams away
+/// for twelve minutes on 2026-09-20, the far end's log naming the fault in
+/// every line while this one said only that nothing had been heard.
+///
+/// **Rate-limited per sender**, as the unheard drop is per destination,
+/// and forgotten once that endpoint sends something that reads: a peer
+/// that recovers and fails again is worth a second line.
+#[test]
+fn a_datagram_that_cannot_be_read_writes_one_line() {
+    let mut d = daemon(&site(""));
+    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let kept = lines.clone();
+    d.set_link_log(Some(Arc::new(move |line: &str| kept.lock().unwrap().push(line.into()))));
+    let mut lm1 = TestHost::new(LM1, d.at());
+    ask(&mut d, &mut lm1, 0, "STATUS");
+    assert!(lines.lock().unwrap().is_empty(), "nothing said for an ordinary exchange");
+
+    // Every word byte-swapped, as a peer framing CHUDP the other way
+    // round sends them: the data count word becomes a count no packet
+    // could carry.
+    let good = datagram(&rfc(LM1, OZ, "TIME"), LM1);
+    let mut swapped = good.clone();
+    for pair in swapped[4..].chunks_mut(2) {
+        pair.swap(0, 1);
+    }
+    lm1.send_bytes(&swapped);
+    settle(&mut d, &mut [&mut lm1], 10);
+    {
+        let said = lines.lock().unwrap();
+        assert_eq!(said.len(), 1, "one line: {said:?}");
+        let line = &said[0];
+        assert!(line.contains(&lm1.at.to_string()), "the endpoint it came from: {line}");
+        assert!(line.contains("data count"), "what was wrong with it: {line}");
+    }
+    lm1.send_bytes(&swapped);
+    settle(&mut d, &mut [&mut lm1], 20);
+    assert_eq!(lines.lock().unwrap().len(), 1, "the second is not said again");
+
+    // One that reads clears it, and the next refusal is worth saying.
+    lm1.send_bytes(&good);
+    settle(&mut d, &mut [&mut lm1], 30);
+    lm1.send_bytes(&swapped);
+    settle(&mut d, &mut [&mut lm1], 40);
+    assert_eq!(lines.lock().unwrap().len(), 2, "said again after the endpoint was understood");
+}
