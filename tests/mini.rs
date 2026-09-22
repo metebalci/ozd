@@ -182,7 +182,13 @@ impl Machine {
     /// none of it (`:390`-`:406`); the split here is the test's, holding
     /// ozd's answer to the shape an open's reply has.
     fn report(&mut self, message: &str) -> (u8, String, String) {
-        self.send(mini::REPORT, lispm::lispm_text(message));
+        self.exchange(mini::REPORT, lispm::lispm_text(message))
+    }
+
+    /// A packet at `opcode`, and the reply taken as the machine takes a
+    /// win or a lose: its opcode, and its text split at the first newline.
+    fn exchange(&mut self, opcode: u8, data: Vec<u8>) -> (u8, String, String) {
+        self.send(opcode, data);
         let reply = self.next();
         self.taken = reply.number;
         self.out = self.out.wrapping_add(1);
@@ -427,4 +433,53 @@ fn a_report_is_a_line_for_the_log_whatever_the_flags_say() {
         assert_eq!(m.open("/one.text", false).0, mini::WIN, "the connection still serves");
         assert_eq!(m.read(), [(CHARACTER_OP, lispm::to_lispm(b"one\n"))]);
     }
+}
+
+/// **An opcode this server does not know is a lose, and the connection
+/// goes on.** The machine advances `MINI-OUT-PKT-NUMBER` only on a win or
+/// a lose (`cold/mini.lisp:111`), resending at the same number until it
+/// gets one (`:103`, `:137`), while this end has already taken that number
+/// and receipted it. Saying nothing therefore wedges the connection for
+/// good: the open that follows carries a number held as received, is
+/// discarded as the duplicate it looks like, and the machine retransmits
+/// for ever against a healthy stream of STS. Found on 2026-09-22 from a
+/// cold load hung on its first QFASL, where the unanswered packet was a
+/// `204` at an ozd built before it knew that opcode.
+#[test]
+fn an_opcode_this_server_does_not_know_is_a_lose() {
+    let dir = world("unknown-opcode");
+    let root = dir.join("root");
+    put(&root, "one.text", b"one\n");
+    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let kept = lines.clone();
+    let log: ozd::log::Hook = Arc::new(move |line: &str| kept.lock().unwrap().push(line.into()));
+    let mut service = serving(&root, Some(log));
+    service.log_mini = false;
+    let mut m = Machine::connect(service);
+    let (opcode, message, rest) = m.exchange(0o205, lispm::lispm_text("who knows"));
+    assert_eq!(opcode, mini::LOSE, "a lose, so that the machine's number moves on");
+    assert_eq!((message.as_str(), rest.as_str()), ("Unknown operation 205", ""));
+    assert_eq!(m.oz_next(), None, "and nothing after it");
+    assert_eq!(
+        *lines.lock().unwrap(),
+        ["MINI from 3050 (?) an operation this server does not know: 205"],
+        "a line whatever --log-mini says"
+    );
+    assert_eq!(m.open("/one.text", false).0, mini::WIN, "the connection still serves");
+    assert_eq!(m.read(), [(CHARACTER_OP, lispm::to_lispm(b"one\n"))]);
+}
+
+/// **An uncontrolled packet draws nothing.** UNC reaches a session's data
+/// like any other (`ncp.rs`, `Ncp::controlled`), but it carries no packet
+/// number, so nothing waits on an answer and nothing is wedged by its
+/// absence. A lose would answer something the machine never asked.
+#[test]
+fn an_uncontrolled_packet_is_passed_over() {
+    let dir = world("uncontrolled");
+    let root = dir.join("root");
+    put(&root, "one.text", b"one\n");
+    let mut m = Machine::connect(serving(&root, None));
+    m.send(op::UNC, b"whatever".to_vec());
+    assert_eq!(m.oz_next(), None, "nothing comes back");
+    assert_eq!(m.open("/one.text", false).0, mini::WIN, "and the connection still serves");
 }

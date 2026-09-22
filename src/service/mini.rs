@@ -30,13 +30,19 @@
 //! to the log whatever the flags say and answers a lose, so that no file
 //! follows.
 //!
+//! **And every other opcode a lose too**, for the same reason the report
+//! gets one: a controlled packet has taken a number at this end, and the
+//! machine resends at that number until something answers, so silence
+//! wedges the connection rather than losing one packet
+//! (`docs/protocols.md`, MINI).
+//!
 //! **Containment** is FILE's reading: each name is resolved in the
 //! [`Tree`], and only a regular file is read (`docs/design.md` §6). MINI
 //! only reads, so a read-only root serves it whole.
 
 use crate::lispm::{NEWLINE, from_bytes, from_lispm, lispm_text, to_lispm};
 use crate::log::{Hook, Names};
-use crate::ncp::{Out, Response, Service, Session};
+use crate::ncp::{Out, Response, Service, Session, op::is_data};
 use crate::packet::MAX_DATA;
 use crate::roots::{Resolved, Tree};
 use crate::service::file::{BINARY_OP, CHARACTER_OP, date, openable, truename};
@@ -161,6 +167,28 @@ impl Reader {
     /// say, since it is the one thing the machine chose to send, and it is
     /// answered with a lose --- so that the machine knows it arrived, and no
     /// file follows.
+    /// An opcode this server does not know, answered with a lose and
+    /// written to the log whatever the flags say.
+    ///
+    /// **Silence would wedge the connection.** `MINI-OPEN-FILE` advances
+    /// `MINI-OUT-PKT-NUMBER` only on a win or a lose
+    /// (`cold/mini.lisp:111`) and resends at the same number until it has
+    /// one (`:103`, `MINI-SEND-PKT` at `:137`), while this end has taken
+    /// that number and receipted it. The next open would then arrive as a
+    /// duplicate, be discarded, and the machine would retransmit for ever
+    /// against a healthy stream of STS --- which is what a cold load hung
+    /// on its first QFASL turned out to be on 2026-09-22, at an ozd that
+    /// did not yet know [`REPORT`].
+    ///
+    /// So the answer matters more than its text: any reply at all moves
+    /// the machine's number on.
+    fn unknown(&mut self, op: u8) {
+        self.line(format_args!("an operation this server does not know: {op:o}"));
+        let mut answer = lispm_text(&format!("Unknown operation {op:o}"));
+        answer.push(NEWLINE);
+        self.out.push(Out::DataOp(LOSE, answer));
+    }
+
     fn report(&mut self, bytes: &[u8]) {
         self.line(format_args!("report: {}", one_line(bytes)));
         let mut answer = lispm_text("noted");
@@ -200,6 +228,11 @@ impl Session for Reader {
             CHARACTER_OPEN => true,
             BINARY_OPEN => false,
             REPORT => return self.report(bytes),
+            // Anything else in the data range is controlled, so it has
+            // taken a number here and the machine is waiting on it.
+            _ if is_data(op) => return self.unknown(op),
+            // An uncontrolled packet took no number and nothing waits on
+            // it (`ncp.rs`, `Ncp::controlled`).
             _ => return,
         };
         self.open(&from_bytes(bytes), characters);

@@ -195,11 +195,21 @@ ones in the server's own header (`cold/minisr.mid:7`):
   (**(LMZ)** `:390`-`:406`), so the bullet below is `MINI-OPEN-FILE`'s
   alone. ozd answers `noted` and the newline all the same, the newline
   costing one byte and a reply with none being what signals an error in
-  an open. A server that does not know `204` says
-  nothing: the machine tries three times, then reports no more for the
-  rest of the boot (`MINI-REPORT`, `:390`, and `MINI-REPORTING-P`,
-  `:382`) rather than retransmit for ever, so an old server leaves a gap
-  in the log and not an error.
+  an open. A server that does not know `204`
+  says nothing, and the machine reports no more for the rest of the boot
+  (`MINI-REPORT`, `:390`, and `MINI-REPORTING-P`, `:382`) rather than
+  retransmit for ever. **That costs the connection, not just the log.**
+  The report is a controlled packet, so it takes a number at the server,
+  and the machine keeps its own: `MINI-OUT-PKT-NUMBER` advances only on a
+  win or a lose (`cold/mini.lisp:111`), and the retransmission loop
+  resends at the same number until it has one (`:103`, `MINI-SEND-PKT` at
+  `:137`). The next open therefore arrives as a duplicate of a number
+  already taken, is discarded, and is retransmitted for ever against a
+  healthy stream of STS. Found on 2026-09-22 from a cold load hung on its
+  first QFASL against a server built before `204`, and reproduced from the
+  scripted machine end (`tests/mini.rs`). **So ozd answers a `203` to
+  every opcode it does not know**, the answer mattering more than its
+  text: an uncontrolled packet, which takes no number, is passed over.
 - **The machine splits a reply at its first newline**
   (`cold/mini.lisp:113`), so a reply without one signals an error in the
   cold load. The server writes the date as `MM/DD/YY HH:MM:SS`

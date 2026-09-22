@@ -398,7 +398,12 @@ ozd serves seven protocols (`docs/protocols.md`).
   sends its RFC from the same index, 1, and the RFC is discarded as a
   duplicate until that connection is given up (§4). A `204`, which is not
   MIT's opcode, is a line for this host's log: it is written whatever the
-  flags say (§10) and answered with a `203`, so that no file follows.
+  flags say (§10) and answered with a `203`, so that no file follows. So
+  is every other opcode in the data range that this server does not know,
+  for a reason that is the connection's and not the log's: such a packet
+  has taken a number here, and the machine resends at that number until
+  something answers it, so silence wedges the connection rather than
+  losing one packet (`docs/protocols.md`, MINI).
 - **HOSTAB** looks up each line that the client sends, ignoring case,
   among this host's names, every `--host`'s names, and the names of every
   host of the table `--hosts-text` names (§8). For a match, it
@@ -652,6 +657,11 @@ a System 100 site with them on one command line.
   The message is the machine's own text, so its control characters, its
   newline at `215` among them, are written as spaces and the line stays one
   line.
+- **An opcode MINI does not know writes a line too**, and is answered
+  with a `203`: `MINI from 3050 (MIT-LISPM-1) an operation this server
+  does not know: 205`. The answer is what keeps the connection alive, the
+  machine resending at a number already taken here until it has one; the
+  line is so that the operator learns which opcode a machine wanted.
 - **`--log-mini`** adds a line for each MINI open, in the shape of a
   connection's lines: `MINI from 3050 (MIT-LISPM-1) read
   /tree/sys/sys2/defsel.qfasl` for a file sent, or `MINI from 3050

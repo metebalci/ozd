@@ -99,7 +99,7 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   reads. `--log-mini` writes one for each file a cold load reads through
   MINI, and one for each it is refused; a cold load that reports its
   progress through MINI is logged without it, being the one thing such a
-  machine can say. `--log-tcp` writes one when a
+  machine can say, as is an operation ozd does not know. `--log-tcp` writes one when a
   `--tcp` connection opens and one when it closes. Without them, a machine's whole boot leaves one line in the
   log, the connection it opened. A line names a machine by its address and
   by its name in the host table, or `(?)` when the table does not have it.
