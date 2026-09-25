@@ -377,8 +377,10 @@ wins as a whole, and no file is ever half one and half the other.
   zone (§7), and the listing reports both as the modification time; the
   access time is left alone. `REFERENCE-DATE` and anything else is `UKP`,
   and a date that does not read is `IPV` (`io/file/open.lisp:327-335`).
-  `AUTHOR` is accepted and ignored: `copy-file` sends it in the same
-  command as the date, and refusing it would lose the date. Every line is
+  `AUTHOR` is not in the listing's `SETTABLE-PROPERTIES`, since nothing
+  here keeps one, and is still accepted and ignored: `copy-file` sends it
+  in the same command as the date, and refusing it would lose the date. A
+  file's `AUTHOR` is reported as the session's login name. Every line is
   checked before any is applied, so a refused command changes nothing.
   By pathname or on a read stream the date is set at once, through a
   handle opened on the path just resolved, once it is known to be a

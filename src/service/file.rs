@@ -875,7 +875,7 @@ impl Control {
         let mut text = String::new();
         text.push(nl);
         text.push_str(&format!("BLOCK-SIZE 1024{nl}"));
-        text.push_str(&format!("SETTABLE-PROPERTIES CREATION-DATE MODIFICATION-DATE AUTHOR{nl}"));
+        text.push_str(&format!("SETTABLE-PROPERTIES CREATION-DATE MODIFICATION-DATE{nl}"));
         text.push(nl);
         for name in names.into_iter().filter(|n| matches(&pattern, n)) {
             let shown = format!("{}/{}", dir.trim_end_matches('/'), name);
@@ -1555,8 +1555,10 @@ impl Control {
     /// byte written moves the modification time.
     ///
     /// `AUTHOR` is accepted and nothing is done with it: nothing here keeps
-    /// an author, and `copy-file` sends it in the same command as the date,
-    /// which refusing it would lose. Any other property is `UKP`, the
+    /// an author, so the listing does not name it as settable, and
+    /// `copy-file` sends it in the same command as the date
+    /// (`sys/io/file/open.lisp:749-754`), which refusing it would lose. A
+    /// file's author is reported as the session's login name, as ever. Any other property is `UKP`, the
     /// band's `UNKNOWN-PROPERTY` (`sys/io/file/open.lisp:327-330`) ---
     /// `REFERENCE-DATE` among them, since the access time is not set --- and
     /// a date that does not read is `IPV`, `INVALID-PROPERTY-VALUE`

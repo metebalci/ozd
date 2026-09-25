@@ -722,6 +722,43 @@ fn a_date_changed_is_the_files_modification_time() {
     );
 }
 
+/// **`AUTHOR` is not settable, and is taken and ignored.** The listing's
+/// `SETTABLE-PROPERTIES` names the two dates and nothing else, since
+/// nothing here keeps an author; a CHANGE-PROPERTIES that gives one is
+/// answered and changes nothing, because `copy-file` sends it in the same
+/// command as the date (`sys/io/file/open.lisp:749-754`) and refusing it
+/// would lose the date. A file's `AUTHOR` is still reported as the
+/// session's login name.
+#[test]
+fn the_author_is_not_settable_and_is_taken_and_ignored() {
+    let s = Scratch::new("author");
+    let root = s.dir("base");
+    let f = s.file("base/f.text", "abc");
+    set_mtime(&f, 1_768_478_400);
+    let (mut n, _) = serve_at_zone_5(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+
+    n.command(c, 10, &format!("T3 I0001 DIRECTORY{nl}/*{nl}"));
+    let listing = characters(&n.down(c));
+    let header = listing.split(&format!("{nl}{nl}")).next().unwrap();
+    assert!(
+        header.ends_with(&format!("{nl}SETTABLE-PROPERTIES CREATION-DATE MODIFICATION-DATE")),
+        "{header:?}"
+    );
+    assert!(record(&listing, "/f.text").contains(&format!("{nl}AUTHOR LISPM{nl}")));
+    n.command(c, 11, "T4 I0001 CLOSE");
+    n.down(c);
+
+    let before = snapshot(&s.dir);
+    let r = n.command(c, 20, &format!("T5  CHANGE-PROPERTIES{nl}/f.text{nl}AUTHOR SOMEONE{nl}"));
+    assert_eq!(r, "T5  CHANGE-PROPERTIES");
+    assert_eq!(snapshot(&s.dir), before);
+    assert_eq!(mtime_of(&f), 1_768_478_400);
+    n.command(c, 21, &format!("T6 I0001 PROPERTIES{nl}/f.text{nl}"));
+    assert!(characters(&n.down(c)).contains(&format!("{nl}AUTHOR LISPM{nl}")));
+}
+
 /// **On a stream open for writing, the date is the written file's**:
 /// `copy-file` sends it before writing a byte (`sys/io/file/open.lisp:745`),
 /// and every byte written moves the modification time, so the date is held
