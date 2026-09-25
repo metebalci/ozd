@@ -434,37 +434,51 @@ ozd serves seven protocols (`docs/protocols.md`).
   flag. **Daylight saving** is the band's own rule, applied on top of the
   zone whatever the zone, 0 included: the old North American calendar,
   from 02:00 on the last Sunday in April to 01:00 on the last Sunday in
-  October, each judged in standard time (`:172-205`). A band applies it
+  October, each judged in standard time (`:174-207`). A band applies it
   to every date it decodes without an explicit zone, and its date printer
   gives none (`DECODE-UNIVERSAL-TIME`, `:82-103`;
   `PRINT-DIRECTORY-DATE-PROPERTY`, `io/file/open.lisp:1458`); the rule is
-  a plain variable and no site option turns it off (`time.lisp:15`).
+  a plain variable and no site option turns it off (`time.lisp:15-16`).
   **So a summer date moves one hour from plain UTC**, at zone 0 as at any
   other: a band reads every date through that rule, and a date printed
   without it reads an hour out on the band all summer. The rule is
   transcribed with the band's arithmetic (`src/timezone.rs`), quirks
   included: for 2000 it puts the last Sunday in April on the 24th, a
-  Monday. Every date FILE prints uses it --- OPEN's and CLOSE's replies,
+  Monday. Every date FILE prints is at that zone --- OPEN's and CLOSE's replies,
   DIRECTORY and PROPERTIES records --- as `MM/DD/YY HH:MM:SS`, the form
   the band's fast parser takes (`io/file/open.lisp:1425-1451`). MINI's
   date is left in plain UTC: a cold load does not read it
   (`sys/cold/mini.lisp` has no date in it).
-  **A date is read** as the band reads one (`ENCODE-UNIVERSAL-TIME`,
-  `io1/time.lisp:150-170`), in a CHANGE-PROPERTIES. The band writes the
-  year in four digits, `~2,'0D` over the full year
-  (`io/file/open.lisp:1461`), so `MM/DD/YYYY HH:MM:SS` is read as well as
-  ozd's own form, a two-digit year being the one within 50 years of now,
-  as the band takes one. The band's encode has quirks of its own, and they
-  are read as it reads them, since a band reads ozd's dates with them: the
-  hour its clock skips each spring reads as daylight saving; after 2000
-  it asks its rule about the year less 1900, which the rule takes for
-  another year, so in 2026 it reads daylight saving from 04/28 to 10/27
-  where it prints it from 04/26 to 10/25, and a date printed between the
-  two reads back an hour off, on the band as here; and to it 2000 is no
-  leap year, so a date after February 2000 reads a day early. Read more
-  strictly than the band's parser, which computes something for any
-  digits: every field in range for the calendar, the year 1970 to 2099,
-  or it is refused.
+  **The band's print and parse disagree after 2000, and ozd matches what
+  each end means rather than copying either.** The band's encode, which
+  reads a date (`ENCODE-UNIVERSAL-TIME`, `io1/time.lisp:150-170`), makes
+  the year one since 1900 before it asks its rule (`:162-165`), and the
+  rule takes a year above 100 for a full one and subtracts 1900 again
+  (`:199-200`): so after 2000 it reads daylight saving by another year's
+  Sundays, in 2026 from 04/28 to 10/27, while its decode, which prints,
+  has it from 04/26 to 10/25. It also hands `LEAP-YEAR-P` 100 for 2000
+  (`:168`, `:376`), and so reads every date from March 1st 2000 a day
+  early. A band that printed a date and read it back would move it. So
+  **ozd prints, for an instant, a string the band's encode reads as that
+  instant**, and **reads a string the band printed as the instant its
+  decode printed it for**; both of the band's functions are transcribed,
+  and the tests check ozd's two against them at every hour from 1970 to
+  2099. For 2000 ozd prints the next day's date, and for December 31st
+  2000 `12/32/00`, which the band's fast parser takes as it takes any two
+  digits. **Where no answer exists** is the band's clock going back: the
+  hour from 00:00 standard time on the encode's last Sunday in October,
+  which the encode reads no string as, is printed as the standard time it
+  reads nearest, an hour early; the hour from 01:00 on the decode's last
+  Sunday in October, which the decode prints with the same string as the
+  hour before, is read as the first; and a time in the hour the decode
+  skips in April, which no band prints, is read as standard time.
+  **A date is read** in a CHANGE-PROPERTIES. The band writes the year in
+  four digits, `~2,'0D` over the full year (`io/file/open.lisp:1461`),
+  so `MM/DD/YYYY HH:MM:SS` is read as well as ozd's own form, a two-digit
+  year being the one within 50 years of now, as the band takes one. Read
+  more strictly than the band's parser, which computes something for any
+  digits: every field in range for the calendar, and the instant from
+  1970 to 2099, or it is refused.
 - **MINI** answers each open on its connection with the whole file: a
   `202` with the truename and the date, the file in packets, and an EOF;
   or a `203` with a message (`docs/protocols.md`, MINI). It resolves a

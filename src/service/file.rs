@@ -1543,8 +1543,8 @@ impl Control {
     /// `BUG`, as `DELETE` on one is.
     ///
     /// **The dates are the modification time.** `CREATION-DATE` and
-    /// `MODIFICATION-DATE` each set it, read as the band writes a date, at
-    /// the band's zone (`crate::timezone`): the listing reports both as the
+    /// `MODIFICATION-DATE` each set it, read as the instant the band printed
+    /// it for, at the band's zone (`crate::timezone`): the listing reports both as the
     /// modification time, and make-system compares `CREATION-DATE`
     /// (`sys2/maksys.lisp:1289-1291`). The access time is left as it is.
     /// By pathname, and on a read stream, the date is set at once, through

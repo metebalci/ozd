@@ -15,9 +15,9 @@
 //! hour to the east (`DECODE-UNIVERSAL-TIME`, `sys/io1/time.lisp:82-103`).
 //! Only a zone passed in explicitly skips that, and the date printer passes
 //! none (`PRINT-DIRECTORY-DATE-PROPERTY`, `sys/io/file/open.lisp:1458`).
-//! The function is a plain variable, not a site option (`time.lisp:15`),
+//! The function is a plain variable, not a site option (`time.lisp:15-16`),
 //! and its value is the old North American calendar
-//! (`DAYLIGHT-SAVINGS-TIME-IN-NORTH-AMERICA-P`, `:172-186`): from 02:00 on
+//! (`DAYLIGHT-SAVINGS-TIME-IN-NORTH-AMERICA-P`, `:174-189`): from 02:00 on
 //! the last Sunday in April to 01:00 on the last Sunday in October, each
 //! judged on the standard-time fields. So a summer date at zone 0 is UTC
 //! with the band's hour of daylight saving on top, which moves it an hour
@@ -29,8 +29,33 @@
 //! it does not know that 2100 is not a leap year; transcribed rather than
 //! replaced by the calendar, so that a date past 2099 prints as the band
 //! would print it. From 1970 to 2099 it is the calendar, measured day by day
-//! in `tests/timezone.rs`. `LAST-SUNDAY-IN-APRIL` (`:195-205`) and
+//! in `tests/timezone.rs`. `LAST-SUNDAY-IN-APRIL` (`:198-207`) and
 //! `LEAP-YEAR-P` (`:376-382`) are transcribed too, arithmetic and all.
+//!
+//! **The band's print and parse disagree after 2000**, and ozd copies
+//! neither: it means what each end means. The band's encode, which reads a
+//! date, makes the year one since 1900 before it asks its daylight-saving
+//! rule (`sys/io1/time.lisp:162-165`), and the rule takes a year above 100
+//! for a full one and subtracts 1900 again (`:199-200`); so after 2000 the
+//! encode reads daylight saving by another year's Sundays --- in 2026 from
+//! April 28th to October 27th --- while the decode, which prints, has it
+//! from April 26th to October 25th. And the encode takes 2000 for no leap
+//! year, handing `LEAP-YEAR-P` 100 (`:168`, `:376`), so it puts every date
+//! from March 1st 2000 a day early. So [`print()`] is the inverse of the
+//! band's parse: for an instant, a string that [`encode`] reads back as
+//! that instant. And [`parse`] is the inverse of the band's print: for a
+//! string, the instant [`decode`] printed it for. [`decode`] and
+//! [`encode`] are the band's own, transcribed, and the tests check ozd's
+//! two against them at every hour from 1970 to 2099.
+//!
+//! **Where no inverse exists** it is the band's clock going back or
+//! forward, and each case is named where it is decided: the hour the
+//! encode reads nothing as, from 00:00 standard time on its last Sunday in
+//! October, which [`print()`] prints as standard time and the band reads an
+//! hour early; the hour the decode prints twice, from 01:00 on its last
+//! Sunday in October, which [`parse`] reads as the first; and the hour the
+//! decode skips in April, which no band prints and [`parse`] reads as
+//! standard time.
 //!
 //! **What is printed** is `MM/DD/YY HH:MM:SS`, the form the band's own fast
 //! parser takes (`PARSE-DIRECTORY-DATE-PROPERTY`, `open.lisp:1425-1451`),
@@ -53,7 +78,7 @@ pub struct Fields {
 }
 
 /// The days before each month, from 1: `*CUMULATIVE-MONTH-DAYS-TABLE*`
-/// (`sys/io1/time.lisp:73`).
+/// (`sys/io1/time.lisp:74`).
 const CUMULATIVE: [i64; 13] = [0, 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
 
 /// `unix`, seconds since 1970, as the band's universal time, seconds since
@@ -121,10 +146,28 @@ pub fn decode(unix: i64, zone: i8) -> Fields {
     }
 }
 
-/// `unix` as FILE prints a date: `MM/DD/YY HH:MM:SS`, decoded as
-/// [`decode`] decodes it.
+/// `unix` as FILE prints a date, `MM/DD/YY HH:MM:SS`: **a string the
+/// band reads back as `unix`**, by its encode ([`encode`]), and not the
+/// string the band would print for it, which after 2000 its own encode can
+/// read as another instant (the module documentation). The fields are
+/// looked for in this order, and the first the band reads as `unix` is
+/// printed:
+///
+/// 1. standard time at `zone`, and then daylight saving, an hour to the
+///    east --- what the band would read, whichever of its windows it is in;
+/// 2. the next day's date at the same time, and then the same date with its
+///    day one more than the month has: for 2000, which the band's encode
+///    takes for no leap year and so reads a day early from March 1st.
+///    December 31st 2000 is `12/32/00`, which the band's fast parser takes as
+///    it takes any two digits, and reads as December 31st;
+/// 3. none of them: the hour from 00:00 standard time on the last Sunday in
+///    October **by the encode's own window**, which it reads no string as.
+///    Of the fields above, the one the band reads nearest is printed, the
+///    earlier in that order where two are as near: standard time, which the
+///    band reads an hour early --- in 2000 the next day's, since the band
+///    reads that date a day early too.
 pub fn print(unix: i64, zone: i8) -> String {
-    let f = decode(unix, zone);
+    let f = printed(unix, zone);
     format!(
         "{:02}/{:02}/{:02} {:02}:{:02}:{:02}",
         f.month,
@@ -136,9 +179,33 @@ pub fn print(unix: i64, zone: i8) -> String {
     )
 }
 
+/// The fields [`print()`] prints for `unix`, in the order it says: the
+/// first the band reads as `unix`, or, where none is, the one it reads
+/// nearest, the earlier in that order where two are as near.
+fn printed(unix: i64, zone: i8) -> Fields {
+    let standard = decode_standard(unix, zone);
+    let daylight = decode_standard(unix, zone - 1);
+    let next = |z: i8| decode_standard(unix + 86_400, z);
+    let beyond = |f: Fields| Fields { day: f.day + 1, ..f };
+    let candidates =
+        [standard, daylight, next(zone), next(zone - 1), beyond(standard), beyond(daylight)];
+    let mut best = standard;
+    let mut off = i64::MAX;
+    for f in candidates {
+        let d = (encode(f, zone, f.year) - unix).abs();
+        if d == 0 {
+            return f;
+        }
+        if d < off {
+            (best, off) = (f, d);
+        }
+    }
+    best
+}
+
 /// Whether the band's daylight saving is in effect at these standard-time
 /// fields: `DAYLIGHT-SAVINGS-TIME-IN-NORTH-AMERICA-P`
-/// (`sys/io1/time.lisp:172-186`). Standard time before 02:00 on the last
+/// (`sys/io1/time.lisp:174-189`). Standard time before 02:00 on the last
 /// Sunday in April, and from 01:00 on the last Sunday in October; the two
 /// comparisons in the source are the Lisp Machine's `≤` and `≥`, characters
 /// 034 and 035, as the comments beside them say. `year` is passed on to
@@ -163,7 +230,7 @@ pub(crate) fn daylight_saving(hours: i64, day: i64, month: i64, year: i64) -> bo
     true
 }
 
-/// `LAST-SUNDAY-IN-OCTOBER` (`sys/io1/time.lisp:188-193`): April's, less
+/// `LAST-SUNDAY-IN-OCTOBER` (`sys/io1/time.lisp:191-196`): April's, less
 /// one, unless that would be the 24th or earlier, when it is April's plus
 /// six.
 fn last_sunday_in_october(year: i64) -> i64 {
@@ -171,7 +238,7 @@ fn last_sunday_in_october(year: i64) -> i64 {
     if lsa <= 25 { lsa + 6 } else { lsa - 1 }
 }
 
-/// `LAST-SUNDAY-IN-APRIL` (`sys/io1/time.lisp:195-205`), from ITS's
+/// `LAST-SUNDAY-IN-APRIL` (`sys/io1/time.lisp:198-207`), from ITS's
 /// `GDWOBY`: a year above 100 is taken as a full year and made one since
 /// 1900, and any other as one since 1900 already.
 pub fn last_sunday_in_april(year: i64) -> i64 {
@@ -196,10 +263,11 @@ pub(crate) fn leap_year_p(year: i64) -> bool {
 /// (`sys/io1/time.lisp:150-170`), transcribed. A year below 100 is the one
 /// within 50 years of `current_year`; the year is then made one since
 /// 1900, and **that** is what the daylight-saving rule and `LEAP-YEAR-P`
-/// are given. Two quirks follow, and are the band's, kept: after 2000 the
-/// rule takes a year above 100 for a full one and subtracts 1900 again
-/// (`:196`), so its last Sundays are another year's; and 2000 is 100, which
-/// `LEAP-YEAR-P` takes as it is (`:376`), so it is no leap year here.
+/// are given. Two quirks follow, and are the band's, kept here, since this
+/// is the reference [`print()`] is the inverse of: after 2000 the rule takes
+/// a year above 100 for a full one and subtracts 1900 again (`:199-200`), so its
+/// last Sundays are another year's; and 2000 is 100, which `LEAP-YEAR-P`
+/// takes as it is (`:376`), so it is no leap year here.
 pub fn encode(f: Fields, zone: i8, current_year: i64) -> i64 {
     let year = if f.year < 100 {
         current_year + (50 + (f.year - current_year % 100)).rem_euclid(100) - 50
@@ -218,23 +286,34 @@ pub fn encode(f: Fields, zone: i8, current_year: i64) -> i64 {
     ut - UNIX_EPOCH_UNIVERSAL as i64
 }
 
-/// A date as a band writes one in a CHANGE-PROPERTIES, read at `zone` as
-/// the band reads a date ([`encode`]), in seconds since 1970; `None` if it
-/// is not one.
+/// A date as a band writes one in a CHANGE-PROPERTIES, in seconds since
+/// 1970: **the instant the band printed it for**, by its decode
+/// ([`decode`]) at `zone`, and not what the band's own encode would read it
+/// as, which after 2000 can be another instant (the module documentation).
+/// `None` if it is not a date.
+///
+/// Of the two instants a string can mean, daylight saving at `zone` and
+/// standard time, the one the band prints as that string is taken. The
+/// band prints one string for two instants in the hour after its clock
+/// goes back, from 01:00 standard time on its last Sunday in October **by
+/// its decode's window**; the first, in daylight saving, is taken. It
+/// prints no instant as a time in the hour its clock skips in April; that
+/// is read as standard time, the instant the band shows an hour later.
 ///
 /// **The band writes the year in four digits**:
 /// `PRINT-DIRECTORY-DATE-PROPERTY` prints the decoded year with `~2,'0D`
 /// (`sys/io/file/open.lisp:1458-1462`), and the decoded year is the full
-/// one, `(+ 1900. A)` (`sys/io1/time.lisp:129`), which a width pads and
+/// one, `(+ 1900. A)` (`sys/io1/time.lisp:132`), which a width pads and
 /// never cuts (`FORMAT-CTL-DECIMAL`, `sys/io/format.lisp:515`). ozd writes
 /// two ([`print()`]). So both are read: `MM/DD/YYYY HH:MM:SS` and `MM/DD/YY
 /// HH:MM:SS`, exactly, a two-digit year the one within 50 years of the year
 /// `now` is at `zone`, as the band takes its current year.
 ///
 /// **Stricter than the band's parser**, which computes something for any
-/// digits: here every field is in range for the calendar, the year is from
-/// 1970 to 2099 --- the band's decode knows no later one (`:120`) --- and
-/// the time is not before 1970. The band's printer writes nothing else.
+/// digits: here every field is in range for the calendar, and the instant
+/// is from 1970 to 2099 --- the band's decode knows no later year
+/// (`:120`) --- though its date may be the last of 1969 or the first of
+/// 2100 at a zone. The band's printer writes nothing else.
 pub fn parse(text: &str, zone: i8, now: i64) -> Option<i64> {
     let b = text.as_bytes();
     let long = match b.len() {
@@ -271,7 +350,7 @@ pub fn parse(text: &str, zone: i8, now: i64) -> Option<i64> {
     let month_days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let leap = f.year % 4 == 0 && (f.year % 100 != 0 || f.year % 400 == 0);
     let last_day = if f.month == 2 && leap { 29 } else { *month_days.get(f.month as usize)? };
-    if !(1970..=2099).contains(&f.year)
+    if !(1969..=2100).contains(&f.year)
         || !(1..=12).contains(&f.month)
         || !(1..=last_day).contains(&f.day)
         || f.hour > 23
@@ -280,6 +359,25 @@ pub fn parse(text: &str, zone: i8, now: i64) -> Option<i64> {
     {
         return None;
     }
-    let unix = encode(f, zone, current_year);
-    (unix >= 0).then_some(unix)
+    let days = days_from_civil(f.year, f.month, f.day);
+    let base = days * 86_400 + f.hour * 3600 + f.minute * 60 + f.second;
+    let daylight = base + (i64::from(zone) - 1) * 3600;
+    let standard = base + i64::from(zone) * 3600;
+    let unix = if decode(daylight, zone) == f { daylight } else { standard };
+    (0..END).contains(&unix).then_some(unix)
+}
+
+/// 2100-01-01 00:00:00 UTC: FILE reads no date from it on.
+const END: i64 = 4_102_444_800;
+
+/// Days since 1970 of a date of the calendar: Howard Hinnant's
+/// days-from-civil, the inverse of `crate::log::civil`.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
 }

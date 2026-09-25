@@ -151,6 +151,12 @@ pathname outside the tree. The machine turns `FNF`, `ATF` and `ATD` into
 
 **Dates.** Every date is `MM/DD/YY HH:MM:SS` at the band's zone, with the
 band's own daylight saving on top (`docs/design.md` §7, FILE's dates). The
+band's print and parse disagree after 2000: its parse asks its
+daylight-saving rule about the year less 1900 (`io1/time.lisp:162-165`),
+which the rule takes for another year (`:199-200`), and takes 2000 for no leap
+year (`:168`, `:376`). So ozd copies neither: it prints a string the
+band's parse reads as the instant meant, and reads a string the band
+printed as the instant the band printed it for. The
 listing's `SETTABLE-PROPERTIES` names what CHANGE-PROPERTIES may set
 (`doc/chfile.text:488-492`); ozd's are the two dates, each the file's
 modification time, and not `AUTHOR`, which it takes and ignores. A band
