@@ -494,7 +494,7 @@ FILE    / holds 2 directories and 1 file</pre>
 
       <div class="panel">
         <p class="cap">What ozd holds to</p>
-        <p class="small">A pathname cannot climb out of its root: <code>..</code> and <code>.</code> are refused, not normalised. A symbolic link is followed only while it stays inside its own root, and a directory from elsewhere is mounted with <code>--root &lt;name&gt;=&lt;path&gt;</code>, never linked in.</p>
+        <p class="small">A pathname cannot climb out of its root: <code>..</code> and <code>.</code> are refused, not normalised. A symbolic link is followed only while it stays inside its own root; a command that asks for a link itself, as DELETE, RENAME and an open with <code>INHIBIT-LINKS</code> do, acts on the link and never on what it leads to; and a directory from elsewhere is mounted with <code>--root &lt;name&gt;=&lt;path&gt;</code>, never linked in.</p>
         <p class="small">Anything that is not a regular file or a directory is refused, and a <code>,ro</code> root refuses every write before the disk is touched. ozd refuses to run as root, and needs no privilege: 42042 is an ordinary UDP port. It opens a TCP port only for a <code>--tcp</code>, and only on the loopback unless an address is named.</p>
         <p class="cap">What the operator holds to</p>
         <ol class="rules">

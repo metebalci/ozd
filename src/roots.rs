@@ -134,17 +134,19 @@ pub struct Place {
 /// A name in a directory of one root, for what acts on the name itself and
 /// not on what it leads to (`docs/design.md` §6, "FILE's rules"): DELETE and
 /// RENAME, which remove and move a link and never its target, as Unix
-/// does; and DIRECTORY, which describes by it a name that the
+/// does; DIRECTORY, which describes by it a name that the
 /// tree will not follow, so that a link that leads nowhere is still listed,
-/// and can be deleted.
+/// and can be deleted; and OPEN with `INHIBIT-LINKS`, which describes a link
+/// for a PROBE, refuses one for a READ, and replaces one for a WRITE.
 ///
 /// **Never opened.** Its directory is a [`Place`] --- canonical, in its
 /// root, no link in it when resolved --- and its name is the last component
 /// as that directory holds it, which may be a link to anywhere, or to
 /// nothing. What uses an entry acts on the name itself: `symlink_metadata`,
 /// `remove_file`, `remove_dir` and `rename`, none of which follows a link
-/// that is a path's last component. Good for the command that resolved it,
-/// and no longer, as a place is.
+/// that is a path's last component --- a rename *onto* a link replaces the
+/// link. Good for the command that resolved it, and no longer, as a place
+/// is.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     /// The directory the name is in, resolved as [`Tree::resolve`] resolves
@@ -297,7 +299,8 @@ impl Tree {
     /// that writes resolves its pathnames here, or as an entry with the
     /// same refusals: OPEN for output, CREATE-DIRECTORY, CREATE-LINK's link
     /// and CHANGE-PROPERTIES here; DELETE and RENAME, which act on a link
-    /// itself, through [`Tree::resolve_entry_for_writing`] (`docs/design.md` §6,
+    /// itself, and OPEN for output with `INHIBIT-LINKS`, which replaces one,
+    /// through [`Tree::resolve_entry_for_writing`] (`docs/design.md` §6,
     /// "A read-only root" and "FILE's rules").
     ///
     /// Containment is decided first, so a pathname that leaves its root is
@@ -340,7 +343,8 @@ impl Tree {
     /// component joined on as the directory holds it, not followed
     /// ([`Entry`]). DIRECTORY describes by it a name that the tree will not
     /// follow --- a link out of its root, into another, or nowhere --- as
-    /// the link itself, never as what it leads to.
+    /// the link itself, never as what it leads to; so does a PROBE with
+    /// `INHIBIT-LINKS`, of any link.
     ///
     /// Refused as `resolve` refuses: a `.`, a `..` or a temporary's name
     /// anywhere, `ATD`; a directory on the way that leaves its root, leads
@@ -367,14 +371,16 @@ impl Tree {
     /// read-only root, and `/` with no base or a read-only one, `ATF`,
     /// before anything is touched; then `/` and a root itself, `ATD`.
     ///
-    /// DELETE resolves its pathname here, and RENAME both of its (through
-    /// [`Tree::resolve_entries_for_renaming`]): both act on a link itself,
-    /// its directory resolved and its own name not followed, as Unix does
-    /// (`docs/design.md` §6, "FILE's rules"). So a link that
-    /// leads nowhere, which no read or write will touch, can still be
-    /// deleted. The entry's directory is the root or lies in it, and its
-    /// name, a link or not, is a name in that directory: removing or
-    /// renaming it changes that directory, and nothing a link leads to.
+    /// DELETE resolves its pathname here, RENAME both of its (through
+    /// [`Tree::resolve_entries_for_renaming`]), and OPEN for output with
+    /// `INHIBIT-LINKS`, which replaces a link with the file written: all act
+    /// on a link itself, its directory resolved and its own name not
+    /// followed, as Unix does (`docs/design.md` §6, "FILE's rules"). So a
+    /// link that leads nowhere, which no plain read or write will touch, can
+    /// still be deleted. The entry's directory is the root or lies in it,
+    /// and its name, a link or not, is a name in that directory: removing,
+    /// renaming or replacing it changes that directory, and nothing a link
+    /// leads to.
     pub fn resolve_entry_for_writing(&self, pathname: &str) -> Result<Entry, Refusal> {
         match self.pick(pathname)? {
             Picked::Top => Err(self.top_for_writing()),

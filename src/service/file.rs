@@ -62,7 +62,9 @@
 //! - **Every pathname is resolved in the [`Tree`]**, never against a root
 //!   directory directly: a read through [`Tree::resolve`], a write
 //!   through [`Tree::resolve_for_writing`], DELETE and RENAME as entries,
-//!   which act on a link itself ([`Tree::resolve_entry_for_writing`]).
+//!   which act on a link itself ([`Tree::resolve_entry_for_writing`]), and
+//!   so does OPEN with `INHIBIT-LINKS` where the pathname names a link: a
+//!   PROBE describes the link, a READ is refused, a WRITE replaces it.
 //!   Nothing outside a root is opened, listed, described, renamed or
 //!   removed.
 //! - **No allowlist**: `LOGIN` records a user name, and is never a
@@ -82,7 +84,7 @@ use crate::lispm::{NEWLINE, from_bytes, from_lispm, lispm_text, to_lispm};
 use crate::log::Names;
 use crate::ncp::{Out, Response, Service, Session};
 use crate::packet::MAX_DATA;
-use crate::roots::{Place, Refusal, Resolved, Tree, is_temporary, temporary_name};
+use crate::roots::{Entry, Place, Refusal, Resolved, Tree, is_temporary, temporary_name};
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{ErrorKind, Seek as _, SeekFrom, Write as _};
 use std::path::PathBuf;
@@ -116,6 +118,53 @@ fn denied() -> Refusal {
 /// for what is neither a regular file nor a directory (see [`openable`]).
 fn wrong_kind() -> Refusal {
     ("WKF", "Not a regular file".into())
+}
+
+/// `WKF` for a link opened with `INHIBIT-LINKS` to be read: the band's
+/// `WRONG-KIND-OF-FILE` (`sys/io/file/open.lisp:260`), whose kind
+/// `INVALID-OPERATION-FOR-LINK` (`:264`) is exactly this and has no code of
+/// its own, where a directory's kind has one, `IOD` (`:268`).
+fn link_refused() -> Refusal {
+    ("WKF", "A link is not read as a file".into())
+}
+
+/// The entry a pathname names, with its own metadata, if it is a symbolic
+/// link: for `INHIBIT-LINKS`, which acts on a link itself (`Control::open`).
+/// `None` for anything else --- nothing there, or something that is not a
+/// link --- which is then opened as it would be without the option.
+fn link(entry: Entry) -> Option<(Entry, std::fs::Metadata)> {
+    let meta = std::fs::symlink_metadata(entry.path()).ok()?;
+    meta.file_type().is_symlink().then_some((entry, meta))
+}
+
+/// What an `OPEN` answers of a file before its truename, and whether it
+/// goes as characters, from its `date`, its `size` in bytes, whether it is
+/// `qfasl`, and the option `words`: `FILE.c`'s date, length, QFASL as `T`
+/// or `NIL`, and with `DEFAULT` the characters decision as `T` or `NIL`
+/// after a space.
+///
+/// Characters unless the file is compiled, when `DEFAULT` asks. `FILE.c`
+/// decides that first and only then has a byte size: `options |=
+/// O_CHARACTER` happens inside the `DEFAULT` case, and the length is
+/// `options & O_CHARACTER || bytesize <= 8 ? st_size : (st_size + 1) / 2`
+/// --- bytes for characters, words for binary, so a compiled file opened
+/// `DEFAULT` is measured in words even though nobody said `BINARY`.
+fn open_properties(date: &str, size: usize, qfasl: bool, words: &[&str]) -> (String, bool) {
+    let binary = words.contains(&"BINARY");
+    let default = words.contains(&"DEFAULT");
+    let given_byte_size = words
+        .iter()
+        .position(|w| *w == "BYTE-SIZE")
+        .and_then(|i| words.get(i + 1))
+        .and_then(|n| n.parse::<u32>().ok());
+    let characters = if default { !qfasl } else { !binary };
+    let byte_size = given_byte_size.unwrap_or(if characters { 8 } else { 16 });
+    let length = if characters || byte_size <= 8 { size } else { size.div_ceil(2) };
+    let mut properties = format!("{date} {length} {}", if qfasl { "T" } else { "NIL" });
+    if default {
+        properties.push_str(if characters { " T" } else { " NIL" });
+    }
+    (properties, characters)
 }
 
 /// What an asynchronous mark carries: `TIDNO <handle> ERROR <code> R
@@ -351,12 +400,18 @@ enum Transfer {
 }
 
 /// What an `OPEN WRITE` was asked for: its option words, the pathname
-/// as written and the place it resolved to, and the three that decide the
-/// character translation.
+/// as written, the path it resolved to and what is there already, and the
+/// three that decide the character translation.
 struct WriteOpen<'a> {
     words: &'a [&'a str],
     pathname: &'a str,
-    place: Place,
+    /// Where the file goes: a [`Place`]'s path, or under `INHIBIT-LINKS`
+    /// an [`Entry`]'s, a link's own. Its directory is the root or lies in
+    /// it, either way.
+    real: PathBuf,
+    /// What is at `real`, read without opening it: [`openable`]'s answer
+    /// for a place, and a link's own `symlink_metadata` for an entry.
+    existing: Result<Option<std::fs::Metadata>, Refusal>,
     binary: bool,
     default: bool,
     raw: bool,
@@ -597,6 +652,19 @@ impl Control {
     /// `OPEN direction mode options`, then the pathname on the next line:
     /// resolved for writing to write, and otherwise for reading; and read
     /// only once it is known to be a regular file or a directory.
+    ///
+    /// **`INHIBIT-LINKS` acts on a link itself**, where the pathname names
+    /// one: resolved as an entry, its directory followed and its own name
+    /// not, as DELETE resolves it ([`Tree::resolve_entry`]). The band sends
+    /// it for `:probe-link`, as `PROBE INHIBIT-LINKS` (`qfile.lisp:555`), and
+    /// for `:inhibit-links t` in any direction (`:933`). A PROBE describes
+    /// the link, "rather than the file linked to" (`sys/man/files.text:213`);
+    /// a READ is refused, since Unix cannot read a link as a file; a WRITE
+    /// replaces the link with the new file. Nothing a link leads to is
+    /// read, described or written, so a link out of its root is as safe to
+    /// name this way as any other. What is not a link is opened as ever: "If
+    /// the file exists and is not a link, the open also completes for it as
+    /// with any probe" (`:216`).
     fn open(&mut self, tid: &str, handle: &str, args: &str, pathname: &str) {
         let words: Vec<&str> = args.split_whitespace().collect();
         let direction = words.first().copied().unwrap_or("READ");
@@ -616,21 +684,53 @@ impl Control {
         // The translation here (`src/lispm.rs`) quotes nothing, so there is
         // nothing for it to turn off.
         let raw = words.contains(&"RAW");
-        let given_byte_size = words
-            .iter()
-            .position(|w| *w == "BYTE-SIZE")
-            .and_then(|i| words.get(i + 1))
-            .and_then(|n| n.parse::<u32>().ok());
+        let inhibit = words.contains(&"INHIBIT-LINKS");
         if direction == "WRITE" {
+            // A link itself, resolved as an entry for writing, which a
+            // read-only root refuses `ATF` as it refuses any write --- and
+            // refuses before the link is looked at, which resolving the
+            // pathname would follow; the temporary is made in the link's
+            // own directory and renamed onto the link's own path. The
+            // entry's refusals are the place's, in the same order, so
+            // anything else goes on to be resolved as a place.
+            let entry = if inhibit {
+                match self.tree.resolve_entry_for_writing(pathname) {
+                    Ok(entry) => Some(entry),
+                    Err((code, msg)) => return self.error(tid, handle, code, 'C', &msg),
+                }
+            } else {
+                None
+            };
+            if let Some((entry, meta)) = entry.and_then(link) {
+                let existing = Ok(Some(meta));
+                let real = entry.path();
+                let o = WriteOpen { words: &words, pathname, real, existing, binary, default, raw };
+                return self.open_write(tid, handle, o);
+            }
             let place = match self.tree.resolve_for_writing(pathname) {
                 Ok(p) => p,
                 Err((code, msg)) => return self.error(tid, handle, code, 'C', &msg),
             };
-            return self.open_write(
-                tid,
-                handle,
-                WriteOpen { words: &words, pathname, place, binary, default, raw },
-            );
+            let existing = openable(&place);
+            let real = place.path;
+            let o = WriteOpen { words: &words, pathname, real, existing, binary, default, raw };
+            return self.open_write(tid, handle, o);
+        }
+        if inhibit
+            && direction != "PROBE-DIRECTORY"
+            && let Some((_, meta)) = self.tree.resolve_entry(pathname).ok().and_then(link)
+        {
+            if direction != "PROBE" {
+                let (code, msg) = link_refused();
+                return self.error(tid, handle, code, 'C', &msg);
+            }
+            // The link's own date and length: nothing of what it leads to
+            // is read, so it has no contents to be compiled.
+            let (properties, _) = open_properties(&date(&meta), meta.len() as usize, false, &words);
+            let tn = truename(pathname, false);
+            let results = format!("{properties}{}{tn}{}", NEWLINE as char, NEWLINE as char);
+            self.probed(&format!("probe {pathname}"));
+            return self.reply(tid, handle, "OPEN", &results);
         }
         let place = match self.tree.resolve(pathname) {
             Ok(Resolved::Place(p)) => p,
@@ -665,24 +765,7 @@ impl Control {
             return self.error(tid, handle, "ATF", 'C', "Access to file denied");
         };
         let qfasl = contents.starts_with(&QFASL_MAGIC);
-        // Characters unless the file is compiled, when DEFAULT asks.
-        // `FILE.c` decides that first and only then has a byte size:
-        // `options |= O_CHARACTER` happens inside the DEFAULT case, and
-        // the length is `options & O_CHARACTER || bytesize <= 8 ?
-        // st_size : (st_size + 1) / 2` --- bytes for characters, words
-        // for binary, so a compiled file opened DEFAULT is measured in
-        // words even though nobody said BINARY.
-        let characters = if default { !qfasl } else { !binary };
-        let byte_size = given_byte_size.unwrap_or(if characters { 8 } else { 16 });
-        let length =
-            if characters || byte_size <= 8 { contents.len() } else { contents.len().div_ceil(2) };
-        // `FILE.c`: date, length, QFASL as T or NIL, and with DEFAULT the
-        // characters decision as T or NIL after a space.
-        let mut properties =
-            format!("{} {} {}", date(&meta), length, if qfasl { "T" } else { "NIL" });
-        if default {
-            properties.push_str(if characters { " T" } else { " NIL" });
-        }
+        let (properties, characters) = open_properties(&date(&meta), contents.len(), qfasl, &words);
         let tn = truename(pathname, false);
         let results = format!("{properties}{}{tn}{}", NEWLINE as char, NEWLINE as char);
         if direction == "PROBE" {
@@ -985,15 +1068,14 @@ impl Control {
     /// `CLOSE` nobody sees the old contents go either way; so both start
     /// empty, as `SUPERSEDE` does.
     fn open_write(&mut self, tid: &str, handle: &str, o: WriteOpen<'_>) {
-        let WriteOpen { words, pathname, place, binary, default, raw } = o;
+        let WriteOpen { words, pathname, real, existing, binary, default, raw } = o;
         let named = |key: &str| {
             words.iter().position(|w| *w == key).and_then(|i| words.get(i + 1)).copied()
         };
         let if_exists = named("IF-EXISTS").unwrap_or("NEW-VERSION");
         let if_missing = named("IF-DOES-NOT-EXIST").unwrap_or("CREATE");
-        // What is there already, its kind read without opening it.
-        let existing = openable(&place);
         let exists = !matches!(existing, Ok(None));
+        let is_link = matches!(&existing, Ok(Some(m)) if m.file_type().is_symlink());
         if exists {
             match if_exists {
                 "ERROR" => {
@@ -1016,8 +1098,9 @@ impl Control {
         }
         // The tree never gives a root itself to write, so the place has a
         // directory, and it is the root or lies in it; canonical, so it is
-        // read here without following anything.
-        let Some(dir) = place.path.parent() else {
+        // read here without following anything. An entry's is its
+        // directory, resolved the same way.
+        let Some(dir) = real.parent() else {
             return self.error(tid, handle, "DNF", 'C', "Directory not found");
         };
         if !std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir()) {
@@ -1029,10 +1112,16 @@ impl Control {
         // A FIFO or a device where the file would be is not a regular
         // file to overwrite, and reading it for APPEND would
         // block or exhaust the loop's one thread: refused before a
-        // temporary is made (see [`openable`]). So is a directory.
+        // temporary is made (see [`openable`]). So is a directory. A link
+        // under `INHIBIT-LINKS` is replaced, and never read: APPEND, which
+        // would start from its contents, is refused as a READ of it is.
         match &existing {
             Err((code, msg)) => return self.error(tid, handle, code, 'C', msg),
-            Ok(Some(m)) if !m.is_file() => {
+            Ok(Some(_)) if is_link && if_exists == "APPEND" => {
+                let (code, msg) = link_refused();
+                return self.error(tid, handle, code, 'C', &msg);
+            }
+            Ok(Some(m)) if !m.is_file() && !is_link => {
                 let (code, msg) = wrong_kind();
                 return self.error(tid, handle, code, 'C', &msg);
             }
@@ -1065,7 +1154,7 @@ impl Control {
         // What is already there, to write after for APPEND; otherwise the
         // temporary starts empty. A regular file, by `openable`.
         let start = match if_exists {
-            "APPEND" if exists => std::fs::read(&place.path).unwrap_or_default(),
+            "APPEND" if exists => std::fs::read(&real).unwrap_or_default(),
             _ => Vec::new(),
         };
         let at = start.len() as u64;
@@ -1094,7 +1183,7 @@ impl Control {
             Transfer::Write {
                 file,
                 temp,
-                real: place.path,
+                real,
                 pathname: pathname.to_string(),
                 truename: tn,
                 translated,

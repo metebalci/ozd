@@ -159,6 +159,14 @@ eight, so nothing is discarded here. `SUPER-IMAGE`, which the band sends
 as `SUPER` (`network/chaos/qfile.lisp:941`), "Suppresses rubout quoting"
 (`doc/chfile.text:240`); ozd quotes nothing with rubout, and ignores it.
 
+**Links.** `INHIBIT-LINKS` asks for a link itself. The band sends it for
+`:probe-link`, as `PROBE INHIBIT-LINKS` (`network/chaos/qfile.lisp:555`),
+which "describes the link itself rather than the file linked to"
+(`man/files.text:213`), and for `:inhibit-links t` in any direction
+(`qfile.lisp:933`). ozd answers a PROBE with the link's own date and
+length, refuses a READ with `WKF`, and replaces the link on a WRITE
+(`docs/design.md` §6).
+
 `docs/design.md` §6 describes how ozd keeps FILE inside its roots.
 
 ### MINI

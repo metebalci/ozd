@@ -232,7 +232,9 @@ a segment you trust as much as the machine itself.
 
 Clients can reach the files in the roots and nothing else. A pathname
 cannot climb out of its root. ozd follows a symbolic link only while the
-link stays inside its own root. To serve a directory from elsewhere,
+link stays inside its own root. A command that asks for a link itself,
+as DELETE, RENAME and an open with `INHIBIT-LINKS` do, acts on the link
+and never on what it leads to. To serve a directory from elsewhere,
 mount it with `--root <name>=<path>` instead of linking to it
 (`docs/design.md` §6).
 

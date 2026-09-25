@@ -2217,6 +2217,219 @@ fn a_link_is_renamed_itself() {
     );
 }
 
+/// A date as FILE writes one, from a modification time, in UTC.
+fn written_date(meta: &std::fs::Metadata) -> String {
+    let secs = meta.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let (y, m, d, hh, mm, ss) = file::civil(secs);
+    format!("{m:02}/{d:02}/{:02} {hh:02}:{mm:02}:{ss:02}", y % 100)
+}
+
+/// The world of the `INHIBIT-LINKS` tests: a base with a file, a link to it
+/// and a link out of the root to a file outside, at the top and one
+/// directory down; the outside file dated 09/09/01 and longer than any
+/// link, so that neither its date nor its length can pass for a link's.
+/// Answers the base and the outside file.
+#[cfg(unix)]
+fn links_world(s: &Scratch) -> (PathBuf, PathBuf) {
+    let root = s.dir("base");
+    s.file("base/a.text", "abc");
+    let secret = s.file("outside/secret.text", &"x".repeat(1000));
+    std::fs::File::options()
+        .write(true)
+        .open(&secret)
+        .unwrap()
+        .set_modified(UNIX_EPOCH + Duration::from_secs(1_000_000_000))
+        .unwrap();
+    s.link("base/in", "a.text");
+    s.link("base/out", &secret);
+    s.link("base/sub/deep", &secret);
+    (root, secret)
+}
+
+/// **`PROBE` with `INHIBIT-LINKS` describes a link itself**: what the band's
+/// `:probe-link` asks for, `PROBE INHIBIT-LINKS` (`qfile.lisp:555`), which
+/// "describes the link itself rather than the file linked to"
+/// (`sys/man/files.text:213`). The link is resolved as DELETE resolves it,
+/// its directory followed and its own name not, and described by its own
+/// date and length, with its own pathname for a truename; nothing of what
+/// it leads to is read, so a link out of the root is described and the
+/// file outside is not. What is not a link is probed as ever: "If the file
+/// exists and is not a link, the open also completes for it as with any
+/// probe" (`:216`).
+#[cfg(unix)]
+#[test]
+fn a_probe_with_inhibit_links_describes_the_link_itself() {
+    let s = Scratch::new("probe-link");
+    let (root, secret) = links_world(&s);
+    let mut n = serve(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let before = snapshot(&s.dir);
+    let secret_before = std::fs::metadata(&secret).unwrap().modified().unwrap();
+    let mut now = 10;
+
+    for name in ["/in", "/out", "/sub/deep"] {
+        let cmd = format!(" OPEN PROBE INHIBIT-LINKS CHARACTER{nl}{name}{nl}");
+        let r = accepted(&mut n, c, &mut now, &cmd);
+        let link = std::fs::symlink_metadata(root.join(&name[1..])).unwrap();
+        let expect = format!(" OPEN {} {} NIL{nl}{name}{nl}", written_date(&link), link.len());
+        assert!(r.ends_with(&expect), "{name}: {r:?}, wanted it to end {expect:?}");
+        assert!(!r.contains("09/09/01") && !r.contains(" 1000 "), "{name}: {r:?}");
+    }
+
+    // Not a link: a file, a directory, and `/`, each as a plain PROBE.
+    let probe = |name: &str| format!(" OPEN PROBE INHIBIT-LINKS CHARACTER{nl}{name}{nl}");
+    let r = accepted(&mut n, c, &mut now, &probe("/a.text"));
+    assert!(r.ends_with(&format!(" 3 NIL{nl}/a.text{nl}")), "{r:?}");
+    let r = accepted(&mut n, c, &mut now, &probe("/sub"));
+    assert!(r.ends_with(&format!(" 0 NIL{nl}/sub/{nl}")), "{r:?}");
+    let r = accepted(&mut n, c, &mut now, &probe("/"));
+    assert!(r.ends_with(&format!(" 0 NIL{nl}/{nl}")), "{r:?}");
+
+    // Without INHIBIT-LINKS, the link out of the root is refused, as ever;
+    // and with it, a link whose directory leaves the root is refused too.
+    refused(&mut n, c, &mut now, &s.dir, "ATD", &format!(" OPEN PROBE CHARACTER{nl}/out{nl}"));
+    s.link("base/away", s.path("outside"));
+    let before = {
+        let mut b = before;
+        b.insert(PathBuf::from("base/away"), Entry::Link(s.path("outside")));
+        b
+    };
+    refused(&mut n, c, &mut now, &s.dir, "ATD", &probe("/away/secret.text"));
+
+    assert_eq!(snapshot(&s.dir), before, "nothing changed");
+    assert_eq!(std::fs::metadata(&secret).unwrap().modified().unwrap(), secret_before);
+}
+
+/// **`READ` with `INHIBIT-LINKS` of a link is refused, `WKF`**, before
+/// anything is opened: Unix cannot read a link as a file. The band's
+/// `WRONG-KIND-OF-FILE` (`sys/io/file/open.lisp:260`) is the condition whose
+/// kind `INVALID-OPERATION-FOR-LINK` is (`:264`), and that kind has no code
+/// of its own, where a directory's has, `IOD` (`:268`). What is not a link
+/// is read as ever.
+#[cfg(unix)]
+#[test]
+fn a_read_with_inhibit_links_of_a_link_is_refused() {
+    let s = Scratch::new("read-link");
+    let (root, _) = links_world(&s);
+    let mut n = serve(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let before = snapshot(&s.dir);
+
+    for (tid, name) in [("T3", "/in"), ("T4", "/out"), ("T5", "/sub/deep")] {
+        let open = format!("{tid} I0001 OPEN READ CHARACTER INHIBIT-LINKS{nl}{name}{nl}");
+        let r = n.command(c, 10, &open);
+        assert!(r.starts_with(&format!("{tid} I0001 ERROR WKF C ")), "{name}: {r:?}");
+        assert!(n.down(c).is_empty(), "{name}: nothing went down");
+    }
+    let r = n.command(c, 20, &format!("T6 I0001 OPEN READ CHARACTER INHIBIT-LINKS{nl}/a.text{nl}"));
+    assert!(r.starts_with("T6 I0001 OPEN "), "{r:?}");
+    assert_eq!(characters(&n.down(c)), "abc");
+    n.command(c, 21, "T7 I0001 CLOSE");
+    assert_eq!(snapshot(&s.dir), before, "nothing changed");
+}
+
+/// **`WRITE` with `INHIBIT-LINKS` onto a link replaces the link with the new
+/// file**, and leaves what it led to untouched, in the root or out of it.
+/// The link is resolved as DELETE resolves it; the temporary is made in the
+/// link's own directory and renamed onto the link's own path, which a
+/// rename replaces rather than follows. `IF-EXISTS ERROR` finds the link
+/// there; `APPEND`, which would read what is there, is refused as a read
+/// is, `WKF`. Without the option, a write through a link out of its root is
+/// refused, as ever.
+#[cfg(unix)]
+#[test]
+fn a_write_with_inhibit_links_replaces_the_link_and_not_its_target() {
+    let s = Scratch::new("write-link");
+    let (root, secret) = links_world(&s);
+    let (mut n, _, log) = serve_logged(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let secret_before = std::fs::metadata(&secret).unwrap().modified().unwrap();
+    let mut now = 10;
+
+    // Refused, and nothing changes.
+    refused(&mut n, c, &mut now, &s.dir, "ATD", &format!("O0001 OPEN WRITE CHARACTER{nl}/out{nl}"));
+    let error = format!("O0001 OPEN WRITE CHARACTER INHIBIT-LINKS IF-EXISTS ERROR{nl}/out{nl}");
+    refused(&mut n, c, &mut now, &s.dir, "FAE", &error);
+    let append = format!("O0001 OPEN WRITE CHARACTER INHIBIT-LINKS IF-EXISTS APPEND{nl}/out{nl}");
+    refused(&mut n, c, &mut now, &s.dir, "WKF", &append);
+
+    for (name, dir) in
+        [("/out", root.clone()), ("/in", root.clone()), ("/sub/deep", root.join("sub"))]
+    {
+        now += 10;
+        let open = format!("T3 O0001 OPEN WRITE CHARACTER INHIBIT-LINKS{nl}{name}{nl}");
+        let r = n.command(c, now, &open);
+        assert!(r.starts_with("T3 O0001 OPEN "), "{name}: {r:?}");
+        assert_eq!(temporaries(&dir).len(), 1, "{name}: the temporary is in the link's directory");
+        n.send_data(c, now + 1, file::CHARACTER_OP, b"new");
+        n.send_data(c, now + 2, file::SYNC_MARK_OP, &[]);
+        let r = n.command(c, now + 3, "T4 O0001 CLOSE");
+        assert!(r.starts_with("T4 O0001 CLOSE "), "{name}: {r:?}");
+        let path = root.join(&name[1..]);
+        assert!(std::fs::symlink_metadata(&path).unwrap().is_file(), "{name}: a file, not a link");
+        assert_eq!(std::fs::read(&path).unwrap(), b"new", "{name}");
+        assert!(temporaries(&dir).is_empty(), "{name}: the temporary renamed into place");
+    }
+
+    // What the links led to, untouched.
+    assert_eq!(std::fs::read_to_string(root.join("a.text")).unwrap(), "abc");
+    assert_eq!(std::fs::read(&secret).unwrap(), "x".repeat(1000).as_bytes());
+    assert_eq!(std::fs::metadata(&secret).unwrap().modified().unwrap(), secret_before);
+    assert_eq!(
+        *log.lock().unwrap(),
+        ["3050 (?) write /out", "3050 (?) write /in", "3050 (?) write /sub/deep"]
+    );
+
+    // What is not a link is written as ever.
+    let open = format!("T5 O0001 OPEN WRITE CHARACTER INHIBIT-LINKS{nl}/a.text{nl}");
+    assert!(n.command(c, 100, &open).starts_with("T5 O0001 OPEN "));
+    n.send_data(c, 101, file::CHARACTER_OP, b"plain");
+    n.send_data(c, 102, file::SYNC_MARK_OP, &[]);
+    n.command(c, 103, "T6 O0001 CLOSE");
+    assert_eq!(std::fs::read_to_string(root.join("a.text")).unwrap(), "plain");
+}
+
+/// **In a read-only root, `INHIBIT-LINKS` probes a link and refuses the
+/// rest**: a probe reads, and describes the link as it does anywhere; a
+/// read is refused `WKF`, as anywhere; a write is refused `ATF` before
+/// anything is touched, whatever the link leads to, since the root refuses
+/// every write (`docs/design.md` §6, "A read-only root").
+#[cfg(unix)]
+#[test]
+fn in_a_read_only_root_inhibit_links_probes_and_refuses_the_rest() {
+    let s = Scratch::new("readonly-link");
+    let root = s.dir("base");
+    let sys = s.dir("sys-src");
+    s.file("sys-src/file.lisp", "(sys)\n");
+    let secret = s.file("outside/secret.text", &"x".repeat(1000));
+    s.link("sys-src/in", "file.lisp");
+    s.link("sys-src/out", &secret);
+    let (mut n, _, log) = serve_logged(vec![base(&root), readonly(mount("sys", &sys))]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let before = snapshot(&s.dir);
+    let mut now = 10;
+
+    for name in ["/sys/in", "/sys/out"] {
+        let cmd = format!(" OPEN PROBE INHIBIT-LINKS CHARACTER{nl}{name}{nl}");
+        let r = accepted(&mut n, c, &mut now, &cmd);
+        let link = std::fs::symlink_metadata(sys.join(&name[5..])).unwrap();
+        assert!(r.ends_with(&format!(" {} NIL{nl}{name}{nl}", link.len())), "{name}: {r:?}");
+        let read = format!("I0001 OPEN READ CHARACTER INHIBIT-LINKS{nl}{name}{nl}");
+        refused(&mut n, c, &mut now, &s.dir, "WKF", &read);
+        for how in ["SUPERSEDE", "APPEND", "ERROR"] {
+            let write =
+                format!("O0001 OPEN WRITE CHARACTER INHIBIT-LINKS IF-EXISTS {how}{nl}{name}{nl}");
+            refused(&mut n, c, &mut now, &s.dir, "ATF", &write);
+        }
+    }
+    assert_eq!(snapshot(&s.dir), before, "nothing changed");
+    assert!(log.lock().unwrap().is_empty(), "{:?}", log.lock().unwrap());
+}
+
 /// **A write cut off leaves only its temporary, and startup removes it**
 /// (`docs/design.md` §6, §10): a daemon killed in the middle of a write --- here
 /// the server's NCP dropped, sessions and all, with no CLS and no CLOSE ---

@@ -342,6 +342,19 @@ wins as a whole, and no file is ever half one and half the other.
   RENAME act on the link itself**: its directory is resolved, and its
   own name is not followed, as on Unix. Removing a link that does not
   resolve is how such a link is got rid of.
+- **OPEN with `INHIBIT-LINKS`** of a pathname that names a link acts on
+  the link itself, resolved as DELETE resolves it. A PROBE describes the
+  link by its own date and length, with its own pathname as the truename
+  (`sys/man/files.text:213`). A READ is refused with `WKF`, since Unix
+  cannot read a link as a file; the band's `WRONG-KIND-OF-FILE` has the
+  kind `INVALID-OPERATION-FOR-LINK`, which has no code of its own
+  (`io/file/open.lisp:260`, `:264`). A WRITE replaces the link with the
+  new file: the temporary is made in the link's own directory and renamed
+  onto the link's own path, and an `APPEND`, which would read what is
+  there, is refused with `WKF` as a READ is. Nothing that a link leads to
+  is read, described or written, so a link out of its root may be named
+  this way; a read-only root refuses the write with `ATF`. A pathname that
+  does not name a link is opened as it would be without the option.
 - **DELETE on a handle**, a "delete while open", deletes the file being
   read or written at once, as `FILE.c` does. For a write, it deletes the
   temporary, and the CLOSE then puts nothing in place and is answered as
