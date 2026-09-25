@@ -149,6 +149,15 @@ pathname outside the tree. The machine turns `FNF`, `ATF` and `ATD` into
 `:231`), and `WKF` into `WRONG-KIND-OF-FILE` (`:260`), each through
 `QFILE-PROCESS-ERROR-NEW` (`network/chaos/qfile.lisp:300`).
 
+**Dates.** Every date is `MM/DD/YY HH:MM:SS` at the band's zone, with the
+band's own daylight saving on top (`docs/design.md` §7, FILE's dates). The
+listing's `SETTABLE-PROPERTIES` names what CHANGE-PROPERTIES may set
+(`doc/chfile.text:488-492`); ozd's are the two dates, each the file's
+modification time, and a band writes a date in them with a four-digit year
+(`io/file/open.lisp:1458-1462`). `UKP` and `IPV` are the band's
+`UNKNOWN-PROPERTY` and `INVALID-PROPERTY-VALUE` (`io/file/open.lisp:327`,
+`:332`).
+
 **Translation.** A character transfer goes in the Lisp Machine character
 set, translated from and to the host's as `FILE.c` translates it. `RAW`
 "Suppresses character set translation" (`doc/chfile.text:238`): ozd then

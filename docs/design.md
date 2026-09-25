@@ -372,6 +372,20 @@ wins as a whole, and no file is ever half one and half the other.
   so a read-only root refuses it with `ATF`; a write's was resolved for
   writing by its OPEN. A handle with nothing open on it is refused with
   `BUG`, as DELETE on one is.
+- **CHANGE-PROPERTIES sets the dates as the modification time.**
+  `CREATION-DATE` and `MODIFICATION-DATE` each set it, read at the band's
+  zone (§7), and the listing reports both as the modification time; the
+  access time is left alone. `REFERENCE-DATE` and anything else is `UKP`,
+  and a date that does not read is `IPV` (`io/file/open.lisp:327-335`).
+  `AUTHOR` is accepted and ignored: `copy-file` sends it in the same
+  command as the date, and refusing it would lose the date. Every line is
+  checked before any is applied, so a refused command changes nothing.
+  By pathname or on a read stream the date is set at once, through a
+  handle opened on the path just resolved, once it is known to be a
+  regular file or a directory; on a write stream it is held and set at
+  the CLOSE, after the last byte, since `copy-file` sends it before writing
+  and every write moves the modification time. It is the modification
+  time of the file put in place, and the CLOSE answers with it.
 - **A DATA-CONNECTION whose connection closes before it opens**, because
   the client refused it or it was given up, is answered with `NET`,
   "Data connection could not be established", as `FILE.c` answers it,
@@ -433,6 +447,22 @@ ozd serves seven protocols (`docs/protocols.md`).
   the band's fast parser takes (`io/file/open.lisp:1425-1451`). MINI's
   date is left in plain UTC: a cold load does not read it
   (`sys/cold/mini.lisp` has no date in it).
+  **A date is read** as the band reads one (`ENCODE-UNIVERSAL-TIME`,
+  `io1/time.lisp:150-170`), in a CHANGE-PROPERTIES. The band writes the
+  year in four digits, `~2,'0D` over the full year
+  (`io/file/open.lisp:1461`), so `MM/DD/YYYY HH:MM:SS` is read as well as
+  ozd's own form, a two-digit year being the one within 50 years of now,
+  as the band takes one. The band's encode has quirks of its own, and they
+  are read as it reads them, since a band reads ozd's dates with them: the
+  hour its clock skips each spring reads as daylight saving; after 2000
+  it asks its rule about the year less 1900, which the rule takes for
+  another year, so in 2026 it reads daylight saving from 04/28 to 10/27
+  where it prints it from 04/26 to 10/25, and a date printed between the
+  two reads back an hour off, on the band as here; and to it 2000 is no
+  leap year, so a date after February 2000 reads a day early. Read more
+  strictly than the band's parser, which computes something for any
+  digits: every field in range for the calendar, the year 1970 to 2099,
+  or it is refused.
 - **MINI** answers each open on its connection with the whole file: a
   `202` with the truename and the date, the file in packets, and an EOF;
   or a `203` with a message (`docs/protocols.md`, MINI). It resolves a

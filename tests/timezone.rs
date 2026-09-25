@@ -109,3 +109,116 @@ fn the_bands_last_sunday_in_april_is_the_calendars() {
         assert_eq!(timezone::last_sunday_in_april(year), band, "{year}");
     }
 }
+
+/// **A date is read as the band reads one** (`ENCODE-UNIVERSAL-TIME`,
+/// `sys/io1/time.lisp:150-170`): the zone, and the band's daylight saving
+/// on top. The band writes the year in four digits (`~2,'0D` over the
+/// decoded year, `sys/io/file/open.lisp:1461`), and ozd in two; both are
+/// read.
+#[test]
+fn a_date_is_read_in_the_bands_zone_with_its_daylight_saving() {
+    // 2026-09-25 18:39:38 UTC: 14:39:38 at zone 5, in daylight saving.
+    assert_eq!(timezone::parse("09/25/2026 14:39:38", 5, SUMMER), Some(1_790_361_578));
+    assert_eq!(timezone::parse("09/25/26 14:39:38", 5, SUMMER), Some(1_790_361_578));
+    // Winter, and zone 0.
+    assert_eq!(timezone::parse("01/15/26 07:00:00", 5, SUMMER), Some(WINTER));
+    assert_eq!(timezone::parse("01/15/2026 12:00:00", 0, SUMMER), Some(WINTER));
+    assert_eq!(timezone::parse("07/15/26 13:00:00", 0, SUMMER), Some(SUMMER));
+    assert_eq!(timezone::parse("07/15/26 14:00:00", -1, SUMMER), Some(SUMMER));
+}
+
+/// **A two-digit year is the one within 50 years of now**, as the band's
+/// encode takes one (`sys/io1/time.lisp:153-160`): in 2026, `76` is 1976
+/// and `75` is 2075.
+#[test]
+fn a_two_digit_year_is_within_fifty_years_of_now() {
+    assert_eq!(timezone::parse("01/01/76 00:00:00", 0, SUMMER), Some(189_302_400));
+    assert_eq!(timezone::parse("01/01/75 00:00:00", 0, SUMMER), Some(3_313_526_400));
+    assert_eq!(timezone::parse("01/01/1976 00:00:00", 0, SUMMER), Some(189_302_400));
+}
+
+/// **What is printed is read back as the same time**, wherever the band's
+/// own decode and encode agree: winter and summer, at zone 0, 5 and -1, in
+/// 1995 and in 2026, the year in two digits and in four.
+#[test]
+fn a_date_printed_is_read_back() {
+    for t in [WINTER, SUMMER, 804_873_600, 1_790_361_578, 189_302_400] {
+        for zone in [0, 5, -1, 8, -12, 12] {
+            let shown = timezone::print(t, zone);
+            assert_eq!(timezone::parse(&shown, zone, t), Some(t), "{shown} at {zone}");
+            let f = timezone::decode(t, zone);
+            let long = format!("{}{:04}{}", &shown[..6], f.year, &shown[8..]);
+            assert_eq!(timezone::parse(&long, zone, t), Some(t), "{long} at {zone}");
+        }
+    }
+}
+
+/// **The band's quirks are read as the band reads them**, since a band
+/// reads ozd's dates with them:
+///
+/// - **The spring-forward hour.** 02:30 on 1995-04-30, the last Sunday in
+///   April, is a time the band's clock skips. The band reads it as
+///   daylight saving, 06:30 UTC at zone 5, and prints that back as 01:30.
+/// - **After 2000 the band's encode takes its last Sundays from another
+///   year.** It makes the year one since 1900 before it asks the rule
+///   (`sys/io1/time.lisp:161-165`), and the rule takes a year above 100 as
+///   a full one and subtracts 1900 again (`:196`). So in 2026 it reads
+///   daylight saving from 04/28 to 10/27, where its decode, given the full
+///   year, prints it from 04/26 to 10/25: a date printed between the two
+///   is read back an hour off, by the band and by ozd alike.
+/// - **2000 is no leap year to the encode**: the year there is 100, which
+///   `LEAP-YEAR-P` takes as it is (`:376`), so a date after February reads a
+///   day early.
+#[test]
+fn the_bands_quirks_are_read_as_the_band_reads_them() {
+    assert_eq!(timezone::parse("04/30/95 02:30:00", 5, SUMMER), Some(799_223_400));
+    assert_eq!(timezone::print(799_223_400, 5), "04/30/95 01:30:00");
+    assert_eq!(timezone::parse("04/30/95 01:30:00", 5, SUMMER), Some(799_223_400));
+
+    let april = 1_777_291_200; // 2026-04-27 12:00:00 UTC
+    assert_eq!(timezone::print(april, 5), "04/27/26 08:00:00");
+    assert_eq!(timezone::parse("04/27/26 08:00:00", 5, april), Some(april + 3600));
+    let october = 1_793_016_000; // 2026-10-26 12:00:00 UTC
+    assert_eq!(timezone::print(october, 5), "10/26/26 07:00:00");
+    assert_eq!(timezone::parse("10/26/26 07:00:00", 5, october), Some(october - 3600));
+
+    // 2000-02-29 12:00:00 UTC, which the band's encode gives for March 1st.
+    assert_eq!(timezone::parse("03/01/2000 12:00:00", 0, SUMMER), Some(951_825_600));
+    assert_eq!(timezone::print(951_825_600, 0), "02/29/00 12:00:00");
+}
+
+/// **What is not a date as the band prints one is not read**: the shape
+/// is `MM/DD/YY HH:MM:SS` or `MM/DD/YYYY HH:MM:SS`, every field in range
+/// for the calendar, the year from 1970 to 2099 --- the band's own decode
+/// knows no later one (`sys/io1/time.lisp:120`) --- and the time not before
+/// 1970.
+#[test]
+fn what_is_not_a_date_is_not_read() {
+    for bad in [
+        "",
+        "09/25/2026",
+        "9/25/2026 14:39:38",
+        "09/25/2026 14:39",
+        "09-25-2026 14:39:38",
+        "09/25/2026T14:39:38",
+        "09/25/2026 14:39:38 ",
+        "0a/25/26 14:39:38",
+        "+9/25/26 14:39:38",
+        "00/25/26 14:39:38",
+        "13/25/26 14:39:38",
+        "02/30/26 14:39:38",
+        "02/29/2027 00:00:00",
+        "09/00/26 14:39:38",
+        "09/25/26 24:00:00",
+        "09/25/26 14:60:00",
+        "09/25/26 14:39:60",
+        "01/01/2100 00:00:00",
+        "12/31/1969 23:00:00",
+        "09/25/12026 14:39:38",
+    ] {
+        assert_eq!(timezone::parse(bad, 0, SUMMER), None, "{bad:?}");
+    }
+    assert_eq!(timezone::parse("01/01/1970 00:00:00", 0, SUMMER), Some(0), "1970 itself");
+    assert_eq!(timezone::parse("01/01/1970 05:00:00", 5, SUMMER), Some(36_000), "zone 5");
+    assert_eq!(timezone::parse("01/01/1970 00:00:00", -1, SUMMER), None, "before 1970");
+}

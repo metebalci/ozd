@@ -190,3 +190,96 @@ pub(crate) fn leap_year_p(year: i64) -> bool {
     let year = if year < 100 { year + 1900 } else { year };
     year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
+
+/// The universal time of these fields at `zone`, in seconds since 1970, as
+/// the band encodes a date with no zone given: `ENCODE-UNIVERSAL-TIME`
+/// (`sys/io1/time.lisp:150-170`), transcribed. A year below 100 is the one
+/// within 50 years of `current_year`; the year is then made one since
+/// 1900, and **that** is what the daylight-saving rule and `LEAP-YEAR-P`
+/// are given. Two quirks follow, and are the band's, kept: after 2000 the
+/// rule takes a year above 100 for a full one and subtracts 1900 again
+/// (`:196`), so its last Sundays are another year's; and 2000 is 100, which
+/// `LEAP-YEAR-P` takes as it is (`:376`), so it is no leap year here.
+pub fn encode(f: Fields, zone: i8, current_year: i64) -> i64 {
+    let year = if f.year < 100 {
+        current_year + (50 + (f.year - current_year % 100)).rem_euclid(100) - 50
+    } else {
+        f.year
+    };
+    let year = year - 1900;
+    let zone = i64::from(zone);
+    let zone = if daylight_saving(f.hour, f.day, f.month, year) { zone - 1 } else { zone };
+    let mut days =
+        (f.day - 1) + CUMULATIVE[f.month as usize] + (year - 1).div_euclid(4) + year * 365;
+    if f.month > 2 && leap_year_p(year) {
+        days += 1;
+    }
+    let ut = f.second + 60 * f.minute + 3600 * f.hour + days * 86_400 + zone * 3600;
+    ut - UNIX_EPOCH_UNIVERSAL as i64
+}
+
+/// A date as a band writes one in a CHANGE-PROPERTIES, read at `zone` as
+/// the band reads a date ([`encode`]), in seconds since 1970; `None` if it
+/// is not one.
+///
+/// **The band writes the year in four digits**:
+/// `PRINT-DIRECTORY-DATE-PROPERTY` prints the decoded year with `~2,'0D`
+/// (`sys/io/file/open.lisp:1458-1462`), and the decoded year is the full
+/// one, `(+ 1900. A)` (`sys/io1/time.lisp:129`), which a width pads and
+/// never cuts (`FORMAT-CTL-DECIMAL`, `sys/io/format.lisp:515`). ozd writes
+/// two ([`print()`]). So both are read: `MM/DD/YYYY HH:MM:SS` and `MM/DD/YY
+/// HH:MM:SS`, exactly, a two-digit year the one within 50 years of the year
+/// `now` is at `zone`, as the band takes its current year.
+///
+/// **Stricter than the band's parser**, which computes something for any
+/// digits: here every field is in range for the calendar, the year is from
+/// 1970 to 2099 --- the band's decode knows no later one (`:120`) --- and
+/// the time is not before 1970. The band's printer writes nothing else.
+pub fn parse(text: &str, zone: i8, now: i64) -> Option<i64> {
+    let b = text.as_bytes();
+    let long = match b.len() {
+        17 => false,
+        19 => true,
+        _ => return None,
+    };
+    let y = if long { 4 } else { 2 };
+    let shape_ok =
+        b[2] == b'/' && b[5] == b'/' && b[6 + y] == b' ' && b[9 + y] == b':' && b[12 + y] == b':';
+    if !shape_ok {
+        return None;
+    }
+    let number = |from: usize, len: usize| -> Option<i64> {
+        let digits = &b[from..from + len];
+        if !digits.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        Some(digits.iter().fold(0, |n, d| n * 10 + i64::from(d - b'0')))
+    };
+    let mut f = Fields {
+        month: number(0, 2)?,
+        day: number(3, 2)?,
+        year: number(6, y)?,
+        hour: number(7 + y, 2)?,
+        minute: number(10 + y, 2)?,
+        second: number(13 + y, 2)?,
+    };
+    let current_year = decode(now, zone).year;
+    if !long {
+        // The year the band's encode will take, to check the day against.
+        f.year = current_year + (50 + (f.year - current_year % 100)).rem_euclid(100) - 50;
+    }
+    let month_days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let leap = f.year % 4 == 0 && (f.year % 100 != 0 || f.year % 400 == 0);
+    let last_day = if f.month == 2 && leap { 29 } else { *month_days.get(f.month as usize)? };
+    if !(1970..=2099).contains(&f.year)
+        || !(1..=12).contains(&f.month)
+        || !(1..=last_day).contains(&f.day)
+        || f.hour > 23
+        || f.minute > 59
+        || f.second > 59
+    {
+        return None;
+    }
+    let unix = encode(f, zone, current_year);
+    (unix >= 0).then_some(unix)
+}

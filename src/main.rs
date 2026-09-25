@@ -135,8 +135,8 @@ time and their host table, and passing packets between them.
                                without it.
   --timezone <hours>           the band's zone, its site's :TIMEZONE: whole
                                hours west of Greenwich, -12 to 12, 5 for
-                               System 100's site. FILE prints its dates at
-                               this zone, and the band's own daylight saving
+                               System 100's site. FILE prints and reads its
+                               dates at this zone, and the band's own daylight saving
                                goes on top of it whatever the zone: the old
                                North American calendar, last Sunday in April
                                to last Sunday in October. A fraction is not

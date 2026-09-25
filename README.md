@@ -92,7 +92,7 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   wants a restart.
 - `--timezone 5` is the band's zone, as its site file's `:TIMEZONE` gives
   it: whole hours west of Greenwich, 5 for System 100's site. ozd prints
-  every FILE date at that zone, and puts the band's own daylight saving
+  and reads every FILE date at that zone, and puts the band's own daylight saving
   on top of it, whatever the zone: the old North American calendar, from
   the last Sunday in April to the last Sunday in October. Without the
   flag the zone is 0, which is UTC, with that daylight saving on top, so

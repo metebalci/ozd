@@ -410,6 +410,10 @@ enum Transfer {
         /// Deleted while open: the temporary is gone, and the `CLOSE`
         /// puts nothing in place (`Control::delete_while_open`).
         deleted: bool,
+        /// A date a `CHANGE-PROPERTIES` gave on this stream, to be the
+        /// file's modification time: set at the `CLOSE`, after the last
+        /// byte is written (`Control::change_properties`).
+        modified: Option<std::time::SystemTime>,
     },
 }
 
@@ -871,7 +875,7 @@ impl Control {
         let mut text = String::new();
         text.push(nl);
         text.push_str(&format!("BLOCK-SIZE 1024{nl}"));
-        text.push_str(&format!("SETTABLE-PROPERTIES CREATION-DATE AUTHOR{nl}"));
+        text.push_str(&format!("SETTABLE-PROPERTIES CREATION-DATE MODIFICATION-DATE AUTHOR{nl}"));
         text.push(nl);
         for name in names.into_iter().filter(|n| matches(&pattern, n)) {
             let shown = format!("{}/{}", dir.trim_end_matches('/'), name);
@@ -1022,7 +1026,17 @@ impl Control {
                 let _ = std::fs::remove_file(&temp);
                 self.error(tid, handle, "NMR", 'F', &why);
             }
-            Transfer::Write { file, temp, real, pathname, truename, deleted, .. } => {
+            Transfer::Write { file, temp, real, pathname, truename, deleted, modified, .. } => {
+                // A date the stream was given, set now that the last byte
+                // is written, through the handle it was written through;
+                // the rename keeps it.
+                if let Some(when) = modified
+                    && let Err(e) = file.set_times(std::fs::FileTimes::new().set_modified(when))
+                {
+                    drop(file);
+                    let _ = std::fs::remove_file(&temp);
+                    return self.error(tid, handle, "MSC", 'F', &e.to_string());
+                }
                 // What was written, measured through the handle it was
                 // written through.
                 let written = file.metadata();
@@ -1220,6 +1234,7 @@ impl Control {
                 marked: false,
                 closing: None,
                 deleted: false,
+                modified: None,
             },
         );
     }
@@ -1527,11 +1542,31 @@ impl Control {
     /// until its `CLOSE`. A handle with no file open on it is the server's
     /// `BUG`, as `DELETE` on one is.
     ///
-    /// Only the properties a file here has are settable; the rest are
-    /// refused by name, as `FILE.c` refuses what its property table has no
-    /// setter for.
+    /// **The dates are the modification time.** `CREATION-DATE` and
+    /// `MODIFICATION-DATE` each set it, read as the band writes a date, at
+    /// the band's zone (`crate::timezone`): the listing reports both as the
+    /// modification time, and make-system compares `CREATION-DATE`
+    /// (`sys2/maksys.lisp:1289-1291`). The access time is left as it is.
+    /// By pathname, and on a read stream, the date is set at once, through
+    /// a handle opened on the path just resolved, and only once that is
+    /// known to be a regular file or a directory ([`openable`]). **On a
+    /// write stream it is held, and set after the last byte, at the
+    /// `CLOSE`**: `copy-file` sends it before it writes a byte, and every
+    /// byte written moves the modification time.
+    ///
+    /// `AUTHOR` is accepted and nothing is done with it: nothing here keeps
+    /// an author, and `copy-file` sends it in the same command as the date,
+    /// which refusing it would lose. Any other property is `UKP`, the
+    /// band's `UNKNOWN-PROPERTY` (`sys/io/file/open.lisp:327-330`) ---
+    /// `REFERENCE-DATE` among them, since the access time is not set --- and
+    /// a date that does not read is `IPV`, `INVALID-PROPERTY-VALUE`
+    /// (`:332-335`). **Every line is checked before any is applied**, so a
+    /// command refused changes nothing. Where both dates are given, the
+    /// later line's is the one set.
     fn change_properties(&mut self, tid: &str, handle: &str, lines: &[&str]) {
-        let (pathname, properties) = if handle.is_empty() {
+        // What the command names: a place resolved for writing, set at
+        // once, or none for a write, whose date is held.
+        let (pathname, place, properties) = if handle.is_empty() {
             let pathname = lines.first().copied().unwrap_or("").to_string();
             let place = match self.tree.resolve_for_writing(&pathname) {
                 Ok(p) => p,
@@ -1540,7 +1575,7 @@ impl Control {
             if std::fs::symlink_metadata(&place.path).is_err() {
                 return self.error(tid, handle, "FNF", 'C', "File not found");
             }
-            (pathname, lines.get(1..).unwrap_or_default())
+            (pathname, Some(place), lines.get(1..).unwrap_or_default())
         } else {
             let pathname = match self.transfers.get(handle) {
                 None if !self.handles.contains_key(handle) => Err("No such file handle"),
@@ -1555,25 +1590,37 @@ impl Control {
                 Ok(p) => p,
                 Err(why) => return self.error(tid, handle, "BUG", 'C', why),
             };
+            let mut place = None;
             if reading {
-                let place = match self.tree.resolve_for_writing(&pathname) {
+                let p = match self.tree.resolve_for_writing(&pathname) {
                     Ok(p) => p,
                     Err((code, msg)) => return self.error(tid, handle, code, 'C', &msg),
                 };
-                if std::fs::symlink_metadata(&place.path).is_err() {
+                if std::fs::symlink_metadata(&p.path).is_err() {
                     return self.error(tid, handle, "FNF", 'C', "File not found");
                 }
+                place = Some(p);
             }
-            (pathname, lines)
+            (pathname, place, lines)
         };
+        // Every line checked, and nothing done until all of them are.
+        let now = now_unix(self.time);
+        let mut modified = None;
         for line in properties.iter().filter(|l| !l.is_empty()) {
-            let name = line.split(' ').next().unwrap_or("");
+            let (name, value) = line.split_once(' ').unwrap_or((line, ""));
             match name {
-                // The dates and the author are what `FILE.c` can set;
-                // nothing here keeps an author, and a date is the file's
-                // own, which is left as the filesystem has it.
-                "CREATION-DATE" | "MODIFICATION-DATE" | "REFERENCE-DATE" | "AUTHOR" => {}
-                "" => {}
+                "CREATION-DATE" | "MODIFICATION-DATE" => {
+                    match timezone::parse(value, self.timezone, now) {
+                        Some(t) => modified = Some(t),
+                        None => {
+                            let why = format!(
+                                "{name} {value:?} is not a date as MM/DD/YY HH:MM:SS or MM/DD/YYYY HH:MM:SS"
+                            );
+                            return self.error(tid, handle, "IPV", 'C', &why);
+                        }
+                    }
+                }
+                "AUTHOR" | "" => {}
                 other => {
                     return self.error(
                         tid,
@@ -1582,6 +1629,21 @@ impl Control {
                         'C',
                         &format!("{other} cannot be set here"),
                     );
+                }
+            }
+        }
+        if let Some(t) = modified {
+            let when = std::time::UNIX_EPOCH + std::time::Duration::from_secs(t as u64);
+            match &place {
+                Some(place) => {
+                    if let Err((code, msg)) = set_modified(place, when) {
+                        return self.error(tid, handle, code, 'C', &msg);
+                    }
+                }
+                None => {
+                    if let Some(Transfer::Write { modified, .. }) = self.transfers.get_mut(handle) {
+                        *modified = Some(when);
+                    }
                 }
             }
         }
@@ -1726,6 +1788,7 @@ impl Control {
         t.push_str(&format!("LENGTH-IN-BLOCKS {}{nl}", length.div_ceil(1024)));
         t.push_str(&format!("LENGTH-IN-BYTES {length}{nl}"));
         t.push_str(&format!("CREATION-DATE {date}{nl}"));
+        t.push_str(&format!("MODIFICATION-DATE {date}{nl}"));
         if directory {
             t.push_str(&format!("DIRECTORY T{nl}"));
         }
@@ -1855,6 +1918,20 @@ fn described(place: &Place) -> Option<std::fs::Metadata> {
         Ok(m) => m,
         Err(_) => std::fs::symlink_metadata(&place.path).ok(),
     }
+}
+
+/// Sets what is at a place's modification time to `when`, leaving its
+/// access time: through a handle opened on the place's path, once
+/// [`openable`] has found a regular file or a directory there, so a FIFO is
+/// never opened. The place is the one just resolved, and the handle is
+/// opened on it and acted on, not the name again.
+fn set_modified(place: &Place, when: std::time::SystemTime) -> Result<(), Refusal> {
+    match openable(place)? {
+        Some(_) => {}
+        None => return Err(("FNF", "File not found".into())),
+    }
+    let file = std::fs::File::open(&place.path).map_err(|e| ("ATF", e.to_string()))?;
+    file.set_times(std::fs::FileTimes::new().set_modified(when)).map_err(|e| ("ATF", e.to_string()))
 }
 
 /// Writes `bytes` into a write's temporary at `at`, and moves `at` past

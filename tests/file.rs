@@ -597,6 +597,218 @@ fn every_date_file_prints_is_in_the_bands_zone() {
     }
 }
 
+/// A file's modification time, in seconds since 1970.
+fn mtime_of(path: &Path) -> u64 {
+    let meta = std::fs::metadata(path).unwrap();
+    meta.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_secs()
+}
+
+/// A file's access time, in seconds since 1970.
+fn atime_of(path: &Path) -> u64 {
+    let meta = std::fs::metadata(path).unwrap();
+    meta.accessed().unwrap().duration_since(UNIX_EPOCH).unwrap().as_secs()
+}
+
+/// FILE over these roots at the band's zone 5, System 100's, reporting
+/// what it changes.
+fn serve_at_zone_5(roots: Vec<Root>) -> (Net, Arc<Mutex<Vec<String>>>) {
+    let tree = Arc::new(Tree::new(roots).unwrap());
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let seen = log.clone();
+    let hook: LogHook = Arc::new(move |line: &str| seen.lock().unwrap().push(line.to_string()));
+    let mut service = File::new(tree, Some(hook));
+    service.timezone = 5;
+    (Net::new(service), log)
+}
+
+/// 2026-09-25 18:39:38 UTC, which a band at zone 5 prints as
+/// `09/25/2026 14:39:38` in a CHANGE-PROPERTIES (`PRINT-DIRECTORY-DATE-PROPERTY`,
+/// `sys/io/file/open.lisp:1458`).
+const SET: u64 = 1_790_361_578;
+
+/// **`CREATION-DATE` or `MODIFICATION-DATE` sets a file's modification
+/// time**, read as the band writes it, four-digit year and all, at the
+/// band's zone (`src/timezone.rs`); its access time is left as it is. By
+/// pathname, a file or a directory; on a read stream, at once. A listing
+/// reports both dates, each the modification time, and says both are
+/// settable: `chfile.text:484-492` makes the listing's
+/// `SETTABLE-PROPERTIES` the list of what may be set.
+#[test]
+fn a_date_changed_is_the_files_modification_time() {
+    let s = Scratch::new("set-date");
+    let root = s.dir("base");
+    let f = s.file("base/f.text", "abc");
+    let d = s.dir("base/d");
+    std::fs::File::options()
+        .write(true)
+        .open(&f)
+        .unwrap()
+        .set_times(
+            std::fs::FileTimes::new()
+                .set_accessed(UNIX_EPOCH + Duration::from_secs(1_000_000_000))
+                .set_modified(UNIX_EPOCH + Duration::from_secs(1_768_478_400)),
+        )
+        .unwrap();
+    let (mut n, log) = serve_at_zone_5(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+
+    let r = n.command(
+        c,
+        10,
+        &format!("T3  CHANGE-PROPERTIES{nl}/f.text{nl}CREATION-DATE 09/25/2026 14:39:38{nl}AUTHOR LISPM{nl}"),
+    );
+    assert_eq!(r, "T3  CHANGE-PROPERTIES");
+    assert_eq!(mtime_of(&f), SET);
+    assert_eq!(atime_of(&f), 1_000_000_000, "the access time as it was");
+
+    let r = n.command(
+        c,
+        11,
+        &format!("T4  CHANGE-PROPERTIES{nl}/f.text{nl}MODIFICATION-DATE 01/15/26 07:00:00{nl}"),
+    );
+    assert_eq!(r, "T4  CHANGE-PROPERTIES");
+    assert_eq!(mtime_of(&f), 1_768_478_400);
+
+    let r = n.command(
+        c,
+        12,
+        &format!("T5  CHANGE-PROPERTIES{nl}/d{nl}CREATION-DATE 09/25/2026 14:39:38{nl}"),
+    );
+    assert_eq!(r, "T5  CHANGE-PROPERTIES");
+    assert_eq!(mtime_of(&d), SET, "a directory's too");
+
+    // On a read stream, at once.
+    n.command(c, 20, &format!("T6 I0001 OPEN READ CHARACTER{nl}/f.text{nl}"));
+    let r = n.command(
+        c,
+        21,
+        &format!("T7 I0001 CHANGE-PROPERTIES{nl}CREATION-DATE 07/15/2026 08:00:00{nl}"),
+    );
+    assert_eq!(r, "T7 I0001 CHANGE-PROPERTIES");
+    assert_eq!(mtime_of(&f), 1_784_116_800, "before the CLOSE");
+    n.command(c, 22, "T8 I0001 CLOSE");
+    n.down(c);
+
+    // Both dates listed, each the modification time; both settable.
+    n.command(c, 30, &format!("T9 I0001 DIRECTORY{nl}/*{nl}"));
+    let listing = characters(&n.down(c));
+    let header = listing.split(&format!("{nl}{nl}")).next().unwrap();
+    assert!(
+        header.contains(&format!("{nl}SETTABLE-PROPERTIES CREATION-DATE MODIFICATION-DATE")),
+        "{header:?}"
+    );
+    let f_record = record(&listing, "/f.text");
+    for name in ["CREATION-DATE", "MODIFICATION-DATE"] {
+        assert!(f_record.contains(&format!("{nl}{name} 07/15/26 08:00:00")), "{f_record:?}");
+    }
+    n.command(c, 31, "TA I0001 CLOSE");
+    n.down(c);
+    n.command(c, 32, &format!("TB I0001 PROPERTIES{nl}/d{nl}"));
+    let properties = characters(&n.down(c));
+    assert!(
+        properties.contains(&format!("{nl}MODIFICATION-DATE 09/25/26 14:39:38{nl}")),
+        "{properties:?}"
+    );
+    n.command(c, 33, "TC I0001 CLOSE");
+    assert_eq!(
+        *log.lock().unwrap(),
+        [
+            "3050 (?) change-properties /f.text",
+            "3050 (?) change-properties /f.text",
+            "3050 (?) change-properties /d",
+            "3050 (?) change-properties /f.text",
+        ]
+    );
+}
+
+/// **On a stream open for writing, the date is the written file's**:
+/// `copy-file` sends it before writing a byte (`sys/io/file/open.lisp:745`),
+/// and every byte written moves the modification time, so the date is held
+/// and applied after the last, at the CLOSE, and is the file's once it is
+/// in place. The CLOSE answers with it. So for a file written new and for
+/// one written over.
+#[test]
+fn a_date_changed_on_a_write_is_the_written_files() {
+    let s = Scratch::new("set-date-write");
+    let root = s.dir("base");
+    let old = s.file("base/old.text", "old");
+    set_mtime(&old, 1_768_478_400);
+    let (mut n, _) = serve_at_zone_5(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    for (tid, name, how) in [("T3", "new.text", ""), ("T6", "old.text", " IF-EXISTS SUPERSEDE")] {
+        let open = format!("{tid} O0001 OPEN WRITE CHARACTER{how}{nl}/{name}{nl}");
+        assert!(n.command(c, 10, &open).starts_with(&format!("{tid} O0001 OPEN ")));
+        let change = format!(
+            "{tid}C O0001 CHANGE-PROPERTIES{nl}CREATION-DATE 09/25/2026 14:39:38{nl}AUTHOR LISPM{nl}"
+        );
+        assert_eq!(n.command(c, 11, &change), format!("{tid}C O0001 CHANGE-PROPERTIES"));
+        n.send_data(c, 12, file::CHARACTER_OP, b"hi");
+        n.send_data(c, 13, file::SYNC_MARK_OP, &[]);
+        let r = n.command(c, 14, &format!("{tid}X O0001 CLOSE"));
+        assert_eq!(r, format!("{tid}X O0001 CLOSE 09/25/26 14:39:38 2{nl}/{name}{nl}"));
+        assert_eq!(mtime_of(&root.join(name)), SET, "{name}");
+        assert_eq!(std::fs::read(root.join(name)).unwrap(), b"hi", "{name}");
+    }
+}
+
+/// **A CHANGE-PROPERTIES refused changes nothing**, since every line is
+/// checked before any is applied. `REFERENCE-DATE` is not settable, `UKP`,
+/// the band's `UNKNOWN-PROPERTY` (`sys/io/file/open.lisp:327-330`); a
+/// value that is not a date, `IPV`, its `INVALID-PROPERTY-VALUE` (`:332-335`);
+/// a read-only root, `ATF`; what is not a regular file or a directory,
+/// `WKF`, which is never opened. On a write refused, the date is not held
+/// either.
+#[test]
+fn a_change_of_properties_refused_changes_nothing() {
+    let s = Scratch::new("set-date-refused");
+    let root = s.dir("base");
+    let f = s.file("base/f.text", "abc");
+    set_mtime(&f, 1_768_478_400);
+    let sys = s.dir("sys-src");
+    let lisp = s.file("sys-src/file.lisp", "(sys)");
+    set_mtime(&lisp, 1_768_478_400);
+    let fifo = s.fifo("base/pipe");
+    let (mut n, log) = serve_at_zone_5(vec![base(&root), readonly(mount("sys", &sys))]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let good = "CREATION-DATE 09/25/2026 14:39:38";
+    let mut now = 10;
+    for (code, lines) in [
+        ("UKP", "REFERENCE-DATE 09/25/2026 14:39:38".to_string()),
+        ("IPV", "CREATION-DATE yesterday".to_string()),
+        ("IPV", "CREATION-DATE".to_string()),
+        ("IPV", "MODIFICATION-DATE 13/25/2026 14:39:38".to_string()),
+        ("UKP", format!("{good}{nl}COLOUR BLUE")),
+        ("IPV", format!("{good}{nl}MODIFICATION-DATE 09/25/2026")),
+        ("IPV", format!("AUTHOR LISPM{nl}{good}{nl}CREATION-DATE 9/25/26 14:39:38")),
+    ] {
+        let cmd = format!(" CHANGE-PROPERTIES{nl}/f.text{nl}{lines}{nl}");
+        refused(&mut n, c, &mut now, &s.dir, code, &cmd);
+        assert_eq!(mtime_of(&f), 1_768_478_400, "{lines:?}");
+    }
+    let ro = format!(" CHANGE-PROPERTIES{nl}/sys/file.lisp{nl}{good}{nl}");
+    refused(&mut n, c, &mut now, &s.dir, "ATF", &ro);
+    assert_eq!(mtime_of(&lisp), 1_768_478_400);
+    if fifo {
+        let cmd = format!(" CHANGE-PROPERTIES{nl}/pipe{nl}{good}{nl}");
+        refused(&mut n, c, &mut now, &s.dir, "WKF", &cmd);
+    }
+
+    // On a write: refused, and the date not held for the CLOSE.
+    accepted(&mut n, c, &mut now, &format!("O0001 OPEN WRITE CHARACTER{nl}/w.text{nl}"));
+    let cmd =
+        format!("O0001 CHANGE-PROPERTIES{nl}{good}{nl}REFERENCE-DATE 09/25/2026 14:39:38{nl}");
+    now += 1;
+    let r = n.command(c, now, &format!("R{now} {cmd}"));
+    assert!(r.contains(" ERROR UKP "), "{r:?}");
+    n.send_data(c, now + 1, file::SYNC_MARK_OP, &[]);
+    accepted(&mut n, c, &mut now, "O0001 CLOSE");
+    assert_ne!(mtime_of(&root.join("w.text")), SET);
+    assert_eq!(*log.lock().unwrap(), ["3050 (?) write /w.text"]);
+}
+
 /// **The FILE protocol writes a file**, as `qfile.lisp`'s output stream
 /// does it and `FILE.c` answered: `OPEN WRITE` on the output handle, the
 /// data up the data connection, the user end's own synchronous mark, and
