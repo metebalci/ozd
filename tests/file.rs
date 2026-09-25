@@ -975,6 +975,79 @@ fn the_file_service_manages_a_directory() {
     );
 }
 
+/// **`CHANGE-PROPERTIES` on an open stream names that stream's file, and
+/// every line is a property.** The band sends it so from a stream:
+/// `qfile.lisp`'s `(QFILE-DATA-STREAM-MIXIN :CHANGE-PROPERTIES)` (`:1475`)
+/// sends the stream's handle and `CHANGE-PROPERTIES-STRING` with no
+/// pathname (`:681`), which then writes no pathname line (`:684`); and
+/// `copy-file` does it on its output stream before writing a byte
+/// (`sys/io/file/open.lisp:745`). Taking the first property for a pathname
+/// answered `FNF`. Without a handle the pathname comes first, as ever; a
+/// handle with no transfer is the server's `BUG`; and on a read stream in a
+/// read-only root it is refused `ATF` as the pathname form is.
+#[cfg(unix)]
+#[test]
+fn change_properties_on_an_open_stream_names_its_file() {
+    let s = Scratch::new("change-on-stream");
+    let root = s.dir("base");
+    let sys = s.dir("sys-src");
+    s.file("base/read.text", "read me\n");
+    s.file("sys-src/file.lisp", "(sys)\n");
+    let (mut n, _, log) = serve_logged(vec![base(&root), readonly(mount("sys", &sys))]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let props = format!("CREATION-DATE 09/25/26 14:39:38{nl}AUTHOR LISPM{nl}");
+
+    // On a write, before any data: the command copy-file sends.
+    let r = n.command(c, 10, &format!("T3 O0001 OPEN WRITE CHARACTER{nl}/new.text{nl}"));
+    assert!(r.starts_with("T3 O0001 OPEN "), "{r:?}");
+    let r = n.command(c, 11, &format!("T4 O0001 CHANGE-PROPERTIES{nl}{props}"));
+    assert_eq!(r, "T4 O0001 CHANGE-PROPERTIES");
+    n.send_data(c, 12, file::CHARACTER_OP, b"hi");
+    n.send_data(c, 13, file::SYNC_MARK_OP, &[]);
+    let r = n.command(c, 14, "T5 O0001 CLOSE");
+    assert!(r.starts_with("T5 O0001 CLOSE "), "{r:?}");
+    assert_eq!(std::fs::read(root.join("new.text")).unwrap(), b"hi");
+
+    // On a read.
+    let r = n.command(c, 20, &format!("T6 I0001 OPEN READ CHARACTER{nl}/read.text{nl}"));
+    assert!(r.starts_with("T6 I0001 OPEN "), "{r:?}");
+    let r = n.command(c, 21, &format!("T7 I0001 CHANGE-PROPERTIES{nl}{props}"));
+    assert_eq!(r, "T7 I0001 CHANGE-PROPERTIES");
+
+    // Every line a property: the first one too.
+    let r = n.command(c, 22, &format!("T8 I0001 CHANGE-PROPERTIES{nl}COLOUR BLUE{nl}"));
+    assert_eq!(r, "T8 I0001 ERROR UKP C COLOUR cannot be set here");
+    n.command(c, 23, "T9 I0001 CLOSE");
+    n.down(c);
+
+    // A handle with nothing open on it, and one never made.
+    let r = n.command(c, 30, &format!("TA I0001 CHANGE-PROPERTIES{nl}{props}"));
+    assert!(r.starts_with("TA I0001 ERROR BUG C "), "{r:?}");
+    let r = n.command(c, 31, &format!("TB X0009 CHANGE-PROPERTIES{nl}{props}"));
+    assert!(r.starts_with("TB X0009 ERROR BUG C "), "{r:?}");
+
+    // Without a handle, the pathname and then the properties, as ever.
+    let r = n.command(c, 40, &format!("TC  CHANGE-PROPERTIES{nl}/read.text{nl}{props}"));
+    assert_eq!(r, "TC  CHANGE-PROPERTIES");
+
+    // A read stream in a read-only root: refused before anything is done.
+    let mut now = 50;
+    accepted(&mut n, c, &mut now, &format!("I0001 OPEN READ CHARACTER{nl}/sys/file.lisp{nl}"));
+    refused(&mut n, c, &mut now, &s.dir, "ATF", &format!("I0001 CHANGE-PROPERTIES{nl}{props}"));
+    accepted(&mut n, c, &mut now, "I0001 CLOSE");
+
+    assert_eq!(
+        *log.lock().unwrap(),
+        [
+            "3050 (?) change-properties /new.text",
+            "3050 (?) write /new.text",
+            "3050 (?) change-properties /read.text",
+            "3050 (?) change-properties /read.text",
+        ]
+    );
+}
+
 /// A service with `--log-file` on, and `--log-file-probe` with it where
 /// `probe` says: the same hook as [`serve_logged`], and the lines it took.
 fn serve_access(roots: Vec<Root>, probe: bool) -> (Net, Arc<Mutex<Vec<String>>>) {

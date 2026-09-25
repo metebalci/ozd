@@ -350,6 +350,15 @@ wins as a whole, and no file is ever half one and half the other.
   A DELETE with both a handle and a pathname, on a handle with no
   transfer, or on a directory listing is refused with `BUG`, as in
   `FILE.c`.
+- **CHANGE-PROPERTIES on a handle** names the file open on that handle,
+  and every line after the command is a property; without a handle the
+  first line is the pathname, as before. The band sends the handle form
+  from a stream, with no pathname line (`qfile.lisp:1475`, `:681`), and
+  `copy-file` sends it on its output stream before it writes a byte
+  (`io/file/open.lisp:745`). A read's file is resolved for writing again,
+  so a read-only root refuses it with `ATF`; a write's was resolved for
+  writing by its OPEN. A handle with nothing open on it is refused with
+  `BUG`, as DELETE on one is.
 - **A DATA-CONNECTION whose connection closes before it opens**, because
   the client refused it or it was given up, is answered with `NET`,
   "Data connection could not be established", as `FILE.c` answers it,

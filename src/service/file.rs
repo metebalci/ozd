@@ -1369,20 +1369,61 @@ impl Control {
         }
     }
 
-    /// `CHANGE-PROPERTIES`, the pathname then `NAME value` a line. Only
-    /// the ones a file here has are settable; the rest are refused by
-    /// name, as `FILE.c` refuses what its property table has no setter
-    /// for.
+    /// `CHANGE-PROPERTIES`: without a handle, the pathname and then `NAME
+    /// value` a line; **with one, the file open on that handle, and every
+    /// line a property.** The band sends the second form from a stream ---
+    /// `qfile.lisp`'s `(QFILE-DATA-STREAM-MIXIN :CHANGE-PROPERTIES)`
+    /// (`:1475`) sends the stream's handle and `CHANGE-PROPERTIES-STRING`
+    /// with no pathname (`:681`), which writes no pathname line (`:684`) ---
+    /// and `copy-file` does it on its output stream before writing a byte
+    /// (`sys/io/file/open.lisp:745`).
+    ///
+    /// A read's file is resolved for writing again by its pathname, so a
+    /// read-only root refuses it `ATF` as the pathname form is refused; a
+    /// write's was resolved for writing by its `OPEN`, and need not exist
+    /// until its `CLOSE`. A handle with no file open on it is the server's
+    /// `BUG`, as `DELETE` on one is.
+    ///
+    /// Only the properties a file here has are settable; the rest are
+    /// refused by name, as `FILE.c` refuses what its property table has no
+    /// setter for.
     fn change_properties(&mut self, tid: &str, handle: &str, lines: &[&str]) {
-        let pathname = lines.first().copied().unwrap_or("");
-        let place = match self.tree.resolve_for_writing(pathname) {
-            Ok(p) => p,
-            Err((code, msg)) => return self.error(tid, handle, code, 'C', &msg),
+        let (pathname, properties) = if handle.is_empty() {
+            let pathname = lines.first().copied().unwrap_or("").to_string();
+            let place = match self.tree.resolve_for_writing(&pathname) {
+                Ok(p) => p,
+                Err((code, msg)) => return self.error(tid, handle, code, 'C', &msg),
+            };
+            if std::fs::symlink_metadata(&place.path).is_err() {
+                return self.error(tid, handle, "FNF", 'C', "File not found");
+            }
+            (pathname, lines.get(1..).unwrap_or_default())
+        } else {
+            let pathname = match self.transfers.get(handle) {
+                None if !self.handles.contains_key(handle) => Err("No such file handle"),
+                None => Err("No transfer when CHANGE-PROPERTIES on file handle"),
+                Some(Transfer::Directory) => {
+                    Err("Trying to CHANGE-PROPERTIES a directory list transfer")
+                }
+                Some(Transfer::Read { truename, .. }) => Ok((truename.clone(), true)),
+                Some(Transfer::Write { pathname, .. }) => Ok((pathname.clone(), false)),
+            };
+            let (pathname, reading) = match pathname {
+                Ok(p) => p,
+                Err(why) => return self.error(tid, handle, "BUG", 'C', why),
+            };
+            if reading {
+                let place = match self.tree.resolve_for_writing(&pathname) {
+                    Ok(p) => p,
+                    Err((code, msg)) => return self.error(tid, handle, code, 'C', &msg),
+                };
+                if std::fs::symlink_metadata(&place.path).is_err() {
+                    return self.error(tid, handle, "FNF", 'C', "File not found");
+                }
+            }
+            (pathname, lines)
         };
-        if std::fs::symlink_metadata(&place.path).is_err() {
-            return self.error(tid, handle, "FNF", 'C', "File not found");
-        }
-        for line in lines.iter().skip(1).filter(|l| !l.is_empty()) {
+        for line in properties.iter().filter(|l| !l.is_empty()) {
             let name = line.split(' ').next().unwrap_or("");
             match name {
                 // The dates and the author are what `FILE.c` can set;
