@@ -1326,6 +1326,79 @@ fn a_read_can_be_repositioned() {
     n.command(c, 80, "T8 I0001 CLOSE");
 }
 
+/// Bytes that the translation moves, each way: Unix's newline and return,
+/// the format effectors and rubout, and the Lisp Machine's own newline
+/// and format effectors as Unix would store them (`src/lispm.rs`).
+const MOVED: [u8; 12] =
+    [b'\n', 0o15, 0o10, 0o11, 0o14, 0o177, 0o210, 0o211, 0o212, 0o214, 0o215, 0o377];
+
+/// **`RAW` on a character read sends the file's bytes as they are**:
+/// "Suppresses character set translation" (`sys/doc/chfile.text:238`,
+/// `:572`). Still character data, under the character opcode; and a
+/// `FILEPOS` counts the file's own bytes, which are the bytes that went
+/// down. Without it the same file goes translated, and `SUPER`, which the
+/// band sends for `SUPER-IMAGE` (`qfile.lisp:941`), changes nothing: it only
+/// turns off rubout quoting, which is not done here.
+#[test]
+fn a_raw_read_sends_the_files_bytes_unchanged() {
+    let s = Scratch::new("raw-read");
+    let root = s.dir("base");
+    std::fs::write(root.join("r.text"), MOVED).unwrap();
+    let mut n = serve(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let bytes = |down: &[(u8, Vec<u8>)]| -> Vec<u8> {
+        down.iter().filter(|(o, _)| *o == file::CHARACTER_OP).flat_map(|(_, d)| d.clone()).collect()
+    };
+
+    let r = n.command(c, 10, &format!("T3 I0001 OPEN READ CHARACTER RAW{nl}/r.text{nl}"));
+    assert!(r.starts_with("T3 I0001 OPEN "), "{r:?}");
+    let down = n.down(c);
+    assert_eq!(opcodes(&down), [file::CHARACTER_OP, op::EOF], "characters, then EOF");
+    assert_eq!(bytes(&down), MOVED, "the file's bytes, untranslated");
+    assert_eq!(n.command(c, 11, "T4 I0001 FILEPOS 5"), "T4 I0001 FILEPOS");
+    assert_eq!(bytes(&n.down(c)), MOVED[5..], "from the file's fifth byte");
+    n.command(c, 12, "T5 I0001 CLOSE");
+    n.down(c);
+
+    for (tid, options) in [("T6", "CHARACTER"), ("T8", "CHARACTER SUPER")] {
+        let r = n.command(c, 20, &format!("{tid} I0001 OPEN READ {options}{nl}/r.text{nl}"));
+        assert!(r.starts_with(&format!("{tid} I0001 OPEN ")), "{r:?}");
+        assert_eq!(bytes(&n.down(c)), lispm::to_lispm(&MOVED), "{options}: translated");
+        n.command(c, 21, &format!("{tid}X I0001 CLOSE"));
+        n.down(c);
+    }
+}
+
+/// **`RAW` on a character write stores the machine's bytes as they
+/// are**, the other half of the same option. Without it the same bytes
+/// are stored translated; a binary write is its bytes either way.
+#[test]
+fn a_raw_write_stores_the_machines_bytes_unchanged() {
+    let s = Scratch::new("raw-write");
+    let root = s.dir("base");
+    let mut n = serve(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let cases = [
+        ("raw.text", "CHARACTER RAW", file::CHARACTER_OP, MOVED.to_vec()),
+        ("cooked.text", "CHARACTER", file::CHARACTER_OP, lispm::from_lispm(&MOVED)),
+        ("super.text", "CHARACTER SUPER", file::CHARACTER_OP, lispm::from_lispm(&MOVED)),
+        ("binary.qfasl", "BINARY RAW", file::BINARY_OP, MOVED.to_vec()),
+    ];
+    let mut now = 10;
+    for (name, options, opcode, stored) in cases {
+        now += 10;
+        let r = n.command(c, now, &format!("T3 O0001 OPEN WRITE {options}{nl}/{name}{nl}"));
+        assert!(r.starts_with("T3 O0001 OPEN "), "{options}: {r:?}");
+        n.send_data(c, now + 1, opcode, &MOVED);
+        n.send_data(c, now + 2, file::SYNC_MARK_OP, &[]);
+        let r = n.command(c, now + 3, "T4 O0001 CLOSE");
+        assert!(r.starts_with("T4 O0001 CLOSE "), "{options}: {r:?}");
+        assert_eq!(std::fs::read(root.join(name)).unwrap(), stored, "{options}");
+    }
+}
+
 /// **Two files written one after the other on the same data connection,
 /// the second long.** What the band does when asked twice: `OPEN WRITE` on
 /// the same output handle again, the data in as many packets as it takes,

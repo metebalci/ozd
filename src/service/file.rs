@@ -321,7 +321,9 @@ enum Transfer {
         /// The pathname as the client wrote it, for the log.
         pathname: String,
         truename: String,
-        characters: bool,
+        /// Whether what arrives as characters is translated out of the
+        /// Lisp Machine character set: a character write without `RAW`.
+        translated: bool,
         /// Where in the temporary the next byte goes: after the old
         /// contents for `APPEND`, and 0 for every other write, whose
         /// temporary starts empty. Moved on only by a write that
@@ -349,7 +351,7 @@ enum Transfer {
 }
 
 /// What an `OPEN WRITE` was asked for: its option words, the pathname
-/// as written and the place it resolved to, and the two that decide the
+/// as written and the place it resolved to, and the three that decide the
 /// character translation.
 struct WriteOpen<'a> {
     words: &'a [&'a str],
@@ -357,6 +359,7 @@ struct WriteOpen<'a> {
     place: Place,
     binary: bool,
     default: bool,
+    raw: bool,
 }
 
 /// A parsed command: `tid handle COMMAND args`, then the further lines.
@@ -599,6 +602,20 @@ impl Control {
         let direction = words.first().copied().unwrap_or("READ");
         let binary = words.contains(&"BINARY");
         let default = words.contains(&"DEFAULT");
+        // `RAW` "Suppresses character set translation"
+        // (`sys/doc/chfile.text:238`), in both directions, and only on a
+        // character transfer: a binary one is its bytes anyway. MIT's
+        // server discarded the high bit of a Lisp Machine character on
+        // the way to a PDP-10's seven-bit words (`:572`); a Unix byte has
+        // eight, so here nothing is discarded and the bytes go as they are.
+        //
+        // `SUPER`, which the band sends for `SUPER-IMAGE`
+        // (`qfile.lisp:941`), is read nowhere, deliberately: it "Suppresses
+        // rubout quoting" (`chfile.text:240`, `:577`), the PDP-10's use of
+        // 177 to quote a Lisp Machine character with no seven-bit code.
+        // The translation here (`src/lispm.rs`) quotes nothing, so there is
+        // nothing for it to turn off.
+        let raw = words.contains(&"RAW");
         let given_byte_size = words
             .iter()
             .position(|w| *w == "BYTE-SIZE")
@@ -612,7 +629,7 @@ impl Control {
             return self.open_write(
                 tid,
                 handle,
-                WriteOpen { words: &words, pathname, place, binary, default },
+                WriteOpen { words: &words, pathname, place, binary, default, raw },
             );
         }
         let place = match self.tree.resolve(pathname) {
@@ -673,14 +690,20 @@ impl Control {
             self.reply(tid, handle, "OPEN", &results);
             return;
         }
-        // READ: down the input handle's data connection.
+        // READ: down the input handle's data connection. Under `RAW` the
+        // bytes that go down are the file's own, and a `FILEPOS` counts
+        // them; the translation is a byte for a byte, so the count is the
+        // same either way.
         let Some(channel) = self.handles.get(handle).cloned() else {
             return self.error(tid, handle, "BUG", 'C', "No such file handle");
         };
         self.served(&format!("read {pathname}"));
         self.reply(tid, handle, "OPEN", &results);
-        let (op, bytes) =
-            if characters { (CHARACTER_OP, to_lispm(&contents)) } else { (BINARY_OP, contents) };
+        let (op, bytes) = match (characters, raw) {
+            (true, false) => (CHARACTER_OP, to_lispm(&contents)),
+            (true, true) => (CHARACTER_OP, contents),
+            (false, _) => (BINARY_OP, contents),
+        };
         {
             let mut ch = channel.lock().unwrap();
             for chunk in bytes.chunks(MAX_DATA) {
@@ -962,7 +985,7 @@ impl Control {
     /// `CLOSE` nobody sees the old contents go either way; so both start
     /// empty, as `SUPERSEDE` does.
     fn open_write(&mut self, tid: &str, handle: &str, o: WriteOpen<'_>) {
-        let WriteOpen { words, pathname, place, binary, default } = o;
+        let WriteOpen { words, pathname, place, binary, default, raw } = o;
         let named = |key: &str| {
             words.iter().position(|w| *w == key).and_then(|i| words.get(i + 1)).copied()
         };
@@ -1052,7 +1075,9 @@ impl Control {
             let (code, msg) = denied();
             return self.error(tid, handle, code, 'C', &msg);
         }
-        let characters = if default { true } else { !binary };
+        // Characters are translated out of the Lisp Machine's set, unless
+        // `RAW` says to store them as they come.
+        let translated = (default || !binary) && !raw;
         let tn = truename(pathname, false);
         // The reply is the same shape as a read's: the file's date, its
         // length, whether it is compiled. Nothing is written yet.
@@ -1072,7 +1097,7 @@ impl Control {
                 real: place.path,
                 pathname: pathname.to_string(),
                 truename: tn,
-                characters,
+                translated,
                 at,
                 stalled: None,
                 marked: false,
@@ -1129,14 +1154,15 @@ impl Control {
 
     /// Data that has come up a data connection: written to whatever the
     /// handle is writing, through the temporary's own handle, translated
-    /// out of the Lisp Machine character set if it is characters.
+    /// out of the Lisp Machine character set if it is characters and not
+    /// `RAW`.
     fn wrote(&mut self, handle: &str, op: u8, bytes: &[u8]) {
-        let Some(Transfer::Write { file, characters, at, stalled, .. }) =
+        let Some(Transfer::Write { file, translated, at, stalled, .. }) =
             self.transfers.get_mut(handle)
         else {
             return;
         };
-        let out = if *characters && op != BINARY_OP { from_lispm(bytes) } else { bytes.to_vec() };
+        let out = if *translated && op != BINARY_OP { from_lispm(bytes) } else { bytes.to_vec() };
         // Already stopped: the client should have stopped sending, but
         // whatever arrives joins what is waiting rather than being lost.
         if let Some((held, _)) = stalled.as_mut() {

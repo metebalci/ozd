@@ -149,6 +149,16 @@ pathname outside the tree. The machine turns `FNF`, `ATF` and `ATD` into
 `:231`), and `WKF` into `WRONG-KIND-OF-FILE` (`:260`), each through
 `QFILE-PROCESS-ERROR-NEW` (`network/chaos/qfile.lisp:300`).
 
+**Translation.** A character transfer goes in the Lisp Machine character
+set, translated from and to the host's as `FILE.c` translates it. `RAW`
+"Suppresses character set translation" (`doc/chfile.text:238`): ozd then
+sends a file's bytes and stores a machine's bytes as they are, and a
+`FILEPOS` counts the file's own bytes. MIT's servers discarded the high
+bit on the way to a PDP-10's seven-bit words (`:572`); a Unix byte has
+eight, so nothing is discarded here. `SUPER-IMAGE`, which the band sends
+as `SUPER` (`network/chaos/qfile.lisp:941`), "Suppresses rubout quoting"
+(`doc/chfile.text:240`); ozd quotes nothing with rubout, and ignores it.
+
 `docs/design.md` §6 describes how ozd keeps FILE inside its roots.
 
 ### MINI
