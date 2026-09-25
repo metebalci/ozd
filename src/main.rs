@@ -9,7 +9,7 @@
 //!         [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
 //!         [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
 //!         [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-//!         [--tcp <endpoint>,<CONTACT>@<addr>]
+//!         [--tcp <endpoint>,<CONTACT>@<addr>] [--timezone <hours>]
 //!         [--trace] [--log-simple] [--log-file] [--log-file-probe]
 //!         [--log-mini] [--log-tcp] [--check] [-c|--config <file>] [-h|--help]
 //! ```
@@ -59,7 +59,7 @@ const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,s
            [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
            [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
            [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-           [--tcp <endpoint>,<CONTACT>@<addr>]
+           [--tcp <endpoint>,<CONTACT>@<addr>] [--timezone <hours>]
            [--trace] [--log-simple] [--log-file] [--log-file-probe]
            [--log-mini] [--log-tcp] [--check] [-c|--config <file>] [-h|--help]";
 
@@ -133,6 +133,15 @@ time and their host table, and passing packets between them.
                                the loopback. The flag can come more than
                                once, a listener an endpoint; nothing listens
                                without it.
+  --timezone <hours>           the band's zone, its site's :TIMEZONE: whole
+                               hours west of Greenwich, -12 to 12, 5 for
+                               System 100's site. FILE prints its dates at
+                               this zone, and the band's own daylight saving
+                               goes on top of it whatever the zone: the old
+                               North American calendar, last Sunday in April
+                               to last Sunday in October. A fraction is not
+                               taken.
+                               [default: 0, UTC, with that daylight saving]
   --trace                      print every packet, every packet passed on to
                                another host, and every drop, with why.
   --log-simple                 log each simple transaction answered, STATUS,

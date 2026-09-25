@@ -405,6 +405,7 @@ cargo build --release</pre>
           <div><dt>--listen</dt><dd>Where ozd answers. Without it, <code>127.0.0.1:42042</code>, which only this host can reach.</dd></div>
           <div><dt>--peer &lt;addr&gt;@&lt;ip&gt;</dt><dd>The fixed endpoint of a host that must not move. Every other endpoint is learned.</dd></div>
           <div><dt>--tcp 10000,TELNET@3050</dt><dd>A TCP port that ozd carries to a Chaosnet stream at a machine of its subnet. Nothing listens without it (<a href="#tcp">Into the machine</a>).</dd></div>
+          <div><dt>--timezone 5</dt><dd>The band&rsquo;s zone, as its site&rsquo;s <code>:TIMEZONE</code>: whole hours west of Greenwich. FILE&rsquo;s dates are printed at it, with the band&rsquo;s own daylight saving on top, the old North American calendar, whatever the zone. Without it, 0: UTC, with that daylight saving on top, as a band reads every date.</dd></div>
           <div><dt>--log-simple, --log-file, --log-file-probe, --log-mini, --log-tcp</dt><dd>More lines in the log: each simple transaction answered; each file read, directory listed and login; each FILE probe; each MINI open; each TCP connection opened and closed.</dd></div>
         </dl>
         <p class="small">The same flags, one per line, can go in a file of flags that <code>-c</code> names, or <code>OZD_RC</code>, or <code>.ozdrc</code>. <code>--check</code> reads the flags, checks the roots and exits, and <code>--help</code> describes each flag.</p>

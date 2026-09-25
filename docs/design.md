@@ -411,6 +411,28 @@ ozd serves seven protocols (`docs/protocols.md`).
 - **UPTIME** answers with the sixtieths of a second since start,
   `now × 60 / 10⁹`, which wraps at 32 bits after about 828 days.
 - **FILE** follows `sys/doc/chfile.text`, with the containment of §6.
+  **FILE's dates** are printed as a band prints them, in two parts. The
+  **zone** is `--timezone` (§8), the band's `:TIMEZONE` site option
+  (`sys/io1/time.lisp:13`): whole hours west of Greenwich, 5 at System
+  100's site (`sys/site/site.lisp:99`), and 0, which is UTC, without the
+  flag. **Daylight saving** is the band's own rule, applied on top of the
+  zone whatever the zone, 0 included: the old North American calendar,
+  from 02:00 on the last Sunday in April to 01:00 on the last Sunday in
+  October, each judged in standard time (`:172-205`). A band applies it
+  to every date it decodes without an explicit zone, and its date printer
+  gives none (`DECODE-UNIVERSAL-TIME`, `:82-103`;
+  `PRINT-DIRECTORY-DATE-PROPERTY`, `io/file/open.lisp:1458`); the rule is
+  a plain variable and no site option turns it off (`time.lisp:15`).
+  **So a summer date moves one hour from plain UTC**, at zone 0 as at any
+  other: a band reads every date through that rule, and a date printed
+  without it reads an hour out on the band all summer. The rule is
+  transcribed with the band's arithmetic (`src/timezone.rs`), quirks
+  included: for 2000 it puts the last Sunday in April on the 24th, a
+  Monday. Every date FILE prints uses it --- OPEN's and CLOSE's replies,
+  DIRECTORY and PROPERTIES records --- as `MM/DD/YY HH:MM:SS`, the form
+  the band's fast parser takes (`io/file/open.lisp:1425-1451`). MINI's
+  date is left in plain UTC: a cold load does not read it
+  (`sys/cold/mini.lisp` has no date in it).
 - **MINI** answers each open on its connection with the whole file: a
   `202` with the truename and the date, the file in packets, and an EOF;
   or a `203` with a message (`docs/protocols.md`, MINI). It resolves a
@@ -467,14 +489,23 @@ file of flags:
 --peer 3040@192.0.2.5
 # a TCP listener carried to TELNET at a machine; nothing listens without one
 --tcp 127.0.0.1:10000,TELNET@3050
+# the band's zone, hours west of Greenwich, as its site's :TIMEZONE; see §7
+--timezone 5
 ```
 
 `--address` and `--name` are required, and each may be given only once,
-as may `--listen` and `--hosts-text`. `--root`, `--host` and `--peer` may
+as may `--listen`, `--hosts-text` and `--timezone`. `--root`, `--host` and `--peer` may
 each be given more than once. A `--root` whose value begins with `/` is
 the base. Any other `--root` is `<name>=<path>`, mounted at `/<name>`.
 `,ro` makes either kind read-only. `--peer` is `<address>@<ip>[:<port>]`,
 with port 42042 unless one is given. A path cannot contain a comma.
+`--timezone` is whole hours west of Greenwich from -12 to 12, with a sign
+if wanted, and 0 without it. It names only the zone; the band's daylight
+saving goes on top of whatever zone it names (§7). A fraction is refused:
+the band's own table of zones has one, 3.5 for Newfoundland
+(`io1/time.lisp:683`), but what a band prints at it is not known --- its
+decode would carry a fraction of an hour into the seconds --- so it is
+unsupported.
 
 The host table and the endpoints are separate. A `--host` is what HOSTAB
 tells, and a `--peer` is where packets go. A machine needs neither to be

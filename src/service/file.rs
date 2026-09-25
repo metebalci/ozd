@@ -85,6 +85,7 @@ use crate::log::Names;
 use crate::ncp::{Out, Response, Service, Session};
 use crate::packet::MAX_DATA;
 use crate::roots::{Entry, Place, Refusal, Resolved, Tree, is_temporary, temporary_name};
+use crate::timezone;
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{ErrorKind, Seek as _, SeekFrom, Write as _};
 use std::path::PathBuf;
@@ -205,6 +206,10 @@ pub struct File {
     /// after its address (`docs/design.md` §10). Empty unless set, and then
     /// every client is `(?)`.
     pub names: Arc<Names>,
+    /// `--timezone`: the band's zone, which every date FILE prints is in,
+    /// with the band's daylight saving on top (`crate::timezone`). 0, UTC,
+    /// unless set.
+    pub timezone: i8,
 }
 
 impl File {
@@ -220,6 +225,7 @@ impl File {
             log_file: false,
             log_file_probe: false,
             names: Arc::default(),
+            timezone: 0,
         }
     }
 
@@ -230,18 +236,24 @@ impl File {
     }
 }
 
-/// The date now --- `time` if fixed, else the machine's clock --- in the
-/// same form as a file's.
-fn now_date(time: Option<u32>) -> String {
-    let secs = match time {
-        Some(t) => (t as u64).saturating_sub(crate::service::time::UNIX_EPOCH_UNIVERSAL),
+/// Seconds since 1970 now: `time` if fixed, a universal time, else the
+/// machine's clock.
+fn now_unix(time: Option<u32>) -> i64 {
+    match time {
+        Some(t) => (t as u64).saturating_sub(crate::service::time::UNIX_EPOCH_UNIVERSAL) as i64,
         None => std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0),
-    };
-    let (y, m, d, hh, mm, ss) = civil(secs);
-    format!("{m:02}/{d:02}/{:02} {hh:02}:{mm:02}:{ss:02}", y % 100)
+            .map_or(0, |d| d.as_secs() as i64),
+    }
+}
+
+/// A file's modification time in seconds since 1970, or 0 for one before
+/// 1970 or none, as FILE has always dated such a file.
+fn mtime(meta: &std::fs::Metadata) -> i64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 impl Service for File {
@@ -316,6 +328,8 @@ struct Control {
     log_file_probe: bool,
     /// The site's host table, as the service was given it.
     names: Arc<Names>,
+    /// The band's zone, as the service was given it.
+    timezone: i8,
     client: u16,
     /// The protocol version from the RFC's argument: `FILE 1` is 1. It
     /// chooses the shape of the reply to a write's `CLOSE` --- `FILE.c`
@@ -453,6 +467,7 @@ impl Control {
             log_file: file.log_file,
             log_file_probe: file.log_file_probe,
             names: file.names.clone(),
+            timezone: file.timezone,
             client,
             version,
             user: None,
@@ -461,6 +476,17 @@ impl Control {
             pending: Vec::new(),
             out: VecDeque::new(),
         }
+    }
+
+    /// A file's date as FILE prints it: its modification time at the band's
+    /// zone, with the band's daylight saving on top (`crate::timezone`).
+    fn date(&self, meta: &std::fs::Metadata) -> String {
+        timezone::print(mtime(meta), self.timezone)
+    }
+
+    /// The date now, printed as a file's is.
+    fn now_date(&self) -> String {
+        timezone::print(now_unix(self.time), self.timezone)
     }
 
     /// `tid handle COMMAND results`, `FILE.c`'s `respond`.
@@ -726,7 +752,8 @@ impl Control {
             }
             // The link's own date and length: nothing of what it leads to
             // is read, so it has no contents to be compiled.
-            let (properties, _) = open_properties(&date(&meta), meta.len() as usize, false, &words);
+            let (properties, _) =
+                open_properties(&self.date(&meta), meta.len() as usize, false, &words);
             let tn = truename(pathname, false);
             let results = format!("{properties}{}{tn}{}", NEWLINE as char, NEWLINE as char);
             self.probed(&format!("probe {pathname}"));
@@ -745,7 +772,7 @@ impl Control {
         if direction == "PROBE-DIRECTORY" || (direction == "PROBE" && meta.is_dir()) {
             let results = format!(
                 "{} 0 NIL{}{}{}",
-                date(&meta),
+                self.date(&meta),
                 NEWLINE as char,
                 truename(pathname, true),
                 NEWLINE as char
@@ -765,7 +792,8 @@ impl Control {
             return self.error(tid, handle, "ATF", 'C', "Access to file denied");
         };
         let qfasl = contents.starts_with(&QFASL_MAGIC);
-        let (properties, characters) = open_properties(&date(&meta), contents.len(), qfasl, &words);
+        let (properties, characters) =
+            open_properties(&self.date(&meta), contents.len(), qfasl, &words);
         let tn = truename(pathname, false);
         let results = format!("{properties}{}{tn}{}", NEWLINE as char, NEWLINE as char);
         if direction == "PROBE" {
@@ -809,7 +837,7 @@ impl Control {
         if direction == "PROBE-DIRECTORY" || direction == "PROBE" {
             let results = format!(
                 "{} 0 NIL{}{}{}",
-                now_date(self.time),
+                self.now_date(),
                 NEWLINE as char,
                 truename(pathname, true),
                 NEWLINE as char
@@ -1018,8 +1046,8 @@ impl Control {
                     self.changed(&format!("write {pathname}"));
                 }
                 let (length, when) = match written {
-                    Ok(m) => (m.len(), date(&m)),
-                    Err(_) => (0, now_date(self.time)),
+                    Ok(m) => (m.len(), self.date(&m)),
+                    Err(_) => (0, self.now_date()),
                 };
                 let nl = NEWLINE as char;
                 let body = format!("{when} {length}{nl}{truename}{nl}");
@@ -1172,7 +1200,7 @@ impl Control {
         // length, whether it is compiled. Nothing is written yet.
         let results = format!(
             "{} {} NIL{}{tn}{}",
-            now_date(self.time),
+            self.now_date(),
             start.len(),
             NEWLINE as char,
             NEWLINE as char
@@ -1681,13 +1709,13 @@ impl Control {
     /// The property lines a file has, `NAME value` each, from `FILE.c`'s
     /// property table.
     fn file_properties(&self, meta: &std::fs::Metadata) -> String {
-        self.property_lines(meta.len(), &date(meta), meta.is_dir())
+        self.property_lines(meta.len(), &self.date(meta), meta.is_dir())
     }
 
     /// The property lines of `/` itself: a directory, of no length, dated
     /// now, having no date of its own (see [`Control::open_top`]).
     fn top_properties(&self) -> String {
-        self.property_lines(0, &now_date(self.time), true)
+        self.property_lines(0, &self.now_date(), true)
     }
 
     fn property_lines(&self, length: u64, date: &str, directory: bool) -> String {
@@ -1848,7 +1876,10 @@ pub(crate) fn truename(pathname: &str, directory: bool) -> String {
 }
 
 /// `MM/DD/YY HH:MM:SS`, the form `PARSE-DIRECTORY-DATE-PROPERTY` reads
-/// fastest, from the file's modification time, in UTC.
+/// fastest, from the file's modification time, in plain UTC: MINI's
+/// `202`, which a cold load does not read (`sys/cold/mini.lisp` has no date
+/// in it), and so is left as it was. FILE prints its dates at the band's
+/// zone instead (`Control::date`).
 pub(crate) fn date(meta: &std::fs::Metadata) -> String {
     let secs = meta
         .modified()

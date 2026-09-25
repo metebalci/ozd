@@ -534,6 +534,69 @@ fn a_date_is_the_calendars_in_utc() {
     assert_eq!(file::civil(1_000_000_000), (2001, 9, 9, 1, 46, 40));
 }
 
+/// A file's modification time set to `unix`, in seconds since 1970.
+fn set_mtime(path: &Path, unix: u64) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(UNIX_EPOCH + Duration::from_secs(unix))
+        .unwrap();
+}
+
+/// **Every date FILE prints is in the band's zone, with the band's daylight
+/// saving on top** (`src/timezone.rs`): OPEN's reply, a PROBE's, a
+/// DIRECTORY record's and a PROPERTIES record's, and a write's CLOSE. One
+/// file dated 2026-07-15 12:00:00 UTC, summer, is 08:00 at zone 5; and
+/// without `--timezone` it is at zone 0, which is UTC with the band's
+/// daylight saving on top, so 13:00 and not the 12:00 of plain UTC. A band
+/// reads every date through that rule, at its own zone.
+#[test]
+fn every_date_file_prints_is_in_the_bands_zone() {
+    let s = Scratch::new("zone");
+    let root = s.dir("base");
+    let f = s.file("base/f.text", "abc");
+    set_mtime(&f, 1_784_116_800);
+    let nl = NEWLINE as char;
+    for (zone, shown) in [(5, "07/15/26 08:00:00"), (0, "07/15/26 13:00:00")] {
+        let mut service = File::new(Arc::new(Tree::new(vec![base(&root)]).unwrap()), None);
+        if zone != 0 {
+            service.timezone = zone;
+        }
+        let mut n = Net::new(service);
+        let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+        let r = n.command(c, 10, &format!("T3 I0001 OPEN READ CHARACTER{nl}/f.text{nl}"));
+        assert_eq!(r, format!("T3 I0001 OPEN {shown} 3 NIL{nl}/f.text{nl}"), "zone {zone}");
+        n.down(c);
+        let r = n.command(c, 11, "T4 I0001 CLOSE");
+        assert!(r.starts_with(&format!("T4 I0001 CLOSE {shown} 3 NIL")), "zone {zone}: {r:?}");
+        n.down(c);
+        let r = n.command(c, 12, &format!("T5  OPEN PROBE CHARACTER{nl}/f.text{nl}"));
+        assert_eq!(r, format!("T5  OPEN {shown} 3 NIL{nl}/f.text{nl}"), "zone {zone}");
+        n.command(c, 13, &format!("T6 I0001 DIRECTORY{nl}/*{nl}"));
+        let listing = characters(&n.down(c));
+        let date = format!("{nl}CREATION-DATE {shown}");
+        assert!(record(&listing, "/f.text").contains(&date), "zone {zone}: {listing:?}");
+        n.command(c, 14, "T7 I0001 CLOSE");
+        n.down(c);
+        n.command(c, 15, &format!("T8 I0001 PROPERTIES{nl}/f.text{nl}"));
+        let properties = characters(&n.down(c));
+        assert!(properties.contains(&date), "zone {zone}: {properties:?}");
+        n.command(c, 16, "T9 I0001 CLOSE");
+        n.down(c);
+
+        // A write's CLOSE: the date of the file it put in place.
+        n.command(c, 20, &format!("TA O0001 OPEN WRITE CHARACTER{nl}/w{zone}.text{nl}"));
+        n.send_data(c, 21, file::CHARACTER_OP, b"w");
+        n.send_data(c, 22, file::SYNC_MARK_OP, &[]);
+        let r = n.command(c, 23, "TB O0001 CLOSE");
+        let written = std::fs::metadata(root.join(format!("w{zone}.text"))).unwrap();
+        let unix = written.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let when = ozd::timezone::print(unix as i64, zone);
+        assert!(r.starts_with(&format!("TB O0001 CLOSE {when} 1{nl}")), "zone {zone}: {r:?}");
+    }
+}
+
 /// **The FILE protocol writes a file**, as `qfile.lisp`'s output stream
 /// does it and `FILE.c` answered: `OPEN WRITE` on the output handle, the
 /// data up the data connection, the user end's own synchronous mark, and
@@ -2217,11 +2280,11 @@ fn a_link_is_renamed_itself() {
     );
 }
 
-/// A date as FILE writes one, from a modification time, in UTC.
+/// A date as FILE writes one without `--timezone`, from a modification
+/// time: zone 0, with the band's daylight saving on top.
 fn written_date(meta: &std::fs::Metadata) -> String {
     let secs = meta.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    let (y, m, d, hh, mm, ss) = file::civil(secs);
-    format!("{m:02}/{d:02}/{:02} {hh:02}:{mm:02}:{ss:02}", y % 100)
+    ozd::timezone::print(secs as i64, 0)
 }
 
 /// The world of the `INHIBIT-LINKS` tests: a base with a file, a link to it

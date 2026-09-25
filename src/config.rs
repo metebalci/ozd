@@ -28,7 +28,8 @@
 //! root's path ends at its first comma, and what follows must be `ro`.
 //! What each flag takes is on the field it fills: [`Config::address`],
 //! [`Config::names`], [`Config::listen`], [`Config::roots`],
-//! [`Config::hosts`], [`Config::peers`], [`Config::tcps`]; `--trace` and
+//! [`Config::hosts`], [`Config::peers`], [`Config::tcps`],
+//! [`Config::timezone`]; `--trace` and
 //! `--check` are the run's, [`Run`].
 //!
 //! **The command line has the last word.** A flag it gives leaves every
@@ -54,7 +55,8 @@
 //! absolute, a part of `--name` or `--host` with `=` other than one
 //! `system=` with a type; a `--tcp` with no port, a contact that is no
 //! contact name, or a host that is this one or of another subnet; an
-//! `--address`, `--name` or `--listen` given twice, a second base, a
+//! `--address`, `--name`, `--listen` or `--timezone` given twice, a zone
+//! that is not whole hours from -12 to 12, a second base, a
 //! mount's name twice, and a second `--tcp` on one endpoint; an address that would be
 //! two answers, a host name given twice, a system type that is not upper
 //! case, and a name, a system type or a mount's name that is not printable
@@ -217,6 +219,17 @@ pub struct Config {
     /// - **The host** is a host of this host's subnet, and not this host,
     ///   since this host routes nothing (`docs/design.md` §5).
     pub tcps: Vec<Tcp>,
+    /// `--timezone <hours>`, at most once: the band's zone, its
+    /// `:TIMEZONE` site option (`sys/io1/time.lisp:13`) --- whole hours west
+    /// of Greenwich, from -12 to 12, as the band's own table of zones runs
+    /// (`:657-683`), 5 at System 100's site (`sys/site/site.lisp:99`); 0
+    /// without it, which is UTC. FILE prints and reads every date at this
+    /// zone, with the band's daylight saving on top of it whatever the zone
+    /// (`crate::timezone`, `docs/design.md` §7). A sign is taken, `+3` or
+    /// `-1`. **A fraction is not**: the band's table has one, Newfoundland's
+    /// 3.5, and what a band prints at a zone that is not a whole number of
+    /// hours is not known here.
+    pub timezone: i8,
 }
 
 /// One `--root` (`docs/design.md` §6).
@@ -314,6 +327,7 @@ enum Flag {
     HostsText,
     Peer,
     Tcp,
+    Timezone,
     Trace,
     LogSimple,
     LogFile,
@@ -326,7 +340,7 @@ enum Flag {
 }
 
 impl Flag {
-    const ALL: [Flag; 17] = [
+    const ALL: [Flag; 18] = [
         Flag::Address,
         Flag::Name,
         Flag::Listen,
@@ -335,6 +349,7 @@ impl Flag {
         Flag::HostsText,
         Flag::Peer,
         Flag::Tcp,
+        Flag::Timezone,
         Flag::Trace,
         Flag::LogSimple,
         Flag::LogFile,
@@ -366,6 +381,7 @@ impl Flag {
             Flag::HostsText => "--hosts-text",
             Flag::Peer => "--peer",
             Flag::Tcp => "--tcp",
+            Flag::Timezone => "--timezone",
             Flag::Trace => "--trace",
             Flag::LogSimple => "--log-simple",
             Flag::LogFile => "--log-file",
@@ -389,6 +405,7 @@ impl Flag {
             Flag::HostsText => Some("<file>"),
             Flag::Peer => Some("<addr>@<ip>[:<port>]"),
             Flag::Tcp => Some("<endpoint>,<CONTACT>@<addr>"),
+            Flag::Timezone => Some("<hours>"),
             Flag::Config => Some("<file>"),
             Flag::Trace
             | Flag::LogSimple
@@ -669,6 +686,8 @@ struct Reading {
     tcps: Vec<(Tcp, Place, String)>,
     /// `--hosts-text`: the file a band's own host table is in.
     hosts_text: Option<(PathBuf, Place)>,
+    /// `--timezone`: the band's zone.
+    timezone: Option<(i8, Place)>,
     /// Every host name given so far, this host's and every `--host`'s.
     named: Vec<Named>,
     trace: bool,
@@ -704,6 +723,7 @@ impl Reading {
             Flag::HostsText => self.host_table(here, value),
             Flag::Peer => self.peer(here, value),
             Flag::Tcp => self.tcp(here, value),
+            Flag::Timezone => self.timezone(here, value),
             Flag::Trace => {
                 self.trace = true;
                 Ok(())
@@ -917,6 +937,25 @@ impl Reading {
         Ok(())
     }
 
+    /// `--timezone`: whole hours west of Greenwich, -12 to 12, once
+    /// ([`Config::timezone`]).
+    fn timezone(&mut self, here: Place, value: &str) -> Result<(), String> {
+        if let Some((_, p)) = self.timezone {
+            return Err(format!("once only, and given {} already", on(p, here)));
+        }
+        if value.contains(['.', '/']) {
+            return Err(
+                "a fraction of an hour is not taken: the zone is whole hours west of Greenwich, -12 to 12, and what a band prints at a fraction is not known"
+                    .to_string(),
+            );
+        }
+        let zone = value.parse::<i8>().ok().filter(|z| (-12..=12).contains(z)).ok_or(
+            "not a zone: whole hours west of Greenwich, -12 to 12, as the band's :TIMEZONE is",
+        )?;
+        self.timezone = Some((zone, here));
+        Ok(())
+    }
+
     /// `--hosts-text`: the file, once. Nothing of it is read here --- the
     /// flags touch no disk (the module documentation) --- so nothing of the
     /// path is checked but that there is one.
@@ -1020,6 +1059,7 @@ impl Reading {
             peers: self.peers.into_iter().map(|(p, _)| p).collect(),
             hosts_text: self.hosts_text.map(|(path, _)| path),
             tcps: self.tcps.into_iter().map(|(t, _, _)| t).collect(),
+            timezone: self.timezone.map_or(0, |(z, _)| z),
         };
         let logging = Logging {
             trace: self.trace,
