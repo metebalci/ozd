@@ -84,7 +84,7 @@ use crate::ncp::{Out, Response, Service, Session};
 use crate::packet::MAX_DATA;
 use crate::roots::{Place, Refusal, Resolved, Tree, is_temporary, temporary_name};
 use std::collections::{BTreeMap, VecDeque};
-use std::io::{ErrorKind, Write as _};
+use std::io::{ErrorKind, Seek as _, SeekFrom, Write as _};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -322,6 +322,12 @@ enum Transfer {
         pathname: String,
         truename: String,
         characters: bool,
+        /// Where in the temporary the next byte goes: after the old
+        /// contents for `APPEND`, and 0 for every other write, whose
+        /// temporary starts empty. Moved on only by a write that
+        /// succeeded, so a retried one lands where it would have (see
+        /// [`put`]).
+        at: u64,
         /// Bytes a failed write is holding, waiting for a `CONTINUE`, and
         /// the message that went out in the asynchronous mark. While this
         /// is set the transfer is stopped.
@@ -944,6 +950,17 @@ impl Control {
     /// there; the client sends them by name. `NEW-VERSION` is what a
     /// versioned file system does and this one has no versions, so it is
     /// `SUPERSEDE` here, which is what `FILE.c` turns it into.
+    ///
+    /// `APPEND` alone starts the temporary with the old contents: "Add new
+    /// data onto the existing file at the end" (`sys/man/files.text:290`).
+    /// `OVERWRITE` is the Lisp Machine's and not Common Lisp's: "Write over
+    /// the data of the existing file, starting at the beginning, and set
+    /// the file's length to the length of the newly written data"
+    /// (`:282`), so the file that results is what was written and no more.
+    /// `TRUNCATE` differs from it only in that it "discards the old
+    /// contents of the file immediately" (`:286`), and with the rename at
+    /// `CLOSE` nobody sees the old contents go either way; so both start
+    /// empty, as `SUPERSEDE` does.
     fn open_write(&mut self, tid: &str, handle: &str, o: WriteOpen<'_>) {
         let WriteOpen { words, pathname, place, binary, default } = o;
         let named = |key: &str| {
@@ -987,7 +1004,7 @@ impl Control {
             return self.error(tid, handle, "BUG", 'C', "No such file handle");
         }
         // A FIFO or a device where the file would be is not a regular
-        // file to overwrite, and reading it for APPEND or OVERWRITE would
+        // file to overwrite, and reading it for APPEND would
         // block or exhaust the loop's one thread: refused before a
         // temporary is made (see [`openable`]). So is a directory.
         match &existing {
@@ -1022,13 +1039,13 @@ impl Control {
             let (code, msg) = denied();
             return self.error(tid, handle, code, 'C', &msg);
         };
-        // What is already there, for APPEND, and to start from for
-        // OVERWRITE; otherwise the temporary starts empty. A regular
-        // file, by `openable`.
+        // What is already there, to write after for APPEND; otherwise the
+        // temporary starts empty. A regular file, by `openable`.
         let start = match if_exists {
-            "APPEND" | "OVERWRITE" if exists => std::fs::read(&place.path).unwrap_or_default(),
+            "APPEND" if exists => std::fs::read(&place.path).unwrap_or_default(),
             _ => Vec::new(),
         };
+        let at = start.len() as u64;
         if file.write_all(&start).is_err() {
             drop(file);
             let _ = std::fs::remove_file(&temp);
@@ -1056,6 +1073,7 @@ impl Control {
                 pathname: pathname.to_string(),
                 truename: tn,
                 characters,
+                at,
                 stalled: None,
                 marked: false,
                 closing: None,
@@ -1113,7 +1131,7 @@ impl Control {
     /// handle is writing, through the temporary's own handle, translated
     /// out of the Lisp Machine character set if it is characters.
     fn wrote(&mut self, handle: &str, op: u8, bytes: &[u8]) {
-        let Some(Transfer::Write { file, characters, stalled, .. }) =
+        let Some(Transfer::Write { file, characters, at, stalled, .. }) =
             self.transfers.get_mut(handle)
         else {
             return;
@@ -1125,7 +1143,7 @@ impl Control {
             held.extend_from_slice(&out);
             return;
         }
-        if let Err(e) = file.write_all(&out) {
+        if let Err(e) = put(file, at, &out) {
             let why = e.to_string();
             *stalled = Some((out, why.clone()));
             self.async_mark(handle, "NMR", &why);
@@ -1158,7 +1176,10 @@ impl Control {
     /// **Not reached by a test here.** Taking a write's temporary away
     /// between two packets fails nothing, since the write goes through its
     /// own handle; what stops one is the disk itself failing, full or
-    /// erring.
+    /// erring. A file-size limit on the test process fails one, cut short
+    /// or not at all, and was used once to show the retry landing where
+    /// the write would have (see [`put`]); it is not kept, since setting
+    /// that limit takes `unsafe` in a test (`docs/design.md` §2).
     fn cont(&mut self, tid: &str, handle: &str) {
         let stopped =
             matches!(self.transfers.get(handle), Some(Transfer::Write { stalled: Some(_), .. }));
@@ -1175,11 +1196,11 @@ impl Control {
             );
         }
         self.reply(tid, handle, "CONTINUE", "");
-        let Some(Transfer::Write { file, stalled, .. }) = self.transfers.get_mut(handle) else {
+        let Some(Transfer::Write { file, at, stalled, .. }) = self.transfers.get_mut(handle) else {
             return;
         };
         let (held, _) = stalled.take().expect("stopped");
-        if let Err(e) = file.write_all(&held) {
+        if let Err(e) = put(file, at, &held) {
             let why = e.to_string();
             *stalled = Some((held, why.clone()));
             self.async_mark(handle, "NMR", &why);
@@ -1650,6 +1671,18 @@ fn described(place: &Place) -> Option<std::fs::Metadata> {
         Ok(m) => m,
         Err(_) => std::fs::symlink_metadata(&place.path).ok(),
     }
+}
+
+/// Writes `bytes` into a write's temporary at `at`, and moves `at` past
+/// them if the whole write succeeded. On an error `at` stays, so the
+/// `CONTINUE` that retries the same bytes writes them at the same place:
+/// a write the disk cut short has already put some of them there, and
+/// the handle's own position has moved past those.
+fn put(file: &mut std::fs::File, at: &mut u64, bytes: &[u8]) -> std::io::Result<()> {
+    file.seek(SeekFrom::Start(*at))?;
+    file.write_all(bytes)?;
+    *at += bytes.len() as u64;
+    Ok(())
 }
 
 /// The name as the user end will see it: the pathname it asked for.

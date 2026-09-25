@@ -634,6 +634,102 @@ fn the_file_service_writes_files() {
     assert_eq!(r, "TC O0001 ERROR FNF C File not found");
 }
 
+/// A file that holds `old` written again with `IF-EXISTS <how>`, in a
+/// world named `name`: `data` sent up under `opcode`, the mark, the CLOSE.
+/// Answers the length in the OPEN's reply, the length in the CLOSE's, and
+/// what is in the file after. Until the CLOSE the file is as it was.
+fn written_over(
+    name: &str,
+    how: &str,
+    old: &[u8],
+    (opcode, data): (u8, &[u8]),
+) -> (String, String, Vec<u8>) {
+    let s = Scratch::new(name);
+    let root = s.dir("base");
+    let path = root.join("old.text");
+    std::fs::write(&path, old).unwrap();
+    let mut n = serve(vec![base(&root)]);
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let mode = if opcode == file::BINARY_OP { "BINARY" } else { "CHARACTER" };
+    let open = format!("T3 O0001 OPEN WRITE {mode} IF-EXISTS {how}{nl}/old.text{nl}");
+    let opened = n.command(c, 30, &open);
+    n.send_data(c, 31, opcode, data);
+    n.send_data(c, 32, file::SYNC_MARK_OP, &[]);
+    assert_eq!(std::fs::read(&path).unwrap(), old, "untouched until the CLOSE");
+    let closed = n.command(c, 33, "T4 O0001 CLOSE");
+    assert!(temporaries(&root).is_empty(), "the temporary renamed into place");
+    // The length is the third field of each reply's first line: after the
+    // date and the time.
+    let length = |reply: &str, head: &str| {
+        let props = reply.strip_prefix(head).and_then(|r| r.split(nl).next());
+        let props = props.unwrap_or_else(|| panic!("{reply:?}"));
+        props.split(' ').nth(2).unwrap_or_else(|| panic!("{reply:?}")).to_string()
+    };
+    let opened = length(&opened, "T3 O0001 OPEN ");
+    let closed = length(&closed, "T4 O0001 CLOSE ");
+    (opened, closed, std::fs::read(&path).unwrap())
+}
+
+/// **`IF-EXISTS OVERWRITE` shorter than the file leaves only what was
+/// written.** The band sends the keyword by name (`qfile.lisp`,
+/// `OPEN-CHAOS`), and the Lisp Machine's own manual defines it: "Write
+/// over the data of the existing file, starting at the beginning, and set
+/// the file's length to the length of the newly written data"
+/// (`sys/man/files.text:282`). Not Common Lisp's, which keeps the tail.
+/// So OPEN answers 0, as `chfile.text` says a write's OPEN always does,
+/// and CLOSE the length written.
+#[test]
+fn an_overwrite_shorter_than_the_file_leaves_only_what_was_written() {
+    let (opened, closed, after) =
+        written_over("overwrite-shorter", "OVERWRITE", b"abcdef", (file::CHARACTER_OP, b"XY"));
+    assert_eq!(after, b"XY");
+    assert_eq!((opened.as_str(), closed.as_str()), ("0", "2"), "the lengths");
+}
+
+/// **`IF-EXISTS OVERWRITE` longer than the file is what was written**, and
+/// nothing of the old file is left.
+#[test]
+fn an_overwrite_longer_than_the_file_is_what_was_written() {
+    let (opened, closed, after) =
+        written_over("overwrite-longer", "OVERWRITE", b"abcdef", (file::CHARACTER_OP, b"XYZWVUTS"));
+    assert_eq!(after, b"XYZWVUTS");
+    assert_eq!((opened.as_str(), closed.as_str()), ("0", "8"), "the lengths");
+}
+
+/// **An overwrite in characters is what was written, translated** one
+/// byte for one byte (`src/lispm.rs`): the Lisp Machine's tab and newline
+/// become Unix's, and nothing of the old file is left.
+#[test]
+fn an_overwrite_in_characters_is_what_was_written_translated() {
+    let (_, closed, after) = written_over(
+        "overwrite-characters",
+        "OVERWRITE",
+        b"abcdef\n",
+        (file::CHARACTER_OP, &[b'X', 0o211, NEWLINE]),
+    );
+    assert_eq!(after, b"X\t\n");
+    assert_eq!(closed, "3");
+}
+
+/// **An overwrite in binary is its bytes as sent**, and nothing else.
+#[test]
+fn an_overwrite_in_binary_is_its_bytes_as_sent() {
+    let (_, _, after) =
+        written_over("overwrite-binary", "OVERWRITE", b"abcdef", (file::BINARY_OP, &[0, 0o377]));
+    assert_eq!(after, b"\0\xff");
+}
+
+/// **`IF-EXISTS APPEND` writes after the file**, and OPEN answers with the
+/// length it starts from.
+#[test]
+fn an_append_writes_after_the_file() {
+    let (opened, closed, after) =
+        written_over("append", "APPEND", b"abcdef", (file::CHARACTER_OP, b"XY"));
+    assert_eq!(after, b"abcdefXY");
+    assert_eq!((opened.as_str(), closed.as_str()), ("6", "8"), "the lengths");
+}
+
 /// **A file being read is deleted while open**: DELETE on its handle and
 /// no pathname, `chfile.text`'s "delete while open", which the band's
 /// `:DELETE` sends on any open stream. The file is removed at once, as
