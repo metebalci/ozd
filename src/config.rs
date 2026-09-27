@@ -29,7 +29,7 @@
 //! What each flag takes is on the field it fills: [`Config::address`],
 //! [`Config::names`], [`Config::listen`], [`Config::roots`],
 //! [`Config::hosts`], [`Config::peers`], [`Config::tcps`],
-//! [`Config::timezone`]; `--trace` and
+//! [`Config::file_dates`], which `--timezone` fills too; `--trace` and
 //! `--check` are the run's, [`Run`].
 //!
 //! **The command line has the last word.** A flag it gives leaves every
@@ -55,8 +55,10 @@
 //! absolute, a part of `--name` or `--host` with `=` other than one
 //! `system=` with a type; a `--tcp` with no port, a contact that is no
 //! contact name, or a host that is this one or of another subnet; an
-//! `--address`, `--name`, `--listen` or `--timezone` given twice, a zone
-//! that is not whole hours from -12 to 12, a second base, a
+//! `--address`, `--name`, `--listen`, `--file-dates` or `--timezone` given
+//! twice, a `--file-dates` that is not `mit` or `utc`, a zone that is not
+//! whole hours from -12 to 12, a `--timezone` under `--file-dates utc`,
+//! given or by default, a second base, a
 //! mount's name twice, and a second `--tcp` on one endpoint; an address that would be
 //! two answers, a host name given twice, a system type that is not upper
 //! case, and a name, a system type or a mount's name that is not printable
@@ -104,6 +106,7 @@
 
 use crate::address::parse_address;
 use crate::chudp::PORT;
+use crate::timezone::FileDates;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::{Path, PathBuf};
@@ -112,6 +115,11 @@ use std::path::{Path, PathBuf};
 /// port, so that a fresh install answers its own host and nothing else
 /// (`docs/design.md` §5).
 const LISTEN: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, PORT));
+
+/// What a `--timezone` refused under `--file-dates utc` is told: which
+/// bands want a zone, and how they get one.
+const UTC_HAS_NO_ZONE: &str =
+    "a band of Systems 100 to 1001 wants --file-dates mit, with --timezone its zone";
 
 /// Where a required flag may be given, as its refusal says.
 const WHERE: &str = "on the command line or in a file of flags";
@@ -219,17 +227,27 @@ pub struct Config {
     /// - **The host** is a host of this host's subnet, and not this host,
     ///   since this host routes nothing (`docs/design.md` §5).
     pub tcps: Vec<Tcp>,
-    /// `--timezone <hours>`, at most once: the band's zone, its
-    /// `:TIMEZONE` site option (`sys/io1/time.lisp:13`) --- whole hours west
-    /// of Greenwich, from -12 to 12, as the band's own table of zones runs
-    /// (`:657-683`), 5 at System 100's site (`sys/site/site.lisp:99`); 0
-    /// without it, which is UTC. FILE prints and reads every date at this
-    /// zone, with the band's daylight saving on top of it whatever the zone
-    /// (`crate::timezone`, `docs/design.md` §7). A sign is taken, `+3` or
-    /// `-1`. **A fraction is not**: the band's table has one, Newfoundland's
-    /// 3.5, and what a band prints at a zone that is not a whole number of
-    /// hours is not known here.
-    pub timezone: i8,
+    /// `--file-dates mit|utc`, at most once, and `--timezone <hours>`, at
+    /// most once: how FILE prints and reads its dates (`crate::timezone`,
+    /// `docs/design.md` §7).
+    ///
+    /// - **`utc`, the default**, is plain UTC calendar fields, as System
+    ///   1002 and later write them. It has no zone, so **a `--timezone` with
+    ///   it is refused**: without `--file-dates`, the `--timezone`, telling
+    ///   a site of Systems 100 to 1001 to add `--file-dates mit`; with
+    ///   `--file-dates utc` given, whichever of the two is read later,
+    ///   naming the other.
+    /// - **`mit`** is System 100's convention, for Systems 100 to 1001, at
+    ///   the zone `--timezone` gives: the band's `:TIMEZONE` site option
+    ///   (`sys/io1/time.lisp:13`) --- whole hours west of Greenwich, from
+    ///   -12 to 12, as the band's own table of zones runs (`:657-683`), 5 at
+    ///   System 100's site (`sys/site/site.lisp:99`); 0 without it, which is
+    ///   UTC. FILE prints and reads every date at this zone, with the band's
+    ///   daylight saving on top of it whatever the zone. A sign is taken,
+    ///   `+3` or `-1`. **A fraction is not**: the band's table has one,
+    ///   Newfoundland's 3.5, and what a band prints at a zone that is not a
+    ///   whole number of hours is not known here.
+    pub file_dates: FileDates,
 }
 
 /// One `--root` (`docs/design.md` §6).
@@ -327,6 +345,7 @@ enum Flag {
     HostsText,
     Peer,
     Tcp,
+    FileDates,
     Timezone,
     Trace,
     LogSimple,
@@ -340,7 +359,7 @@ enum Flag {
 }
 
 impl Flag {
-    const ALL: [Flag; 18] = [
+    const ALL: [Flag; 19] = [
         Flag::Address,
         Flag::Name,
         Flag::Listen,
@@ -349,6 +368,7 @@ impl Flag {
         Flag::HostsText,
         Flag::Peer,
         Flag::Tcp,
+        Flag::FileDates,
         Flag::Timezone,
         Flag::Trace,
         Flag::LogSimple,
@@ -381,6 +401,7 @@ impl Flag {
             Flag::HostsText => "--hosts-text",
             Flag::Peer => "--peer",
             Flag::Tcp => "--tcp",
+            Flag::FileDates => "--file-dates",
             Flag::Timezone => "--timezone",
             Flag::Trace => "--trace",
             Flag::LogSimple => "--log-simple",
@@ -405,6 +426,7 @@ impl Flag {
             Flag::HostsText => Some("<file>"),
             Flag::Peer => Some("<addr>@<ip>[:<port>]"),
             Flag::Tcp => Some("<endpoint>,<CONTACT>@<addr>"),
+            Flag::FileDates => Some("mit|utc"),
             Flag::Timezone => Some("<hours>"),
             Flag::Config => Some("<file>"),
             Flag::Trace
@@ -686,8 +708,11 @@ struct Reading {
     tcps: Vec<(Tcp, Place, String)>,
     /// `--hosts-text`: the file a band's own host table is in.
     hosts_text: Option<(PathBuf, Place)>,
-    /// `--timezone`: the band's zone.
-    timezone: Option<(i8, Place)>,
+    /// `--timezone`: the band's zone, with its value as given, so that a
+    /// refusal made once every flag is read can name it.
+    timezone: Option<(i8, Place, String)>,
+    /// `--file-dates`: whether it is `mit`, and where it was given.
+    file_dates: Option<(bool, Place)>,
     /// Every host name given so far, this host's and every `--host`'s.
     named: Vec<Named>,
     trace: bool,
@@ -724,6 +749,7 @@ impl Reading {
             Flag::Peer => self.peer(here, value),
             Flag::Tcp => self.tcp(here, value),
             Flag::Timezone => self.timezone(here, value),
+            Flag::FileDates => self.file_dates(here, value),
             Flag::Trace => {
                 self.trace = true;
                 Ok(())
@@ -938,9 +964,10 @@ impl Reading {
     }
 
     /// `--timezone`: whole hours west of Greenwich, -12 to 12, once
-    /// ([`Config::timezone`]).
+    /// ([`Config::file_dates`]); refused after a `--file-dates utc`, whose
+    /// dates have no zone.
     fn timezone(&mut self, here: Place, value: &str) -> Result<(), String> {
-        if let Some((_, p)) = self.timezone {
+        if let Some((_, p, _)) = self.timezone {
             return Err(format!("once only, and given {} already", on(p, here)));
         }
         if value.contains(['.', '/']) {
@@ -952,7 +979,39 @@ impl Reading {
         let zone = value.parse::<i8>().ok().filter(|z| (-12..=12).contains(z)).ok_or(
             "not a zone: whole hours west of Greenwich, -12 to 12, as the band's :TIMEZONE is",
         )?;
-        self.timezone = Some((zone, here));
+        if let Some((false, p)) = self.file_dates {
+            return Err(format!(
+                "--file-dates utc {} prints and reads FILE's dates in plain UTC, which has no zone; {UTC_HAS_NO_ZONE}",
+                on(p, here)
+            ));
+        }
+        self.timezone = Some((zone, here, value.to_string()));
+        Ok(())
+    }
+
+    /// `--file-dates`: `mit` or `utc`, once ([`Config::file_dates`]); `utc`
+    /// refused after a `--timezone`, since its dates have no zone.
+    fn file_dates(&mut self, here: Place, value: &str) -> Result<(), String> {
+        if let Some((_, p)) = self.file_dates {
+            return Err(format!("once only, and given {} already", on(p, here)));
+        }
+        let mit = match value {
+            "mit" => true,
+            "utc" => false,
+            _ => {
+                return Err(
+                    "not mit or utc: utc for System 1002 and later, mit for Systems 100 to 1001"
+                        .to_string(),
+                );
+            }
+        };
+        if let (false, Some((_, p, _))) = (mit, &self.timezone) {
+            return Err(format!(
+                "the --timezone {} is a zone, and plain UTC has none; {UTC_HAS_NO_ZONE}",
+                on(*p, here)
+            ));
+        }
+        self.file_dates = Some((mit, here));
         Ok(())
     }
 
@@ -1049,6 +1108,15 @@ impl Reading {
                 )));
             }
         }
+        if let (None, Some((_, place, value))) = (self.file_dates, &self.timezone) {
+            return Err(Error {
+                place: Some(*place),
+                usage: false,
+                message: format!(
+                    "--timezone {value}: FILE's dates are plain UTC without --file-dates, as System 1002 and later write them, and UTC has no zone; {UTC_HAS_NO_ZONE}"
+                ),
+            });
+        }
         let config = Config {
             address,
             names,
@@ -1059,7 +1127,10 @@ impl Reading {
             peers: self.peers.into_iter().map(|(p, _)| p).collect(),
             hosts_text: self.hosts_text.map(|(path, _)| path),
             tcps: self.tcps.into_iter().map(|(t, _, _)| t).collect(),
-            timezone: self.timezone.map_or(0, |(z, _)| z),
+            file_dates: match self.file_dates {
+                Some((true, _)) => FileDates::Mit(self.timezone.map_or(0, |(z, _, _)| z)),
+                _ => FileDates::Utc,
+            },
         };
         let logging = Logging {
             trace: self.trace,

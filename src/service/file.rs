@@ -85,7 +85,7 @@ use crate::log::Names;
 use crate::ncp::{Out, Response, Service, Session};
 use crate::packet::MAX_DATA;
 use crate::roots::{Entry, Place, Refusal, Resolved, Tree, is_temporary, temporary_name};
-use crate::timezone;
+use crate::timezone::FileDates;
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{ErrorKind, Seek as _, SeekFrom, Write as _};
 use std::path::PathBuf;
@@ -206,10 +206,9 @@ pub struct File {
     /// after its address (`docs/design.md` §10). Empty unless set, and then
     /// every client is `(?)`.
     pub names: Arc<Names>,
-    /// `--timezone`: the band's zone, which every date FILE prints is in,
-    /// with the band's daylight saving on top (`crate::timezone`). 0, UTC,
-    /// unless set.
-    pub timezone: i8,
+    /// `--file-dates`: how every date FILE prints and reads is written
+    /// (`crate::timezone`). Plain UTC, `utc`, unless set.
+    pub dates: FileDates,
 }
 
 impl File {
@@ -225,7 +224,7 @@ impl File {
             log_file: false,
             log_file_probe: false,
             names: Arc::default(),
-            timezone: 0,
+            dates: FileDates::Utc,
         }
     }
 
@@ -328,8 +327,8 @@ struct Control {
     log_file_probe: bool,
     /// The site's host table, as the service was given it.
     names: Arc<Names>,
-    /// The band's zone, as the service was given it.
-    timezone: i8,
+    /// `--file-dates`, as the service was given it.
+    dates: FileDates,
     client: u16,
     /// The protocol version from the RFC's argument: `FILE 1` is 1. It
     /// chooses the shape of the reply to a write's `CLOSE` --- `FILE.c`
@@ -471,7 +470,7 @@ impl Control {
             log_file: file.log_file,
             log_file_probe: file.log_file_probe,
             names: file.names.clone(),
-            timezone: file.timezone,
+            dates: file.dates,
             client,
             version,
             user: None,
@@ -482,15 +481,15 @@ impl Control {
         }
     }
 
-    /// A file's date as FILE prints it: its modification time at the band's
-    /// zone, with the band's daylight saving on top (`crate::timezone`).
+    /// A file's date as FILE prints it: its modification time, as
+    /// `--file-dates` says (`crate::timezone`).
     fn date(&self, meta: &std::fs::Metadata) -> String {
-        timezone::print(mtime(meta), self.timezone)
+        self.dates.print(mtime(meta))
     }
 
     /// The date now, printed as a file's is.
     fn now_date(&self) -> String {
-        timezone::print(now_unix(self.time), self.timezone)
+        self.dates.print(now_unix(self.time))
     }
 
     /// `tid handle COMMAND results`, `FILE.c`'s `respond`.
@@ -1544,7 +1543,7 @@ impl Control {
     ///
     /// **The dates are the modification time.** `CREATION-DATE` and
     /// `MODIFICATION-DATE` each set it, read as the instant the band printed
-    /// it for, at the band's zone (`crate::timezone`): the listing reports both as the
+    /// it for, as `--file-dates` says (`crate::timezone`): the listing reports both as the
     /// modification time, and make-system compares `CREATION-DATE`
     /// (`sys2/maksys.lisp:1289-1291`). The access time is left as it is.
     /// By pathname, and on a read stream, the date is set at once, through
@@ -1611,17 +1610,15 @@ impl Control {
         for line in properties.iter().filter(|l| !l.is_empty()) {
             let (name, value) = line.split_once(' ').unwrap_or((line, ""));
             match name {
-                "CREATION-DATE" | "MODIFICATION-DATE" => {
-                    match timezone::parse(value, self.timezone, now) {
-                        Some(t) => modified = Some(t),
-                        None => {
-                            let why = format!(
-                                "{name} {value:?} is not a date as MM/DD/YY HH:MM:SS or MM/DD/YYYY HH:MM:SS"
-                            );
-                            return self.error(tid, handle, "IPV", 'C', &why);
-                        }
+                "CREATION-DATE" | "MODIFICATION-DATE" => match self.dates.parse(value, now) {
+                    Some(t) => modified = Some(t),
+                    None => {
+                        let why = format!(
+                            "{name} {value:?} is not a date as MM/DD/YY HH:MM:SS or MM/DD/YYYY HH:MM:SS"
+                        );
+                        return self.error(tid, handle, "IPV", 'C', &why);
                     }
-                }
+                },
                 "AUTHOR" | "" => {}
                 other => {
                     return self.error(
@@ -1957,8 +1954,8 @@ pub(crate) fn truename(pathname: &str, directory: bool) -> String {
 /// `MM/DD/YY HH:MM:SS`, the form `PARSE-DIRECTORY-DATE-PROPERTY` reads
 /// fastest, from the file's modification time, in plain UTC: MINI's
 /// `202`, which a cold load does not read (`sys/cold/mini.lisp` has no date
-/// in it), and so is left as it was. FILE prints its dates at the band's
-/// zone instead (`Control::date`).
+/// in it), and so is left as it was. FILE prints its dates as
+/// `--file-dates` says (`Control::date`).
 pub(crate) fn date(meta: &std::fs::Metadata) -> String {
     let secs = meta
         .modified()

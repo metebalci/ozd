@@ -592,6 +592,8 @@ fn help_is_printed_on_stdout_and_exits_0() {
             "--host",
             "--peer",
             "--tcp",
+            "--file-dates mit|utc",
+            "--timezone",
             "--log-mini",
             "--log-tcp",
             "--trace",

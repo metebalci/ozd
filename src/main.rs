@@ -9,7 +9,8 @@
 //!         [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
 //!         [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
 //!         [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-//!         [--tcp <endpoint>,<CONTACT>@<addr>] [--timezone <hours>]
+//!         [--tcp <endpoint>,<CONTACT>@<addr>] [--file-dates mit|utc]
+//!         [--timezone <hours>]
 //!         [--trace] [--log-simple] [--log-file] [--log-file-probe]
 //!         [--log-mini] [--log-tcp] [--check] [-c|--config <file>] [-h|--help]
 //! ```
@@ -59,7 +60,8 @@ const USAGE: &str = "usage: ozd [--address <addr>] [--name <NAME>[,<NAME>...][,s
            [--listen <endpoint>] [--root [<name>=]<path>[,ro]]
            [--host <addr>,<NAME>[,<NAME>...][,system=<TYPE>]]
            [--hosts-text <file>] [--peer <addr>@<ip>[:<port>]]
-           [--tcp <endpoint>,<CONTACT>@<addr>] [--timezone <hours>]
+           [--tcp <endpoint>,<CONTACT>@<addr>] [--file-dates mit|utc]
+           [--timezone <hours>]
            [--trace] [--log-simple] [--log-file] [--log-file-probe]
            [--log-mini] [--log-tcp] [--check] [-c|--config <file>] [-h|--help]";
 
@@ -133,14 +135,22 @@ time and their host table, and passing packets between them.
                                the loopback. The flag can come more than
                                once, a listener an endpoint; nothing listens
                                without it.
-  --timezone <hours>           the band's zone, its site's :TIMEZONE: whole
-                               hours west of Greenwich, -12 to 12, 5 for
-                               System 100's site. FILE prints and reads its
-                               dates at this zone, and the band's own daylight saving
+  --file-dates mit|utc         how FILE prints and reads its dates. utc:
+                               plain UTC, no zone and no daylight saving,
+                               as System 1002 and later write them. mit:
+                               at --timezone, with MIT's daylight saving on
+                               top, as Systems 100 to 1001 write them; those
+                               bands want --file-dates mit and their zone.
+                               [default: utc]
+  --timezone <hours>           under --file-dates mit, the band's zone, its
+                               site's :TIMEZONE: whole hours west of
+                               Greenwich, -12 to 12, 5 for System 100's
+                               site. FILE prints and reads its dates at this
+                               zone, and the band's own daylight saving
                                goes on top of it whatever the zone: the old
                                North American calendar, last Sunday in April
                                to last Sunday in October. A fraction is not
-                               taken.
+                               taken. Refused under --file-dates utc.
                                [default: 0, UTC, with that daylight saving]
   --trace                      print every packet, every packet passed on to
                                another host, and every drop, with why.

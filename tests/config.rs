@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use ozd::config::{Config, Error, Flags, Host, Peer, Place, Root, Run, Tcp};
+use ozd::timezone::FileDates;
 use support::ozd;
 
 /// The least a file of flags can be: an address, a name and a root, on
@@ -142,33 +143,97 @@ fn the_modules_example_is_read_whole() {
             peers: vec![Peer { address: 0o3040, endpoint: at("192.0.2.5:42042") }],
             hosts_text: None,
             tcps: vec![],
-            timezone: 0,
+            file_dates: FileDates::Utc,
         }
     );
 }
 
-/// **`--timezone` names the band's zone, its `:TIMEZONE`**: whole hours
-/// west of Greenwich, as System 100's site gives 5 (`sys/site/site.lisp:99`)
-/// and the band's own table runs from -12 to 12 (`sys/io1/time.lisp:657`).
-/// Without it the zone is 0. It is a site's, so a file of flags may hold it,
-/// and the command line has the last word. A fraction is refused: the
-/// band's table has one, 3.5, and what a band prints at it is not known.
+/// **`--timezone` names the band's zone, its `:TIMEZONE`**, under
+/// `--file-dates mit`: whole hours west of Greenwich, as System 100's site
+/// gives 5 (`sys/site/site.lisp:99`) and the band's own table runs from -12
+/// to 12 (`sys/io1/time.lisp:657`). Without it the zone is 0. It is a
+/// site's, so a file of flags may hold it, and the command line has the
+/// last word. A fraction is refused: the band's table has one, 3.5, and
+/// what a band prints at it is not known.
 #[test]
 fn the_timezone_is_whole_hours_west_of_greenwich() {
-    assert_eq!(Config::parse(LEAST).unwrap().timezone, 0, "none is 0");
+    const MIT: &str = "--file-dates mit\n";
+    assert_eq!(with(MIT).file_dates, FileDates::Mit(0), "none is 0");
     for (given, zone) in [("5", 5), ("0", 0), ("-1", -1), ("+3", 3), ("12", 12), ("-12", -12)] {
-        assert_eq!(with(&format!("--timezone {given}\n")).timezone, zone, "{given}");
-        assert_eq!(site(&["--timezone", given], LEAST).timezone, zone, "{given} typed");
+        assert_eq!(with(&format!("{MIT}--timezone {given}\n")).file_dates, FileDates::Mit(zone));
+        let typed = ["--file-dates", "mit", "--timezone", given];
+        assert_eq!(site(&typed, LEAST).file_dates, FileDates::Mit(zone), "{given} typed");
     }
-    let file = format!("{LEAST}--timezone 5\n");
-    assert_eq!(site(&[], &file).timezone, 5);
-    assert_eq!(site(&["--timezone", "8"], &file).timezone, 8, "the command line's");
+    let file = format!("{LEAST}{MIT}--timezone 5\n");
+    assert_eq!(site(&[], &file).file_dates, FileDates::Mit(5));
+    assert_eq!(
+        site(&["--timezone", "8"], &file).file_dates,
+        FileDates::Mit(8),
+        "the command line's"
+    );
     for bad in ["13", "-13", "EST", "5h", "0x5", "5 6"] {
-        refused_after(&format!("--timezone {bad}\n"), 4, "whole hours west of Greenwich");
+        refused_after(&format!("{MIT}--timezone {bad}\n"), 5, "whole hours west of Greenwich");
     }
-    refused_after("--timezone 3.5\n", 4, "a fraction");
-    refused_after("--timezone 5\n--timezone 6\n", 5, "once only");
+    refused_after(&format!("{MIT}--timezone 3.5\n"), 5, "a fraction");
+    refused_after(&format!("{MIT}--timezone 5\n--timezone 6\n"), 6, "once only");
     misused_after("--timezone\n", 4, "--timezone wants");
+}
+
+/// **`--file-dates` says how FILE prints and reads its dates**: `utc`, the
+/// default, plain UTC fields as System 1002 and later put them on the wire;
+/// or `mit`, System 100's convention at `--timezone`, for Systems 100 to
+/// 1001. Once, one of the two words, in a file or on the command line, the
+/// command line having the last word.
+#[test]
+fn file_dates_are_utc_unless_mit_is_given() {
+    assert_eq!(Config::parse(LEAST).unwrap().file_dates, FileDates::Utc, "the default");
+    assert_eq!(with("--file-dates utc\n").file_dates, FileDates::Utc);
+    assert_eq!(with("--file-dates mit\n").file_dates, FileDates::Mit(0));
+    assert_eq!(with("--file-dates mit\n--timezone -1\n").file_dates, FileDates::Mit(-1));
+    assert_eq!(with("--timezone -1\n--file-dates mit\n").file_dates, FileDates::Mit(-1));
+    let typed = ["--file-dates", "mit", "--timezone", "-1"];
+    assert_eq!(site(&typed, LEAST).file_dates, FileDates::Mit(-1), "typed");
+    assert_eq!(site(&["--file-dates", "utc"], LEAST).file_dates, FileDates::Utc, "typed");
+    let file = format!("{LEAST}--file-dates mit\n--timezone 5\n");
+    assert_eq!(site(&[], &file).file_dates, FileDates::Mit(5), "a file's");
+    let file = format!("{LEAST}--file-dates utc\n");
+    let typed = ["--file-dates", "mit", "--timezone", "5"];
+    assert_eq!(site(&typed, &file).file_dates, FileDates::Mit(5), "the command line's");
+    for bad in ["MIT", "UTC", "local", "gmt", "mit,utc", "1002"] {
+        refused_after(&format!("--file-dates {bad}\n"), 4, "mit or utc");
+    }
+    refused_after("--file-dates mit\n--file-dates utc\n", 5, "once only");
+    misused_after("--file-dates\n", 4, "--file-dates wants");
+    misused_typed(&["--file-dates"], "--file-dates wants");
+}
+
+/// **A `--timezone` under `utc` is refused**, since plain UTC has no zone:
+/// under the default, the `--timezone` is refused, telling a site of
+/// Systems 100 to 1001 to add `--file-dates mit`; with `--file-dates utc`
+/// given, whichever of the two is read later is refused, naming the other,
+/// so across a file and the command line it is the command line's.
+#[test]
+fn a_timezone_is_refused_under_utc() {
+    refused_after("--timezone 5\n", 4, "--file-dates mit");
+    refused_after("--timezone 5\n", 4, "Systems 100 to 1001");
+    refused_after("--file-dates utc\n--timezone 5\n", 5, "--file-dates utc on line 4");
+    refused_after("--timezone 5\n--file-dates utc\n", 5, "--timezone on line 4");
+    refused_after("--timezone 0\n", 4, "--file-dates mit");
+
+    let e = run(&["--timezone", "5"], LEAST).unwrap_err();
+    assert!(!e.usage, "{e}");
+    assert_eq!(e.place, Some(Place::CommandLine), "{e}");
+    assert!(e.message.starts_with("--timezone 5: "), "{e}");
+    assert!(e.message.contains("--file-dates mit"), "{e}");
+
+    // The file's `mit` left out for the command line's `utc`, which is read
+    // after the file's `--timezone`, and so is the one refused.
+    let file = format!("{LEAST}--file-dates mit\n--timezone 5\n");
+    let e = run(&["--file-dates", "utc"], &file).unwrap_err();
+    assert!(!e.usage, "{e}");
+    assert_eq!(e.place, Some(Place::CommandLine), "{e}");
+    assert!(e.message.starts_with("--file-dates utc: "), "{e}");
+    assert!(e.message.contains("--timezone on line 5 of the file"), "{e}");
 }
 
 /// **A comment is a line beginning with `#`**, blanks before it or not,

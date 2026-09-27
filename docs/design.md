@@ -373,8 +373,8 @@ wins as a whole, and no file is ever half one and half the other.
   writing by its OPEN. A handle with nothing open on it is refused with
   `BUG`, as DELETE on one is.
 - **CHANGE-PROPERTIES sets the dates as the modification time.**
-  `CREATION-DATE` and `MODIFICATION-DATE` each set it, read at the band's
-  zone (§7), and the listing reports both as the modification time; the
+  `CREATION-DATE` and `MODIFICATION-DATE` each set it, read as
+  `--file-dates` says (§7), and the listing reports both as the modification time; the
   access time is left alone. `REFERENCE-DATE` and anything else is `UKP`,
   and a date that does not read is `IPV` (`io/file/open.lisp:327-335`).
   `AUTHOR` is not in the listing's `SETTABLE-PROPERTIES`, since nothing
@@ -427,7 +427,16 @@ ozd serves seven protocols (`docs/protocols.md`).
 - **UPTIME** answers with the sixtieths of a second since start,
   `now × 60 / 10⁹`, which wraps at 32 bits after about 828 days.
 - **FILE** follows `sys/doc/chfile.text`, with the containment of §6.
-  **FILE's dates** are printed as a band prints them, in two parts. The
+  **FILE's dates** are `MM/DD/YY HH:MM:SS`, `chfile.text`'s "mm/dd/yy
+  hh:mm:ss" (`doc/chfile.text:295-297`), which names no zone; what the
+  fields mean is `--file-dates` (§8). **Under `utc`, the default,** they
+  are the instant's plain UTC calendar fields: no zone, no daylight
+  saving, and 2000 a leap year, as the calendar has it. That is how System
+  1002 and later put a date on the wire and read one from it: such a band
+  shows a date in its own local time, and the wire carries UTC. A
+  `--timezone` is refused under `utc`, which has no zone. **Under `mit`,**
+  for Systems 100 to 1001, they are printed as a System 100 band prints
+  them, in two parts, and the rest of this paragraph is about it. The
   **zone** is `--timezone` (§8), the band's `:TIMEZONE` site option
   (`sys/io1/time.lisp:13`): whole hours west of Greenwich, 5 at System
   100's site (`sys/site/site.lisp:99`), and 0, which is UTC, without the
@@ -478,7 +487,9 @@ ozd serves seven protocols (`docs/protocols.md`).
   year being the one within 50 years of now, as the band takes one. Read
   more strictly than the band's parser, which computes something for any
   digits: every field in range for the calendar, and the instant from
-  1970 to 2099, or it is refused.
+  1970 to 2099, or it is refused. Under `utc` the same two forms are read
+  with the same checks, as plain UTC fields, a two-digit year the one
+  within 50 years of the UTC year now.
 - **MINI** answers each open on its connection with the whole file: a
   `202` with the truename and the date, the file in packets, and an EOF;
   or a `203` with a message (`docs/protocols.md`, MINI). It resolves a
@@ -535,18 +546,26 @@ file of flags:
 --peer 3040@192.0.2.5
 # a TCP listener carried to TELNET at a machine; nothing listens without one
 --tcp 127.0.0.1:10000,TELNET@3050
-# the band's zone, hours west of Greenwich, as its site's :TIMEZONE; see §7
+# how FILE's dates are written: utc, the default, for System 1002 and
+# later; mit for Systems 100 to 1001, at --timezone; see §7
+--file-dates mit
+# under mit, the band's zone, hours west of Greenwich, as its site's :TIMEZONE
 --timezone 5
 ```
 
 `--address` and `--name` are required, and each may be given only once,
-as may `--listen`, `--hosts-text` and `--timezone`. `--root`, `--host` and `--peer` may
+as may `--listen`, `--hosts-text`, `--file-dates` and `--timezone`. `--root`, `--host` and `--peer` may
 each be given more than once. A `--root` whose value begins with `/` is
 the base. Any other `--root` is `<name>=<path>`, mounted at `/<name>`.
 `,ro` makes either kind read-only. `--peer` is `<address>@<ip>[:<port>]`,
 with port 42042 unless one is given. A path cannot contain a comma.
-`--timezone` is whole hours west of Greenwich from -12 to 12, with a sign
-if wanted, and 0 without it. It names only the zone; the band's daylight
+`--file-dates` is `utc`, the default, or `mit` (§7). `--timezone` is
+taken only with `--file-dates mit`: under `utc`, given or by default, it
+is refused, since UTC has no zone, and the refusal tells a site of
+Systems 100 to 1001 to add `--file-dates mit`. With `--file-dates utc`
+given, whichever of the two is read later is refused. `--timezone` is
+whole hours west of Greenwich from -12 to 12, with a sign if wanted, and
+0 without it. It names only the zone; the band's daylight
 saving goes on top of whatever zone it names (§7). A fraction is refused:
 the band's own table of zones has one, 3.5 for Newfoundland
 (`io1/time.lisp:683`), but what a band prints at it is not known --- its

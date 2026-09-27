@@ -149,12 +149,15 @@ pathname outside the tree. The machine turns `FNF`, `ATF` and `ATD` into
 `:231`), and `WKF` into `WRONG-KIND-OF-FILE` (`:260`), each through
 `QFILE-PROCESS-ERROR-NEW` (`network/chaos/qfile.lisp:300`).
 
-**Dates.** Every date is `MM/DD/YY HH:MM:SS` at the band's zone, with the
-band's own daylight saving on top (`docs/design.md` §7, FILE's dates). The
+**Dates.** Every date is `MM/DD/YY HH:MM:SS` (`doc/chfile.text:295-297`),
+and what its fields mean is `--file-dates` (`docs/design.md` §7, FILE's
+dates): plain UTC by default, as System 1002 and later write them; under
+`--file-dates mit`, for Systems 100 to 1001, the band's zone with the
+band's own daylight saving on top. A System 100
 band's print and parse disagree after 2000: its parse asks its
 daylight-saving rule about the year less 1900 (`io1/time.lisp:162-165`),
 which the rule takes for another year (`:199-200`), and takes 2000 for no leap
-year (`:168`, `:376`). So ozd copies neither: it prints a string the
+year (`:168`, `:376`). So under `mit` ozd copies neither: it prints a string the
 band's parse reads as the instant meant, and reads a string the band
 printed as the instant the band printed it for. The
 listing's `SETTABLE-PROPERTIES` names what CHANGE-PROPERTIES may set

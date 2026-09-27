@@ -225,7 +225,7 @@ fn services(
     file.log_file = logging.file;
     file.log_file_probe = logging.file_probe;
     file.names = names.clone();
-    file.timezone = config.timezone;
+    file.dates = config.file_dates;
     let mut mini = Mini::new(tree.clone(), Some(Arc::new(|line: &str| log::event(line))));
     mini.log_mini = logging.mini;
     mini.names = names.clone();

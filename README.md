@@ -52,7 +52,8 @@ MIT-OZ at 3060 (`sys/site/hosts.text`):
 ```sh
 target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
     --root /srv/lispm --root tree=/path/to/system-100-0/sys,ro \
-    --host 3050,MIT-LISPM-1,CADR-1,CADR1,LM1,system=LISPM --timezone 5
+    --host 3050,MIT-LISPM-1,CADR-1,CADR1,LM1,system=LISPM \
+    --file-dates mit --timezone 5
 ```
 
 - `--address` and `--name` describe this host as the band's host table
@@ -91,15 +92,22 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   over, because `--name` gives its names, and a host with no Chaosnet
   address is skipped. ozd reads the file when it starts, so a change to it
   wants a restart.
+- `--file-dates` says how FILE writes and reads a file's dates. The
+  default, `utc`, is plain UTC, with no zone and no daylight saving, which
+  is how System 1002 and later put dates on the wire; such a band still
+  shows them in its own local time. Systems 100 to 1001 write them in
+  their site's zone with MIT's daylight saving on top, and want
+  `--file-dates mit` with their `--timezone`, as here. A `--timezone`
+  without `--file-dates mit` is refused.
 - `--timezone 5` is the band's zone, as its site file's `:TIMEZONE` gives
-  it: whole hours west of Greenwich, 5 for System 100's site. ozd prints
-  and reads every FILE date at that zone, and puts the band's own daylight saving
-  on top of it, whatever the zone: the old North American calendar, from
-  the last Sunday in April to the last Sunday in October. Without the
-  flag the zone is 0, which is UTC, with that daylight saving on top, so
-  a summer date is printed an hour from plain UTC: the band reads every
-  date through that rule. Whole hours from -12 to 12 are taken; a
-  fraction such as 3.5 is not.
+  it: whole hours west of Greenwich, 5 for System 100's site. Under
+  `--file-dates mit` ozd prints and reads every FILE date at that zone,
+  and puts the band's own daylight saving on top of it, whatever the
+  zone: the old North American calendar, from the last Sunday in April to
+  the last Sunday in October. Without the flag the zone is 0, which is
+  UTC, with that daylight saving on top, so a summer date is printed an
+  hour from plain UTC: the band reads every date through that rule. Whole
+  hours from -12 to 12 are taken; a fraction such as 3.5 is not.
 - `--log-simple`, `--log-file`, `--log-file-probe`, `--log-mini` and
   `--log-tcp` each add lines to the log, and each works on its own. `--log-simple` writes a line
   for each simple transaction ozd answers, such as TIME, STATUS or UPTIME.

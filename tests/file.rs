@@ -28,6 +28,7 @@ use ozd::ncp::{Ncp, Out, Response, Service, Session, op};
 use ozd::packet::{self, Framed, Packet};
 use ozd::roots::{Root, Tree, is_temporary, temporary_name};
 use ozd::service::file::{self, File, LogHook};
+use ozd::timezone::FileDates;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -544,13 +545,12 @@ fn set_mtime(path: &Path, unix: u64) {
         .unwrap();
 }
 
-/// **Every date FILE prints is in the band's zone, with the band's daylight
-/// saving on top** (`src/timezone.rs`): OPEN's reply, a PROBE's, a
-/// DIRECTORY record's and a PROPERTIES record's, and a write's CLOSE. One
-/// file dated 2026-07-15 12:00:00 UTC, summer, is 08:00 at zone 5; and
-/// without `--timezone` it is at zone 0, which is UTC with the band's
-/// daylight saving on top, so 13:00 and not the 12:00 of plain UTC. A band
-/// reads every date through that rule, at its own zone.
+/// **Every date FILE prints is as `--file-dates` says** (`src/timezone.rs`):
+/// OPEN's reply, a PROBE's, a DIRECTORY record's and a PROPERTIES record's,
+/// and a write's CLOSE. One file dated 2026-07-15 12:00:00 UTC, summer, is
+/// 12:00 under `utc`, the default, plain UTC as System 1002 and later read
+/// it. Under `mit` it is in the band's zone with the band's daylight saving
+/// on top: 08:00 at zone 5, and at zone 0 13:00, not the 12:00 of plain UTC.
 #[test]
 fn every_date_file_prints_is_in_the_bands_zone() {
     let s = Scratch::new("zone");
@@ -558,10 +558,14 @@ fn every_date_file_prints_is_in_the_bands_zone() {
     let f = s.file("base/f.text", "abc");
     set_mtime(&f, 1_784_116_800);
     let nl = NEWLINE as char;
-    for (zone, shown) in [(5, "07/15/26 08:00:00"), (0, "07/15/26 13:00:00")] {
+    for (zone, dates, shown) in [
+        ("utc", None, "07/15/26 12:00:00"),
+        ("mit5", Some(FileDates::Mit(5)), "07/15/26 08:00:00"),
+        ("mit0", Some(FileDates::Mit(0)), "07/15/26 13:00:00"),
+    ] {
         let mut service = File::new(Arc::new(Tree::new(vec![base(&root)]).unwrap()), None);
-        if zone != 0 {
-            service.timezone = zone;
+        if let Some(dates) = dates {
+            service.dates = dates;
         }
         let mut n = Net::new(service);
         let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
@@ -592,7 +596,7 @@ fn every_date_file_prints_is_in_the_bands_zone() {
         let r = n.command(c, 23, "TB O0001 CLOSE");
         let written = std::fs::metadata(root.join(format!("w{zone}.text"))).unwrap();
         let unix = written.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let when = ozd::timezone::print(unix as i64, zone);
+        let when = dates.unwrap_or_default().print(unix as i64);
         assert!(r.starts_with(&format!("TB O0001 CLOSE {when} 1{nl}")), "zone {zone}: {r:?}");
     }
 }
@@ -617,7 +621,7 @@ fn serve_at_zone_5(roots: Vec<Root>) -> (Net, Arc<Mutex<Vec<String>>>) {
     let seen = log.clone();
     let hook: LogHook = Arc::new(move |line: &str| seen.lock().unwrap().push(line.to_string()));
     let mut service = File::new(tree, Some(hook));
-    service.timezone = 5;
+    service.dates = FileDates::Mit(5);
     (Net::new(service), log)
 }
 
@@ -788,6 +792,41 @@ fn a_date_changed_on_a_write_is_the_written_files() {
         assert_eq!(mtime_of(&root.join(name)), SET, "{name}");
         assert_eq!(std::fs::read(root.join(name)).unwrap(), b"hi", "{name}");
     }
+}
+
+/// **Under `--file-dates utc`, the default, a date changed is read as plain
+/// UTC**, as System 1002 and later write it: no zone, no daylight saving,
+/// and 2000 a leap year, so `12/31/00` is December 31st and `12/32/00` is
+/// no date. What is set is printed back the same.
+#[test]
+fn a_date_changed_under_utc_is_plain_utc() {
+    let s = Scratch::new("set-date-utc");
+    let root = s.dir("base");
+    let f = s.file("base/f.text", "abc");
+    set_mtime(&f, 1_768_478_400);
+    let mut n = Net::new(File::new(Arc::new(Tree::new(vec![base(&root)]).unwrap()), None));
+    let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+    let nl = NEWLINE as char;
+    let r = n.command(
+        c,
+        10,
+        &format!("T3  CHANGE-PROPERTIES{nl}/f.text{nl}CREATION-DATE 07/15/2026 12:00:00{nl}"),
+    );
+    assert_eq!(r, "T3  CHANGE-PROPERTIES");
+    assert_eq!(mtime_of(&f), 1_784_116_800, "2026-07-15 12:00:00 UTC");
+    let r = n.command(
+        c,
+        11,
+        &format!("T4  CHANGE-PROPERTIES{nl}/f.text{nl}MODIFICATION-DATE 12/31/00 12:00:00{nl}"),
+    );
+    assert_eq!(r, "T4  CHANGE-PROPERTIES");
+    assert_eq!(mtime_of(&f), 978_264_000, "2000-12-31 12:00:00 UTC");
+    let mut now = 20;
+    let cmd = format!(" CHANGE-PROPERTIES{nl}/f.text{nl}CREATION-DATE 12/32/00 12:00:00{nl}");
+    refused(&mut n, c, &mut now, &s.dir, "IPV", &cmd);
+    assert_eq!(mtime_of(&f), 978_264_000);
+    let r = n.command(c, 30, &format!("T5  OPEN PROBE CHARACTER{nl}/f.text{nl}"));
+    assert_eq!(r, format!("T5  OPEN 12/31/00 12:00:00 3 NIL{nl}/f.text{nl}"));
 }
 
 /// **A CHANGE-PROPERTIES refused changes nothing**, since every line is
@@ -2529,11 +2568,11 @@ fn a_link_is_renamed_itself() {
     );
 }
 
-/// A date as FILE writes one without `--timezone`, from a modification
-/// time: zone 0, with the band's daylight saving on top.
+/// A date as FILE writes one by default, from a modification time: plain
+/// UTC, `--file-dates utc`.
 fn written_date(meta: &std::fs::Metadata) -> String {
     let secs = meta.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    ozd::timezone::print(secs as i64, 0)
+    FileDates::Utc.print(secs as i64)
 }
 
 /// The world of the `INHIBIT-LINKS` tests: a base with a file, a link to it
