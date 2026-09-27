@@ -175,7 +175,7 @@ learns any machine's. If one of your machines has that address, give
 another as an argument.
 
 Each machine names ozd as its CHUDP peer. This example runs a machine
-with [muir](https://github.com/metebalci/muir), a CADR simulator, on the
+with [muir-sim](https://github.com/metebalci/muir-sim), a CADR simulator, on the
 same computer as ozd:
 
 ```sh
