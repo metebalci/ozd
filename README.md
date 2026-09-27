@@ -16,7 +16,8 @@ ozd serves STATUS, TIME, UPTIME, FILE, MINI, HOSTAB and NAME, and it passes
 packets between the machines on its subnet. The design is in
 `docs/design.md`. Every protocol a Lisp Machine speaks is described in
 `docs/protocols.md`, together with where each fact comes from, and CHUDP's
-framing, byte by byte, in `docs/chudp.md`.
+framing, byte by byte, in `docs/chudp.md`. ozd's page is
+<https://muir.metebalci.com/ozd/>.
 
 ## Build
 
@@ -170,7 +171,7 @@ with [muir](https://github.com/metebalci/muir), a CADR simulator, on the
 same computer as ozd:
 
 ```sh
-muir --disk-pack /path/to/disk-sys-100-0.img \
+cadr --disk-pack /path/to/disk-sys-100-0.img \
      --chaos-address 3050 --chaos-udp 42043 \
      --chaos-udp-peer 3060@127.0.0.1:42042
 ```
@@ -186,7 +187,7 @@ For example, start ozd with `--listen 192.0.2.10`, and run the machine
 on another computer like this:
 
 ```sh
-muir --disk-pack /path/to/disk-sys-100-0.img \
+cadr --disk-pack /path/to/disk-sys-100-0.img \
      --chaos-address 3050 --chaos-udp 192.0.2.20 \
      --chaos-udp-peer 3060@192.0.2.10
 ```
@@ -318,6 +319,11 @@ On macOS, create a hidden system user named `_ozd` that owns the
 writable roots, for example with `dscl`. Install the binary as
 `/usr/local/bin/ozd` and the file of flags as `/usr/local/etc/ozdrc`,
 and copy the plist to `/Library/LaunchDaemons/`.
+
+## How it was written
+
+ozd is written with [Claude Code](https://claude.com/claude-code), using
+Anthropic's Claude Opus.
 
 ## Licence
 
