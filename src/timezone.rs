@@ -2,20 +2,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! FILE's dates, as `--file-dates` says they are written (`docs/design.md`
-//! §7, "FILE's dates"): [`FileDates`]. The form is `MM/DD/YY HH:MM:SS`
-//! either way, `chfile.text`'s "mm/dd/yy hh:mm:ss" (`sys/doc/chfile.text:295-297`),
-//! which says nothing of a zone.
+//! §7, "FILE's dates"): [`FileDates`]. `chfile.text`'s form is "mm/dd/yy
+//! hh:mm:ss" (`sys/doc/chfile.text:295-297`), which says nothing of a zone.
 //!
 //! **`utc`, the default**, is how System 1002 and later write a date: the
 //! instant's plain UTC calendar fields, with no zone, no daylight saving,
 //! and 2000 a leap year, as the calendar has it ([`print_utc`],
 //! [`parse_utc`]). A band of those systems shows a date in its own local
-//! time, but puts it on the wire in UTC and reads it from there so.
+//! time, but puts it on the wire in UTC and reads it from there so. **The
+//! year is in four digits**, `MM/DD/YYYY HH:MM:SS`, a deliberate extension
+//! of `chfile.text`'s form for those systems, whose fast parser takes it: in
+//! two, a year 50 or more from the reader's own came back a century out,
+//! 1970 as 2070 and 2099 as 1999. Both forms are read.
 //!
 //! **`mit`** is System 100's convention, which Systems 100 to 1001 keep:
 //! the band's **zone**, `--timezone`, with the band's **daylight saving**
-//! on top of it ([`print()`], [`parse`]). The rest of this documentation is
-//! about it.
+//! on top of it ([`print()`], [`parse`]), and `chfile.text`'s two-digit
+//! year. The rest of this documentation is about it.
 //!
 //! **The zone** is `--timezone`, the band's own `:TIMEZONE` site option
 //! (`sys/io1/time.lisp:13`): whole hours west of Greenwich, 5 at System
@@ -159,7 +162,8 @@ pub fn decode(unix: i64, zone: i8) -> Fields {
     }
 }
 
-/// `unix` as FILE prints a date, `MM/DD/YY HH:MM:SS`: **a string the
+/// `unix` as FILE prints a date under `--file-dates mit`,
+/// `MM/DD/YY HH:MM:SS`: **a string the
 /// band reads back as `unix`**, by its encode ([`encode`]), and not the
 /// string the band would print for it, which after 2000 its own encode can
 /// read as another instant (the module documentation). The fields are
@@ -183,8 +187,8 @@ pub fn print(unix: i64, zone: i8) -> String {
     show(printed(unix, zone))
 }
 
-/// Fields as FILE prints them, `MM/DD/YY HH:MM:SS`, the year cut to two
-/// digits.
+/// Fields as FILE prints them under `--file-dates mit`,
+/// `MM/DD/YY HH:MM:SS`, the year cut to two digits.
 fn show(f: Fields) -> String {
     format!(
         "{:02}/{:02}/{:02} {:02}:{:02}:{:02}",
@@ -423,7 +427,8 @@ pub enum FileDates {
 }
 
 impl FileDates {
-    /// `unix` as FILE prints a date, `MM/DD/YY HH:MM:SS`.
+    /// `unix` as FILE prints a date: `MM/DD/YYYY HH:MM:SS` under `utc`,
+    /// `MM/DD/YY HH:MM:SS` under `mit`.
     pub fn print(self, unix: i64) -> String {
         match self {
             FileDates::Utc => print_utc(unix),
@@ -451,10 +456,22 @@ pub fn utc_fields(unix: i64) -> Fields {
 }
 
 /// `unix` as FILE prints a date under `--file-dates utc`,
-/// `MM/DD/YY HH:MM:SS`: its plain UTC fields ([`utc_fields`]), the year cut
-/// to two digits.
+/// `MM/DD/YYYY HH:MM:SS`, 19 characters: its plain UTC fields
+/// ([`utc_fields`]), the year in four digits, so that no year from 1970 to
+/// 2099 reads back as another century's. A year past 9999, which only a
+/// file's modification time set by hand can have, is cut to four digits,
+/// so that the form stays 19 characters.
 pub fn print_utc(unix: i64) -> String {
-    show(utc_fields(unix))
+    let f = utc_fields(unix);
+    format!(
+        "{:02}/{:02}/{:04} {:02}:{:02}:{:02}",
+        f.month,
+        f.day,
+        f.year.rem_euclid(10_000),
+        f.hour,
+        f.minute,
+        f.second
+    )
 }
 
 /// A date as a band of System 1002 or later writes one in a

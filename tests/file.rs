@@ -480,7 +480,7 @@ fn the_file_service_serves_files_and_directories() {
     let (props, tn) = rest.split_once(nl).unwrap();
     let fields: Vec<&str> = props.split(' ').collect();
     assert_eq!(fields.len(), 4, "date, time, length, QFASL: {props:?}");
-    assert_eq!(fields[0].len(), 8, "MM/DD/YY");
+    assert_eq!(fields[0].len(), 10, "MM/DD/YYYY, --file-dates utc");
     assert_eq!(fields[1].len(), 8, "HH:MM:SS");
     assert_eq!(fields[2], "12", "the length in bytes");
     assert_eq!(fields[3], "NIL", "not a compiled file");
@@ -549,8 +549,9 @@ fn set_mtime(path: &Path, unix: u64) {
 /// OPEN's reply, a PROBE's, a DIRECTORY record's and a PROPERTIES record's,
 /// and a write's CLOSE. One file dated 2026-07-15 12:00:00 UTC, summer, is
 /// 12:00 under `utc`, the default, plain UTC as System 1002 and later read
-/// it. Under `mit` it is in the band's zone with the band's daylight saving
-/// on top: 08:00 at zone 5, and at zone 0 13:00, not the 12:00 of plain UTC.
+/// it, the year in four digits. Under `mit` it is in the band's zone with
+/// the band's daylight saving on top, the year in two: 08:00 at zone 5, and
+/// at zone 0 13:00, not the 12:00 of plain UTC.
 #[test]
 fn every_date_file_prints_is_in_the_bands_zone() {
     let s = Scratch::new("zone");
@@ -559,7 +560,7 @@ fn every_date_file_prints_is_in_the_bands_zone() {
     set_mtime(&f, 1_784_116_800);
     let nl = NEWLINE as char;
     for (zone, dates, shown) in [
-        ("utc", None, "07/15/26 12:00:00"),
+        ("utc", None, "07/15/2026 12:00:00"),
         ("mit5", Some(FileDates::Mit(5)), "07/15/26 08:00:00"),
         ("mit0", Some(FileDates::Mit(0)), "07/15/26 13:00:00"),
     ] {
@@ -598,6 +599,34 @@ fn every_date_file_prints_is_in_the_bands_zone() {
         let unix = written.modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let when = dates.unwrap_or_default().print(unix as i64);
         assert!(r.starts_with(&format!("TB O0001 CLOSE {when} 1{nl}")), "zone {zone}: {r:?}");
+    }
+}
+
+/// **The ends of the range under each `--file-dates`**: a file dated
+/// 1970-01-01 00:00:00 and one dated 2099-12-31 23:59:59 UTC. Under `utc`
+/// the year is in four digits, so neither reads back 50 years either side
+/// of now as 2070 or 1999; under `mit` it stays in two, the only form
+/// Systems 100 to 1001 read by their fast parser.
+#[test]
+fn the_ends_of_the_range_are_four_digit_years_under_utc() {
+    let s = Scratch::new("range-ends");
+    let root = s.dir("base");
+    set_mtime(&s.file("base/first.text", "abc"), 0);
+    set_mtime(&s.file("base/last.text", "abc"), 4_102_444_799);
+    let nl = NEWLINE as char;
+    for (dates, first, last) in [
+        (FileDates::Utc, "01/01/1970 00:00:00", "12/31/2099 23:59:59"),
+        (FileDates::Mit(0), "01/01/70 00:00:00", "12/31/99 23:59:59"),
+    ] {
+        let mut service = File::new(Arc::new(Tree::new(vec![base(&root)]).unwrap()), None);
+        service.dates = dates;
+        let mut n = Net::new(service);
+        let c = ready(&mut n, LM1, "LISPM", ("I0001", "O0001"), 0);
+        for (i, (name, shown)) in [("first", first), ("last", last)].into_iter().enumerate() {
+            let cmd = format!("T{i}  OPEN PROBE CHARACTER{nl}/{name}.text{nl}");
+            let r = n.command(c, 10 + i as u64, &cmd);
+            assert_eq!(r, format!("T{i}  OPEN {shown} 3 NIL{nl}/{name}.text{nl}"), "{dates:?}");
+        }
     }
 }
 
@@ -797,7 +826,8 @@ fn a_date_changed_on_a_write_is_the_written_files() {
 /// **Under `--file-dates utc`, the default, a date changed is read as plain
 /// UTC**, as System 1002 and later write it: no zone, no daylight saving,
 /// and 2000 a leap year, so `12/31/00` is December 31st and `12/32/00` is
-/// no date. What is set is printed back the same.
+/// no date. What is set is printed back as the same instant, the year in
+/// four digits.
 #[test]
 fn a_date_changed_under_utc_is_plain_utc() {
     let s = Scratch::new("set-date-utc");
@@ -826,7 +856,7 @@ fn a_date_changed_under_utc_is_plain_utc() {
     refused(&mut n, c, &mut now, &s.dir, "IPV", &cmd);
     assert_eq!(mtime_of(&f), 978_264_000);
     let r = n.command(c, 30, &format!("T5  OPEN PROBE CHARACTER{nl}/f.text{nl}"));
-    assert_eq!(r, format!("T5  OPEN 12/31/00 12:00:00 3 NIL{nl}/f.text{nl}"));
+    assert_eq!(r, format!("T5  OPEN 12/31/2000 12:00:00 3 NIL{nl}/f.text{nl}"));
 }
 
 /// **A CHANGE-PROPERTIES refused changes nothing**, since every line is
@@ -2399,7 +2429,8 @@ fn a_listing_never_describes_a_file_outside_a_root() {
     let nl = NEWLINE as char;
     let mut now = 10;
     // The victim's length, and its date as FILE writes one, 2001-09-09.
-    let secrets = ["LENGTH-IN-BYTES 12345".to_string(), "09/09/01 01:46:40".to_string()];
+    let secrets = ["LENGTH-IN-BYTES 12345".to_string(), FileDates::Utc.print(1_000_000_000)];
+    assert_eq!(secrets[1], "09/09/2001 01:46:40");
 
     for (dir, host) in [("/lispm", root.join("lispm")), ("/sys", sys.clone()), ("", root.clone())] {
         accepted(&mut n, c, &mut now, &format!("I0001 DIRECTORY{nl}{dir}/*{nl}"));
@@ -2577,7 +2608,7 @@ fn written_date(meta: &std::fs::Metadata) -> String {
 
 /// The world of the `INHIBIT-LINKS` tests: a base with a file, a link to it
 /// and a link out of the root to a file outside, at the top and one
-/// directory down; the outside file dated 09/09/01 and longer than any
+/// directory down; the outside file dated 2001-09-09 and longer than any
 /// link, so that neither its date nor its length can pass for a link's.
 /// Answers the base and the outside file.
 #[cfg(unix)]
@@ -2625,7 +2656,7 @@ fn a_probe_with_inhibit_links_describes_the_link_itself() {
         let link = std::fs::symlink_metadata(root.join(&name[1..])).unwrap();
         let expect = format!(" OPEN {} {} NIL{nl}{name}{nl}", written_date(&link), link.len());
         assert!(r.ends_with(&expect), "{name}: {r:?}, wanted it to end {expect:?}");
-        assert!(!r.contains("09/09/01") && !r.contains(" 1000 "), "{name}: {r:?}");
+        assert!(!r.contains("09/09/2001") && !r.contains(" 1000 "), "{name}: {r:?}");
     }
 
     // Not a link: a file, a directory, and `/`, each as a plain PROBE.

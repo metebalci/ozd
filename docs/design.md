@@ -427,16 +427,21 @@ ozd serves seven protocols (`docs/protocols.md`).
 - **UPTIME** answers with the sixtieths of a second since start,
   `now × 60 / 10⁹`, which wraps at 32 bits after about 828 days.
 - **FILE** follows `sys/doc/chfile.text`, with the containment of §6.
-  **FILE's dates** are `MM/DD/YY HH:MM:SS`, `chfile.text`'s "mm/dd/yy
-  hh:mm:ss" (`doc/chfile.text:295-297`), which names no zone; what the
-  fields mean is `--file-dates` (§8). **Under `utc`, the default,** they
-  are the instant's plain UTC calendar fields: no zone, no daylight
-  saving, and 2000 a leap year, as the calendar has it. That is how System
-  1002 and later put a date on the wire and read one from it: such a band
-  shows a date in its own local time, and the wire carries UTC. A
-  `--timezone` is refused under `utc`, which has no zone. **Under `mit`,**
-  for Systems 100 to 1001, they are printed as a System 100 band prints
-  them, in two parts, and the rest of this paragraph is about it. The
+  **FILE's dates** follow `chfile.text`'s "mm/dd/yy hh:mm:ss"
+  (`doc/chfile.text:295-297`), which names no zone; what the fields mean,
+  and whether the year has two digits or four, is `--file-dates` (§8).
+  **Under `utc`, the default,** they are the instant's plain UTC calendar
+  fields: no zone, no daylight saving, and 2000 a leap year, as the
+  calendar has it. That is how System 1002 and later put a date on the
+  wire and read one from it: such a band shows a date in its own local
+  time, and the wire carries UTC. **The year is in four digits**,
+  `MM/DD/YYYY HH:MM:SS`, a deliberate extension of `chfile.text`'s form
+  for System 1002 and later, whose fast parser reads it: a two-digit year
+  is taken within 50 years of the reader's own, so 1970 came back as 2070
+  and 2099 as 1999. A `--timezone` is refused under `utc`, which has no
+  zone. **Under `mit`,** for Systems 100 to 1001, they are
+  `MM/DD/YY HH:MM:SS`, printed as a System 100 band prints them, in two
+  parts, and the rest of this paragraph is about it. The
   **zone** is `--timezone` (§8), the band's `:TIMEZONE` site option
   (`sys/io1/time.lisp:13`): whole hours west of Greenwich, 5 at System
   100's site (`sys/site/site.lisp:99`), and 0, which is UTC, without the
@@ -455,9 +460,14 @@ ozd serves seven protocols (`docs/protocols.md`).
   included: for 2000 it puts the last Sunday in April on the 24th, a
   Monday. Every date FILE prints is at that zone --- OPEN's and CLOSE's replies,
   DIRECTORY and PROPERTIES records --- as `MM/DD/YY HH:MM:SS`, the form
-  the band's fast parser takes (`io/file/open.lisp:1425-1451`). MINI's
-  date is left in plain UTC: a cold load does not read it
-  (`sys/cold/mini.lisp` has no date in it).
+  the band's fast parser takes (`io/file/open.lisp:1425-1451`); a date of
+  19 characters would go to its full parser, which reads the site's local
+  time. MINI's date is plain UTC under either: under `mit` in two digits,
+  as it always was, and under `utc` FILE's own string, since a cold load
+  keeps MINI's date as text (`cold/mini.lisp:115-120`), FILE's client
+  keeps an OPEN's as text too until the time parser is loaded
+  (`network/chaos/qfile.lisp:496-500`), and `MAKE-SYSTEM` takes a file
+  whose two are not `EQUAL` for a new one (`sys2/maksys.lisp:1277-1285`).
   **The band's print and parse disagree after 2000, and ozd matches what
   each end means rather than copying either.** The band's encode, which
   reads a date (`ENCODE-UNIVERSAL-TIME`, `io1/time.lisp:150-170`), makes
@@ -489,7 +499,7 @@ ozd serves seven protocols (`docs/protocols.md`).
   digits: every field in range for the calendar, and the instant from
   1970 to 2099, or it is refused. Under `utc` the same two forms are read
   with the same checks, as plain UTC fields, a two-digit year the one
-  within 50 years of the UTC year now.
+  within 50 years of the UTC year now; ozd prints four.
 - **MINI** answers each open on its connection with the whole file: a
   `202` with the truename and the date, the file in packets, and an EOF;
   or a `203` with a message (`docs/protocols.md`, MINI). It resolves a

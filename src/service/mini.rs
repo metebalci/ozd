@@ -24,6 +24,17 @@
 //!   packets of 16-bit words, and then an EOF. The machine then opens the
 //!   next file on the same connection, which it never closes.
 //!
+//! **The date is FILE's under `--file-dates utc`**, plain UTC with the year
+//! in four digits, `MM/DD/YYYY HH:MM:SS` (`crate::timezone`). A cold load
+//! keeps it as text, as the file's loaded id, until its time parser is
+//! loaded (`MINI-OPEN-FILE`, `cold/mini.lisp:115-120`); FILE's client
+//! records the date of an OPEN as text until then too
+//! (`network/chaos/qfile.lisp:496-500`); and `MAKE-SYSTEM` takes a file
+//! for a new one when the two are not `EQUAL`
+//! (`FILE-NEWER-THAN-INSTALLED-P`, `sys2/maksys.lisp:1277-1285`). So the
+//! two are one string. Under `mit` it is what it always was, plain UTC in
+//! `minisr.mid`'s form with the year in two digits, whatever the zone.
+//!
 //! **And one opcode that is not MIT's**: `204`, a line for this server's
 //! log, which a cold load running a script sends because MINI only reads
 //! and it has no other network (`docs/protocols.md`, MINI). ozd writes it
@@ -45,7 +56,8 @@ use crate::log::{Hook, Names};
 use crate::ncp::{Out, Response, Service, Session, op::is_data};
 use crate::packet::MAX_DATA;
 use crate::roots::{Resolved, Tree};
-use crate::service::file::{BINARY_OP, CHARACTER_OP, date, openable, truename};
+use crate::service::file::{BINARY_OP, CHARACTER_OP, date, mtime, openable, truename};
+use crate::timezone::FileDates;
 use std::fmt;
 use std::sync::Arc;
 
@@ -76,6 +88,8 @@ pub struct Mini {
     /// The site's host table, for the name each line gives the machine
     /// after its address. Empty unless set, and then every machine is `(?)`.
     pub names: Arc<Names>,
+    /// `--file-dates`, which says how a win's date is written.
+    pub dates: FileDates,
 }
 
 impl Mini {
@@ -83,7 +97,7 @@ impl Mini {
     /// does (`docs/design.md` §6). A report is written to `log`, and each
     /// open where [`Mini::log_mini`] asks for it.
     pub fn new(tree: Arc<Tree>, log: Option<Hook>) -> Mini {
-        Mini { tree, log, log_mini: false, names: Arc::default() }
+        Mini { tree, log, log_mini: false, names: Arc::default(), dates: FileDates::Utc }
     }
 }
 
@@ -95,7 +109,13 @@ impl Service for Mini {
         let head = format!("{CONTACT} from {}", self.names.host(from.0));
         let log = self.log.clone().map(|hook| (hook, head));
         let tree = self.tree.clone();
-        Response::Accept(Box::new(Reader { tree, log, log_mini: self.log_mini, out: Vec::new() }))
+        Response::Accept(Box::new(Reader {
+            tree,
+            log,
+            log_mini: self.log_mini,
+            dates: self.dates,
+            out: Vec::new(),
+        }))
     }
 }
 
@@ -107,6 +127,8 @@ struct Reader {
     /// `--log-mini`, which is the opens alone: a report is written without
     /// it.
     log_mini: bool,
+    /// `--file-dates`, which says how a win's date is written.
+    dates: FileDates,
     /// What is to go down the connection, in order.
     out: Vec<Out>,
 }
@@ -126,7 +148,10 @@ impl Reader {
             }
         };
         self.note(format_args!("read {pathname}"));
-        let date = date(&meta);
+        let date = match self.dates {
+            FileDates::Utc => FileDates::Utc.print(mtime(&meta)),
+            FileDates::Mit(_) => date(&meta),
+        };
         let mut win = lispm_text(&truename(pathname, false));
         // The date always fits: a pathname as long as a packet gives way.
         win.truncate(MAX_DATA - 1 - date.len());

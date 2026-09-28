@@ -22,6 +22,7 @@ use ozd::packet::{MAX_DATA, Packet};
 use ozd::roots::{Root, Tree};
 use ozd::service::file::{BINARY_OP, CHARACTER_OP, QFASL_MAGIC};
 use ozd::service::mini::{self, Mini};
+use ozd::timezone::FileDates;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
@@ -224,8 +225,8 @@ fn joined(packets: &[(u8, Vec<u8>)]) -> Vec<u8> {
 
 /// **A compiled file comes as its truename, its date and its words.** An
 /// open for binary, `201`, is won with a `202` whose text is the truename,
-/// the machine's newline and the file's date --- `MM/DD/YY HH:MM:SS`, as
-/// `cold/minisr.mid` writes it and FILE dates a file --- and then the file
+/// the machine's newline and the file's date --- as FILE dates a file under
+/// `--file-dates utc`, the default, `MM/DD/YYYY HH:MM:SS` --- and then the file
 /// goes in `300` packets of whole 16-bit words, low byte first, then EOF.
 /// `MINI-FASLOAD` reads the words (`MINI-BINARY-STREAM`), and the first
 /// four bytes must be the magic that `FASLOAD` checks.
@@ -239,7 +240,7 @@ fn a_compiled_file_is_its_truename_its_date_and_its_words() {
     let (opcode, truename, date) = m.open("/sys/sys2/defsel.qfasl", true);
     assert_eq!(opcode, mini::WIN);
     assert_eq!(truename, "/sys/sys2/defsel.qfasl");
-    assert_eq!(date, "09/09/01 01:46:40", "the modification date, in UTC");
+    assert_eq!(date, "09/09/2001 01:46:40", "the modification date, in UTC");
     let packets = m.read();
     assert_eq!(packets.len(), file.len().div_ceil(MAX_DATA), "full packets, but the last");
     for (opcode, data) in &packets {
@@ -249,6 +250,37 @@ fn a_compiled_file_is_its_truename_its_date_and_its_words() {
     let words = joined(&packets);
     assert_eq!(words[..4], QFASL_MAGIC);
     assert_eq!(words, file, "the file byte for byte");
+}
+
+/// **MINI's date is FILE's under `utc`, and as it was under `mit`.** A cold
+/// load of System 1002 or later keeps the date of each file MINI gives it as
+/// text until its time parser is loaded, and compares it with the text
+/// FILE's OPEN gives for the same file to tell whether the file is newer, so
+/// under `--file-dates utc` the two are the same string: plain UTC, the year
+/// in four digits. Under `mit` MINI's date stays what it was, plain UTC with
+/// the year in two digits, `cold/minisr.mid`'s `MM/DD/YY HH:MM:SS`,
+/// whatever the zone.
+#[test]
+fn the_date_is_files_under_utc_and_as_it_was_under_mit() {
+    let dir = world("dates");
+    let root = dir.join("root");
+    put(&root, "sys/io/file.qfasl", &qfasl(1));
+    for (dates, shown) in [
+        (FileDates::Utc, "09/09/2001 01:46:40"),
+        (FileDates::Mit(5), "09/09/01 01:46:40"),
+        (FileDates::Mit(-1), "09/09/01 01:46:40"),
+    ] {
+        let mut service = serving(&root, None);
+        service.dates = dates;
+        let mut m = Machine::connect(service);
+        let (opcode, _, date) = m.open("/sys/io/file.qfasl", true);
+        assert_eq!(opcode, mini::WIN);
+        assert_eq!(date, shown, "{dates:?}");
+        if dates == FileDates::Utc {
+            assert_eq!(date, FileDates::Utc.print(DATED as i64), "FILE's own");
+        }
+        m.read();
+    }
 }
 
 /// **A text file comes in the machine's character set**: an open for

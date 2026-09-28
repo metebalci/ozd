@@ -248,7 +248,7 @@ fn now_unix(time: Option<u32>) -> i64 {
 
 /// A file's modification time in seconds since 1970, or 0 for one before
 /// 1970 or none, as FILE has always dated such a file.
-fn mtime(meta: &std::fs::Metadata) -> i64 {
+pub(crate) fn mtime(meta: &std::fs::Metadata) -> i64 {
     meta.modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
@@ -1953,8 +1953,8 @@ pub(crate) fn truename(pathname: &str, directory: bool) -> String {
 
 /// `MM/DD/YY HH:MM:SS`, the form `PARSE-DIRECTORY-DATE-PROPERTY` reads
 /// fastest, from the file's modification time, in plain UTC: MINI's
-/// `202`, which a cold load does not read (`sys/cold/mini.lisp` has no date
-/// in it), and so is left as it was. FILE prints its dates as
+/// `202` under `--file-dates mit`, left as it was. Under `utc` MINI's date
+/// is FILE's (`crate::service::mini`). FILE prints its dates as
 /// `--file-dates` says (`Control::date`).
 pub(crate) fn date(meta: &std::fs::Metadata) -> String {
     let secs = meta

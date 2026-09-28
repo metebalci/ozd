@@ -95,7 +95,10 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
 - `--file-dates` says how FILE writes and reads a file's dates. The
   default, `utc`, is plain UTC, with no zone and no daylight saving, which
   is how System 1002 and later put dates on the wire; such a band still
-  shows them in its own local time. Systems 100 to 1001 write them in
+  shows them in its own local time. Under `utc` the year has four digits,
+  `MM/DD/YYYY HH:MM:SS`, where MIT's FILE protocol gives two: an extension
+  for System 1002 and later, so that 1970 and 2099 do not read back as
+  2070 and 1999. Systems 100 to 1001 write them in
   their site's zone with MIT's daylight saving on top, and want
   `--file-dates mit` with their `--timezone`, as here. A `--timezone`
   without `--file-dates mit` is refused.

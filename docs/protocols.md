@@ -149,11 +149,14 @@ pathname outside the tree. The machine turns `FNF`, `ATF` and `ATD` into
 `:231`), and `WKF` into `WRONG-KIND-OF-FILE` (`:260`), each through
 `QFILE-PROCESS-ERROR-NEW` (`network/chaos/qfile.lisp:300`).
 
-**Dates.** Every date is `MM/DD/YY HH:MM:SS` (`doc/chfile.text:295-297`),
-and what its fields mean is `--file-dates` (`docs/design.md` §7, FILE's
-dates): plain UTC by default, as System 1002 and later write them; under
-`--file-dates mit`, for Systems 100 to 1001, the band's zone with the
-band's own daylight saving on top. A System 100
+**Dates.** `chfile.text` gives every date as `MM/DD/YY HH:MM:SS`
+(`doc/chfile.text:295-297`), and what its fields mean is `--file-dates`
+(`docs/design.md` §7, FILE's dates): plain UTC by default, as System 1002
+and later write them, **with the year in four digits**,
+`MM/DD/YYYY HH:MM:SS`, a deliberate extension for those systems, so that
+no year from 1970 to 2099 reads back as another century's; under
+`--file-dates mit`, for Systems 100 to 1001, `chfile.text`'s two digits,
+the band's zone with the band's own daylight saving on top. A System 100
 band's print and parse disagree after 2000: its parse asks its
 daylight-saving rule about the year less 1900 (`io1/time.lisp:162-165`),
 which the rule takes for another year (`:199-200`), and takes 2000 for no leap
@@ -251,7 +254,10 @@ ones in the server's own header (`cold/minisr.mid:7`):
   (`cold/mini.lisp:113`), so a reply without one signals an error in the
   cold load. The server writes the date as `MM/DD/YY HH:MM:SS`
   (`cold/minisr.mid:184`, `:363`), and the machine drops its leading zero
-  (`cold/mini.lisp:116`).
+  (`cold/mini.lisp:116`). ozd writes it in plain UTC, and under
+  `--file-dates utc` as FILE does, `MM/DD/YYYY HH:MM:SS`: the machine keeps
+  it as text, and compares it with FILE's for the same file
+  (`docs/design.md` §7).
 - **The whole file is read.** The fasloader stops before the end, and the
   machine reads on to the EOF to stay in phase (`MINI-CLOSE`, `:295`).
 - **The machine offers a window of one packet**, and it receipts each

@@ -229,6 +229,7 @@ fn services(
     let mut mini = Mini::new(tree.clone(), Some(Arc::new(|line: &str| log::event(line))));
     mini.log_mini = logging.mini;
     mini.names = names.clone();
+    mini.dates = config.file_dates;
     vec![
         Box::new(Status::new(&config.names[0], (config.address >> 8) as u8, meters.clone())),
         Box::new(Time::new()),
