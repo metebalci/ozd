@@ -61,7 +61,8 @@ target/release/ozd --address 3060 --name MIT-OZ,OZ,system=UNIX \
   system type. On a System 100 band, keep every address below `140000`
   octal: that release's routing table holds 96 subnets, and a band whose
   own subnet is 96 or above stops during its network setup and then runs
-  on with no Chaosnet at all. System 304 holds 256 and does not mind.
+  on with no Chaosnet at all. System 1000 and later hold 256 and do not
+  mind.
 - `--root /srv/lispm` is the base root. It holds the users' home
   directories, and ozd writes to it. `LOGIN` gives each user the home
   directory `/<user>/` in lower case, so the user LISPM's is
@@ -211,9 +212,9 @@ machines pass through ozd (`docs/design.md` §9).
 A cold load reads the rest of its system through MINI, before it has
 FILE, from the address that its `cold/mini.lisp` was compiled with.
 System 100's names 3060, so an ozd at 3060 serves it as it is. System
-304's takes the address of the host that `SYS:` translated to when it was
-compiled, so a cold load built from files compiled against ozd reads
-from ozd (`docs/protocols.md`, MINI).
+1000 and later take the address of the host that `SYS:` translated to
+when it was compiled, so a cold load built from files compiled against ozd
+reads from ozd (`docs/protocols.md`, MINI).
 
 A cold load has no other network, so it cannot say how it is getting on.
 ozd therefore takes one opcode that MIT's MINI does not, `204`, a line for

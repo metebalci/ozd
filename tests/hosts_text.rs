@@ -113,8 +113,9 @@ fn an_empty_bracket_pair_is_no_name() {
 }
 
 /// **A comment is from a `;` to the end of its line**, wherever it begins:
-/// MIT's own table heads itself with them and writes one after its `NET`
-/// line ("Supported by HOSTS2", `sys/site/hosts.text` in System 304).
+/// the table of System 1000 and later heads itself with them
+/// (`site/hosts.text`), and LM-3's System 304's writes one after its `NET`
+/// line ("Supported by HOSTS2", its `sys/site/hosts.text`).
 #[test]
 fn a_comment_runs_to_the_end_of_its_line() {
     let text = "\

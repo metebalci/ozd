@@ -1,7 +1,8 @@
 # Chaosnet protocols
 
 This file lists every contact name that a Lisp Machine serves or calls
-in the System 100 and System 304 releases. For each one it says what the
+in the System 100 release, and in LM-3's later System 304, which was read
+beside it as a second source. For each one it says what the
 protocol is, what goes over the wire, and where that was read. It
 records only what the protocols are. The summary's last column and
 `docs/design.md` say what ozd does about them.
@@ -13,8 +14,8 @@ is one such case.
 ## Sources
 
 Paths below are under System 100's `system-100-0/sys/`, with its line
-numbers. Paths marked **(304)** are under System 304's
-`system-304-0/sys-304-0/`. Paths marked **(LMZ)** are LMZ's fork of the
+numbers. Paths marked **(304)** are in the sources of LM-3's later
+System 304 release. Paths marked **(LMZ)** are LMZ's fork of the
 sources, in its System 1001, where its cold load's MINI sends an opcode
 MIT's does not (§MINI); they were read in that project and reported, and
 are the one thing here that was not read from a release.
@@ -201,7 +202,7 @@ the system through it before it has an NCP or a FILE client. `MAKE-COLD`
 with FILE's client `network/chaos/qfile` among it (`sys/sysdcl.lisp:554`).
 The machine's user end is `cold/mini.lisp`, which drives the Chaos
 interface without the NCP. MIT's server is `cold/minisr.mid`, a TOPS-20
-program. System 304 adds one in Lisp that a person starts by hand,
+program. LM-3's System 304 adds one in Lisp that a person starts by hand,
 `network/chaos/mini-server.lisp` **(304)**. Neither release puts MINI on
 `SERVER-ALIST`.
 
@@ -272,10 +273,10 @@ ones in the server's own header (`cold/minisr.mid:7`):
   host's pathname that is the host's own string for it
   (`io/file/pathnm.lisp:483`).
 - **Where the machine sends is fixed when `cold/mini.lisp` is compiled.**
-  System 100's names 3060, OZ, in its source (`cold/mini.lisp:31`). System
-  304's takes the address of the host that `SYS:` translates to at that
-  moment (`GET-INTERESTING-CHAOSNET-ADDRESSES`, **(304)**
-  `cold/mini.lisp:28`).
+  System 100's names 3060, OZ, in its source (`cold/mini.lisp:31`).
+  System 1000 and later take the address of the host that `SYS:`
+  translates to at that moment (`GET-INTERESTING-CHAOSNET-ADDRESSES`), as
+  LM-3's System 304 does (**(304)** `cold/mini.lisp:28`).
 
 ### HOSTAB
 
@@ -300,8 +301,8 @@ band's host table lacks, it asks each host of the site option
 `:CHAOS-HOST-TABLE-SERVER-HOSTS`, and it defines the host from the
 answer with `SI:DEFINE-HOST`. **System 100's site names OZ**
 (`site/site.lisp:91`, `'("OZ")`), so a band already asks its associated
-machine. System 304's site names `"MC" "OZ" "XX" "EE" "SCRC-TENEX"`
-(**(304)** `site/site.lisp:173`).
+machine. LM-3's System 304's site names
+`"MC" "OZ" "XX" "EE" "SCRC-TENEX"` (**(304)** `site/site.lisp:173`).
 
 This is what that user end reads. `ERROR` ends the transaction. Each
 `NAME` is kept, and on EOF the names are sorted shortest first.
@@ -606,8 +607,9 @@ sizes and authors, and it marks each file as dumped when it is told
 
 ### LRTDP
 
-LRTDP is a stream in System 304 only, and it is not in the manual. It is
-the remote tape device: another machine drives this machine's tape
+LRTDP is a stream in LM-3's System 304 only, and it is not in the
+manual. It is the remote tape device: another machine drives this
+machine's tape
 (**(304)** `tape/remote-tape-device.lisp:110`, registered at `:116`;
 1986).
 
