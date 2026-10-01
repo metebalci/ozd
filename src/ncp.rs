@@ -173,6 +173,18 @@ pub const RETRANSMIT_NS: u64 = 500_000_000;
 /// back than that, and this end does the same.
 pub const HOST_DOWN_NS: u64 = 180_000_000_000;
 
+/// How often each connection is looked at, to be probed: the band's
+/// `PROBE-INTERVAL`, `(* 60. 10.)` sixtieths of a second, "10 seconds",
+/// `sys/network/chaos/chsncp.lisp`, the period at which its `BACKGROUND`
+/// calls `PROBE-CONN` on every connection. AIM-628 §3.8 says five seconds;
+/// this end keeps the band's, as it keeps its [`HOST_DOWN_NS`].
+pub const PROBE_NS: u64 = 10_000_000_000;
+
+/// How long an open connection is silent before it is probed whatever its
+/// window: the band's `LONG-PROBE-INTERVAL`, `(* 60. 60.)` sixtieths of a
+/// second, "1 minute", `sys/network/chaos/chsncp.lisp`.
+pub const LONG_PROBE_NS: u64 = 60_000_000_000;
+
 /// The bits of a connection index that say which slot of the table holds
 /// the connection; the bits above them are that slot's uniquizer. The
 /// machine's own NCP has 128 slots, seven bits (`MAXIMUM-INDEX`,
@@ -208,6 +220,10 @@ pub struct Ncp {
     /// Where the search for a free slot starts: after the last slot given
     /// out.
     next_slot: usize,
+    /// When the connections were last looked at to be probed, every
+    /// [`PROBE_NS`]: from 0, the clock's start, as the band's `BACKGROUND`
+    /// starts its `LAST-PROBE-TIME` at its own start.
+    last_probe: u64,
     out: VecDeque<Vec<u16>>,
     /// Packets printed as they go by, for watching a run.
     pub trace: bool,
@@ -274,6 +290,7 @@ impl Ncp {
             uniquizers: vec![0],
             uniquizer_base: (seed / usable) as u16,
             next_slot: (seed % usable) as usize + 1,
+            last_probe: 0,
             out: VecDeque::new(),
             trace: false,
             window: 8,
@@ -403,6 +420,48 @@ impl Ncp {
                 self.close(now, index, "Host down");
             }
         }
+    }
+
+    /// Probes the connections that want it, every [`PROBE_NS`], as the
+    /// band's `PROBE-CONN` does (`sys/network/chaos/chsncp.lisp`): an SNS,
+    /// "in the hope of eliciting either an STS or a LOS" (AIM-628 §3.8), on
+    /// an open connection whose window is not empty --- the band's
+    /// `(< (WINDOW-AVAILABLE CONN) (FOREIGN-WINDOW-SIZE CONN))`, here a
+    /// packet not yet receipted --- or that has heard nothing for more than
+    /// [`LONG_PROBE_NS`]. The STS that answers is a packet from the other
+    /// end, so a peer that is slow but alive is not given up at
+    /// [`HOST_DOWN_NS`]; a dead one still is. An OPN sent counts as open,
+    /// as the band's `ACCEPT` sets `OPEN-STATE` before sending it
+    /// (`sys/network/chaos/chuse.lisp`); an RFC sent is not probed, as the
+    /// band sends SNS "only on open connections".
+    fn probe(&mut self, now: u64) {
+        if now.saturating_sub(self.last_probe) < PROBE_NS {
+            return;
+        }
+        self.last_probe = now;
+        for index in self.indices() {
+            let wanted = self.conn(index).is_some_and(|c| {
+                c.state != State::RfcSent
+                    && (!c.unacked.is_empty() || now.saturating_sub(c.last_heard) > LONG_PROBE_NS)
+            });
+            if wanted {
+                self.sns(index);
+            }
+        }
+    }
+
+    /// An SNS on the connection at `index`: uncontrolled, so it carries
+    /// "the same number as the next controlled packet will contain", and
+    /// acknowledges what was received (AIM-628 §4); the band's
+    /// `TRANSMIT-INT-PKT-FOR-CONN` fills its acknowledgement field so and
+    /// counts it acknowledged.
+    fn sns(&mut self, index: u16) {
+        let Some(c) = self.conn(index) else { return };
+        let p = self.packet(op::SNS, c.remote, index, c.next_number, c.last_received, Vec::new());
+        if let Some(c) = self.conn_mut(index) {
+            c.last_acked = c.last_received;
+        }
+        self.send(p);
     }
 
     /// A refusal, its reason cut to the bytes a packet carries: a CLS is a
@@ -828,8 +887,8 @@ impl Ncp {
         }
     }
 
-    /// Lets every session send what it has, and retransmits what has gone
-    /// unreceipted too long.
+    /// Lets every session send what it has, retransmits what has gone
+    /// unreceipted too long, and probes what wants it ([`Ncp::probe`]).
     fn service_all(&mut self, now: u64) {
         // Give up connections whose peer has gone silent before doing any
         // more work for them.
@@ -849,6 +908,9 @@ impl Ncp {
                 self.send(p);
             }
         }
+        // Then the probes, after the retransmissions, in the band's
+        // `BACKGROUND`'s order.
+        self.probe(now);
     }
 
     /// One packet arrived at `now`: recorded, and dispatched by its opcode.
@@ -913,9 +975,10 @@ impl Ncp {
     /// The next buffer to send, at `now`: the words as the software would
     /// write them, cable destination last, for the link to add the source
     /// and the check word (`docs/design.md` §5). With nothing queued, every
-    /// session is first let send what it has and what has gone unreceipted
-    /// too long is sent again: the NCP has no timer of its own, and this is
-    /// when its retransmission and its host-down interval are kept
+    /// session is first let send what it has, what has gone unreceipted
+    /// too long is sent again, and the connections that want a probe get
+    /// one: the NCP has no timer of its own, and this is when its
+    /// retransmission, its probes and its host-down interval are kept
     /// (`docs/design.md` §4).
     pub fn transmit(&mut self, now: u64) -> Option<Vec<u16>> {
         if self.out.is_empty() {

@@ -135,11 +135,23 @@ loop    now ← nanoseconds since start, from Instant
         while Ncp::transmit(now) gives a buffer → Link::send(buffer)
 ```
 
-**Why it wakes when nothing arrives.** Two jobs are due even on a
+**Why it wakes when nothing arrives.** Three jobs are due even on a
 silent network. A packet that the other end has not acknowledged is sent
-again every half second (`RETRANSMIT_NS`), and a connection that has
-been silent for three minutes is given up (`HOST_DOWN_NS`). The NCP has
-no timer of its own. It does both jobs whenever it is asked for output:
+again every half second (`RETRANSMIT_NS`). Every ten seconds
+(`PROBE_NS`) each open connection is probed with an SNS if it has a
+packet not yet receipted, or has heard nothing for more than a minute
+(`LONG_PROBE_NS`); the other end answers with an STS. And a connection
+that has been silent for three minutes is given up (`HOST_DOWN_NS`).
+These are the band's own `PROBE-INTERVAL`, `LONG-PROBE-INTERVAL` and
+`HOST-DOWN-INTERVAL`, and its `PROBE-CONN`'s rule
+(`sys/network/chaos/chsncp.lisp`); AIM-628 §3.8 gives five seconds, a
+minute and a minute and a half. The probe is what keeps a connection to
+a slow machine alive: such a machine keeps its own intervals by its own
+clock, so it may not send its own probe of an idle connection within
+this host's three minutes, but it answers this host's SNS at once, and
+the answer is a packet heard. A machine that answers nothing is still
+given up at three minutes. The NCP has no timer of its own. It does
+these jobs whenever it is asked for output:
 `transmit` runs `service_all` when its queue is empty. So the loop waits
 for a packet for at most 100 ms, which is the socket's read timeout. A
 packet that arrives is handled at once. If none arrives, the loop wakes

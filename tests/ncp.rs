@@ -18,7 +18,7 @@ use ozd::ncp::{self, Ncp, Out, Response, Service, Session, op};
 use ozd::packet::{self, Framed, Packet};
 use ozd::service::time::Time;
 use std::sync::{Arc, Mutex};
-use support::arriving;
+use support::{SECOND, arriving};
 
 fn rfc(from: (u16, u16), to: u16, number: u16, text: &str) -> Packet {
     Packet {
@@ -243,6 +243,8 @@ fn a_silent_peer_is_freed_after_the_host_down_interval() {
     // Nothing comes back. The OPN goes again to the end of the interval.
     let t = ncp::HOST_DOWN_NS;
     assert_eq!(next_from(&mut h, t).map(|p| p.opcode), Some(op::OPN), "still trying");
+    // And probes it, the OPN being unreceipted (`a_dead_peer_is_probed_and_then_given_up`).
+    assert_eq!(next_from(&mut h, t).map(|p| p.opcode), Some(op::SNS), "and probing");
     assert_eq!(h.connections(), 1, "and still there");
     // Past it: freed, and quiet.
     assert_eq!(next_from(&mut h, t + 1), None);
@@ -269,10 +271,198 @@ fn a_silent_peer_is_freed_after_the_host_down_interval() {
     sts.data.extend_from_slice(&opn.number.to_le_bytes());
     sts.data.extend_from_slice(&5u16.to_le_bytes());
     h.receive(heard, &arriving(&sts));
-    assert_eq!(next_from(&mut h, t + 10 + ncp::HOST_DOWN_NS + 1), None);
+    let probe = next_from(&mut h, t + 10 + ncp::HOST_DOWN_NS + 1).map(|p| p.opcode);
+    assert_eq!(probe, Some(op::SNS), "probed, silent for a minute");
     assert_eq!(h.connections(), 1, "heard from within the interval");
     assert_eq!(next_from(&mut h, heard + ncp::HOST_DOWN_NS + 1), None);
     assert_eq!(h.connections(), 0, "and not since");
+}
+
+/// A tenth of a second, the longest the daemon's loop waits between turns
+/// (`docs/design.md` §4).
+const TURN: u64 = SECOND / 10;
+
+/// An ECHO connection from `me`, opened at 0 and acknowledged at once with
+/// the peer's STS: the far end and the OPN.
+fn open_echo(h: &mut Ncp, me: (u16, u16)) -> ((u16, u16), Packet) {
+    h.receive(0, &arriving(&rfc(me, 0o3060, 100, "ECHO")));
+    let opn = next_from(h, 0).expect("an OPN");
+    let server = (0o3060, opn.source_index);
+    h.receive(0, &arriving(&sts(me, server, 101, opn.number, 5)));
+    while next_from(h, 0).is_some() {}
+    (server, opn)
+}
+
+/// Turns the NCP as the daemon does, every [`TURN`] from `from` through
+/// `to`, taking everything it sends each turn, and hands `peer` the turn's
+/// time and those packets, for the far end to answer in the same turn.
+/// The times at which an SNS went out.
+fn probes(
+    h: &mut Ncp,
+    from: u64,
+    to: u64,
+    mut peer: impl FnMut(&mut Ncp, u64, &[Packet]),
+) -> Vec<u64> {
+    let mut at = Vec::new();
+    let mut now = from;
+    while now <= to {
+        let mut sent = Vec::new();
+        while let Some(p) = next_from(h, now) {
+            sent.push(p);
+        }
+        at.extend(sent.iter().filter(|p| p.opcode == op::SNS).map(|_| now));
+        peer(h, now, &sent);
+        now += TURN;
+    }
+    at
+}
+
+/// Every `step` seconds from `first` through `last`, in the clock's
+/// nanoseconds.
+fn seconds(first: u64, last: u64, step: u64) -> Vec<u64> {
+    (first..=last).step_by(step as usize).map(|s| s * SECOND).collect()
+}
+
+/// **A slow peer that answers probes stays connected.** A band on a slow
+/// simulator keeps its own clocks, so its own probe of an idle connection
+/// comes later than this host's three minutes. This end probes as the
+/// band's `PROBE-CONN` does (`sys/network/chaos/chsncp.lisp`): every
+/// `PROBE-INTERVAL`, ten seconds, it sends an SNS on an open connection
+/// that has heard nothing for more than `LONG-PROBE-INTERVAL`, a minute.
+/// A peer that says nothing of its own but answers each SNS with an STS is
+/// heard from each time, and is not given up.
+#[test]
+fn a_slow_peer_that_answers_probes_stays_connected() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let me = (0o3050, 0o21);
+    let (server, opn) = open_echo(&mut h, me);
+    let at = probes(&mut h, TURN, 600 * SECOND, |h, now, sent| {
+        for p in sent.iter().filter(|p| p.opcode == op::SNS) {
+            h.receive(now, &arriving(&sts(me, server, 101, opn.number, 5)));
+            assert_eq!(p.dest_index, me.1);
+        }
+    });
+    assert_eq!(h.connections(), 1, "still connected at ten minutes");
+    // Heard at 0: the probe at 60 s finds a minute and not more, the one at
+    // 70 s more. Each answer starts the minute again.
+    assert_eq!(at, seconds(70, 560, 70), "probed after each minute of silence");
+}
+
+/// **A dead peer is still given up after three minutes**, and was probed
+/// meanwhile: an SNS every ten seconds once a minute had passed without a
+/// packet, the last at three minutes, which is not yet past the band's
+/// `HOST-DOWN-INTERVAL`. Each SNS carries the number the next controlled
+/// packet will, and acknowledges what was received, as AIM-628 §4 has an
+/// uncontrolled packet do and the band's `TRANSMIT-INT-PKT-FOR-CONN` sets
+/// it. An RFC from this end that nothing answers is never probed, the band
+/// sending SNS "only on open connections", and is given up the same way.
+#[test]
+fn a_dead_peer_is_probed_and_then_given_up() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let me = (0o3050, 0o21);
+    let (server, opn) = open_echo(&mut h, me);
+    h.connect(0, 0o3051, "FOO", Box::new(Recorder(Log::default())));
+    while next_from(&mut h, 0).is_some() {}
+    let mut seen = Vec::new();
+    let at = probes(&mut h, TURN, ncp::HOST_DOWN_NS, |_, _, sent| {
+        seen.extend(sent.iter().filter(|p| p.opcode == op::SNS).cloned());
+    });
+    assert_eq!(at, seconds(70, 180, 10), "probed every ten seconds after a minute");
+    for sns in &seen {
+        assert_eq!((sns.dest, sns.dest_index), me);
+        assert_eq!((sns.source, sns.source_index), server);
+        assert_eq!(sns.number, opn.number.wrapping_add(1), "the next controlled number");
+        assert_eq!(sns.ack, 100, "acknowledging the RFC, the last packet taken");
+        assert!(sns.data.is_empty());
+    }
+    assert_eq!(h.connections(), 2, "neither given up at three minutes");
+    let after = probes(&mut h, ncp::HOST_DOWN_NS + TURN, 240 * SECOND, |_, _, _| {});
+    assert_eq!((after, h.connections()), (vec![], 0), "given up past them, and quiet");
+}
+
+/// **A busy connection is not probed.** Data goes both ways every second,
+/// and the peer receipts each echo as it arrives, so at each probe the
+/// window is empty and the connection was heard from within the second.
+#[test]
+fn a_busy_connection_is_not_probed() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let me = (0o3050, 0o21);
+    let (server, opn) = open_echo(&mut h, me);
+    let mut number = 100u16;
+    let mut echoes = 0;
+    let at = probes(&mut h, TURN, 300 * SECOND, |h, now, sent| {
+        for p in sent.iter().filter(|p| p.opcode == op::DAT) {
+            echoes += 1;
+            h.receive(now, &arriving(&sts(me, server, number + 1, p.number, 5)));
+        }
+        if now % SECOND == 2 * TURN {
+            number += 1;
+            let dat = Packet {
+                opcode: op::DAT,
+                forward: 0,
+                dest: server.0,
+                dest_index: server.1,
+                source: me.0,
+                source_index: me.1,
+                number,
+                ack: opn.number,
+                data: b"tick".to_vec(),
+            };
+            h.receive(now, &arriving(&dat));
+        }
+    });
+    assert_eq!(echoes, 300, "data both ways every second");
+    assert_eq!(at, Vec::<u64>::new(), "and no probe");
+    assert_eq!(h.connections(), 1);
+}
+
+/// **With packets outstanding, probes go every ten seconds**: the band's
+/// `PROBE-CONN` sends an SNS on an open connection whose window is not
+/// empty, `(< (WINDOW-AVAILABLE CONN) (FOREIGN-WINDOW-SIZE CONN))`, however
+/// recently it was heard from. Here the peer answers each probe with an
+/// STS that receipts the OPN but not the echo it lost, until it receipts
+/// the echo at 85 s; then nothing is outstanding and it is not silent for
+/// a minute, so no probe goes until 150 s.
+#[test]
+fn outstanding_packets_are_probed_every_ten_seconds() {
+    let mut h = Ncp::new(0o3060);
+    h.serve(Box::new(Echo));
+    let me = (0o3050, 0o21);
+    let (server, opn) = open_echo(&mut h, me);
+    let mut echo = None;
+    let at = probes(&mut h, TURN, 150 * SECOND - TURN, |h, now, sent| {
+        if now == 2 * TURN {
+            let dat = Packet {
+                opcode: op::DAT,
+                forward: 0,
+                dest: server.0,
+                dest_index: server.1,
+                source: me.0,
+                source_index: me.1,
+                number: 101,
+                ack: opn.number,
+                data: b"lost".to_vec(),
+            };
+            h.receive(now, &arriving(&dat));
+        }
+        if let Some(p) = sent.iter().find(|p| p.opcode == op::DAT) {
+            echo.get_or_insert(p.number);
+        }
+        if sent.iter().any(|p| p.opcode == op::SNS) {
+            h.receive(now, &arriving(&sts(me, server, 102, opn.number, 5)));
+        }
+        if now == 85 * SECOND {
+            let e = echo.expect("the echo went out");
+            h.receive(now, &arriving(&sts(me, server, 102, e, 5)));
+        }
+    });
+    assert_eq!(at, seconds(10, 80, 10), "every ten seconds while the echo is outstanding");
+    assert_eq!(h.connections(), 1);
+    let at = probes(&mut h, 150 * SECOND, 150 * SECOND, |_, _, _| {});
+    assert_eq!(at, [150 * SECOND], "and after a minute of silence");
 }
 
 /// **A refusal fits in a packet.** A CLS quotes its reason, and one that
